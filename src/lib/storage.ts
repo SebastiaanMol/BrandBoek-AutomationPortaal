@@ -91,7 +91,9 @@ export function getAutomatiseringen(): Automatisering[] {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_DATA));
     return SEED_DATA;
   }
-  return JSON.parse(data);
+  // Migrate old data missing koppelingen
+  const parsed: Automatisering[] = JSON.parse(data);
+  return parsed.map((a) => ({ ...a, koppelingen: a.koppelingen || [] }));
 }
 
 export function saveAutomatisering(item: Automatisering): void {
