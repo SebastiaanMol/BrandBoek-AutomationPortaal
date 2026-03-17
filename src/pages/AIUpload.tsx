@@ -275,29 +275,34 @@ export default function AIUpload() {
     toast.success(`${localResults.length} automatisering(en) gevonden in CSV (lokaal)`);
   };
 
-  const saveOne = (idx: number) => {
+  const saveOne = async (idx: number) => {
     const item = csvResults[idx];
     if (!item) return;
-    const full: Automatisering = {
-      id: generateId(),
-      naam: item.mapped.naam || "Onbekend",
-      categorie: item.mapped.categorie || "Anders",
-      doel: item.mapped.doel || "",
-      trigger: item.mapped.trigger || "",
-      systemen: item.mapped.systemen || [],
-      stappen: item.mapped.stappen || [],
-      afhankelijkheden: item.mapped.afhankelijkheden || "",
-      owner: item.mapped.owner || "",
-      status: item.mapped.status || "Actief",
-      verbeterideeën: item.mapped.verbeterideeën || "",
-      mermaidDiagram: item.mapped.mermaidDiagram || "",
-      koppelingen: [],
-      fasen: [],
-      createdAt: new Date().toISOString(),
-    };
-    saveAutomatisering(full);
-    setSavedIds((prev) => new Set(prev).add(idx));
-    toast.success(`"${full.naam}" opgeslagen als ${full.id}`);
+    try {
+      const id = await generateNextId();
+      const full: Automatisering = {
+        id,
+        naam: item.mapped.naam || "Onbekend",
+        categorie: item.mapped.categorie || "Anders",
+        doel: item.mapped.doel || "",
+        trigger: item.mapped.trigger || "",
+        systemen: item.mapped.systemen || [],
+        stappen: item.mapped.stappen || [],
+        afhankelijkheden: item.mapped.afhankelijkheden || "",
+        owner: item.mapped.owner || "",
+        status: item.mapped.status || "Actief",
+        verbeterideeën: item.mapped.verbeterideeën || "",
+        mermaidDiagram: item.mapped.mermaidDiagram || "",
+        koppelingen: [],
+        fasen: [],
+        createdAt: new Date().toISOString(),
+      };
+      await insertAutomatisering(full);
+      setSavedIds((prev) => new Set(prev).add(idx));
+      toast.success(`"${full.naam}" opgeslagen als ${full.id}`);
+    } catch (err: any) {
+      toast.error(err.message || "Opslaan mislukt");
+    }
   };
 
   const saveAll = () => {
