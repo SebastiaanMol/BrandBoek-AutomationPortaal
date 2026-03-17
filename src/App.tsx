@@ -11,6 +11,7 @@ import AlleAutomatiseringen from "./pages/AlleAutomatiseringen";
 import BPMNViewer from "./pages/BPMNViewer";
 import Analyse from "./pages/Analyse";
 import Mindmap from "./pages/Mindmap";
+import BewerkAutomatisering from "./pages/BewerkAutomatisering";
 import AuthPage from "./pages/AuthPage";
 import NotFound from "./pages/NotFound";
 
