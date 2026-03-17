@@ -1,14 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Automatisering, CATEGORIEEN, SYSTEMEN, STATUSSEN, KLANT_FASEN, Systeem, Categorie, Status, KlantFase, Koppeling } from "@/lib/types";
-import { generateId, saveAutomatisering, getAutomatiseringen } from "@/lib/storage";
+import { useAutomatiseringen, useSaveAutomatisering, useNextId } from "@/lib/hooks";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X, Loader2 } from "lucide-react";
 
 interface NieuweAutomatiseringProps {
   prefill?: Partial<Automatisering>;
@@ -16,7 +16,9 @@ interface NieuweAutomatiseringProps {
 
 export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringProps) {
   const navigate = useNavigate();
-  const allAutomatiseringen = useMemo(() => getAutomatiseringen(), []);
+  const { data: allAutomatiseringen = [] } = useAutomatiseringen();
+  const { data: nextId, isLoading: idLoading } = useNextId();
+  const saveMutation = useSaveAutomatisering();
 
   const [form, setForm] = useState<Partial<Automatisering>>({
     naam: "",
@@ -67,13 +69,17 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
     set("koppelingen", (form.koppelingen || []).filter((_, i) => i !== idx));
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.naam?.trim()) {
       toast.error("Naam is verplicht");
       return;
     }
+    if (!nextId) {
+      toast.error("Kan geen ID genereren");
+      return;
+    }
     const item: Automatisering = {
-      id: generateId(),
+      id: nextId,
       naam: form.naam!,
       categorie: form.categorie as Categorie,
       doel: form.doel || "",
@@ -89,9 +95,14 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
       fasen: (form.fasen || []) as KlantFase[],
       createdAt: new Date().toISOString(),
     };
-    saveAutomatisering(item);
-    toast.success(`${item.id} opgeslagen`);
-    navigate("/alle");
+
+    try {
+      await saveMutation.mutateAsync(item);
+      toast.success(`${item.id} opgeslagen`);
+      navigate("/alle");
+    } catch (err: any) {
+      toast.error(err.message || "Opslaan mislukt");
+    }
   };
 
   const availableForKoppeling = allAutomatiseringen.filter(
@@ -102,7 +113,9 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
     <div className="max-w-2xl space-y-6">
       <div>
         <p className="label-uppercase mb-1">ID</p>
-        <p className="font-mono text-sm text-foreground">{generateId()}</p>
+        <p className="font-mono text-sm text-foreground">
+          {idLoading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : nextId}
+        </p>
       </div>
 
       <Field label="Naam">
@@ -173,8 +186,7 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
 
       <Field label="Directe Koppelingen">
         <p className="text-[10px] text-muted-foreground mb-2">
-          Leg alleen een koppeling als de output van deze automatisering direct de input/trigger is van een andere, 
-          of als beide op exact hetzelfde object werken.
+          Leg alleen een koppeling als de output van deze automatisering direct de input/trigger is van een andere.
         </p>
         <div className="space-y-2">
           {(form.koppelingen || []).map((k, idx) => {
@@ -191,7 +203,7 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
                 <Input
                   value={k.label}
                   onChange={(e) => updateKoppelingLabel(idx, e.target.value)}
-                  placeholder="Beschrijf waarom de koppeling bestaat (bijv. 'Deal aangemaakt door AUTO-001 triggert AUTO-002')"
+                  placeholder="Beschrijf waarom de koppeling bestaat"
                   className="text-xs h-8"
                 />
               </div>
@@ -247,9 +259,10 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
 
       <button
         onClick={submit}
-        className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+        disabled={saveMutation.isPending}
+        className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
       >
-        Opslaan
+        {saveMutation.isPending ? "Opslaan..." : "Opslaan"}
       </button>
     </div>
   );

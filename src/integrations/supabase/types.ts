@@ -14,13 +14,105 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      automatiseringen: {
+        Row: {
+          afhankelijkheden: string
+          categorie: string
+          created_at: string
+          created_by: string | null
+          doel: string
+          fasen: string[]
+          id: string
+          mermaid_diagram: string
+          naam: string
+          owner: string
+          stappen: string[]
+          status: string
+          systemen: string[]
+          trigger_beschrijving: string
+          verbeterideeen: string
+        }
+        Insert: {
+          afhankelijkheden?: string
+          categorie?: string
+          created_at?: string
+          created_by?: string | null
+          doel?: string
+          fasen?: string[]
+          id: string
+          mermaid_diagram?: string
+          naam: string
+          owner?: string
+          stappen?: string[]
+          status?: string
+          systemen?: string[]
+          trigger_beschrijving?: string
+          verbeterideeen?: string
+        }
+        Update: {
+          afhankelijkheden?: string
+          categorie?: string
+          created_at?: string
+          created_by?: string | null
+          doel?: string
+          fasen?: string[]
+          id?: string
+          mermaid_diagram?: string
+          naam?: string
+          owner?: string
+          stappen?: string[]
+          status?: string
+          systemen?: string[]
+          trigger_beschrijving?: string
+          verbeterideeen?: string
+        }
+        Relationships: []
+      }
+      koppelingen: {
+        Row: {
+          bron_id: string
+          created_at: string
+          doel_id: string
+          id: string
+          label: string
+        }
+        Insert: {
+          bron_id: string
+          created_at?: string
+          doel_id: string
+          id?: string
+          label?: string
+        }
+        Update: {
+          bron_id?: string
+          created_at?: string
+          doel_id?: string
+          id?: string
+          label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "koppelingen_bron_id_fkey"
+            columns: ["bron_id"]
+            isOneToOne: false
+            referencedRelation: "automatiseringen"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "koppelingen_doel_id_fkey"
+            columns: ["doel_id"]
+            isOneToOne: false
+            referencedRelation: "automatiseringen"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_auto_id: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never

@@ -1,13 +1,23 @@
-import { useMemo, useState } from "react";
-import { getAutomatiseringen } from "@/lib/storage";
+import { useState } from "react";
+import { useAutomatiseringen } from "@/lib/hooks";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
 import { StatusBadge, SystemBadge } from "@/components/Badges";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
 
 export default function BPMNViewer() {
-  const data = useMemo(() => getAutomatiseringen(), []);
+  const { data: allData, isLoading } = useAutomatiseringen();
   const [selectedId, setSelectedId] = useState<string>("alle");
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const data = allData || [];
   const items = selectedId === "alle" ? data.filter((a) => a.mermaidDiagram) : data.filter((a) => a.id === selectedId && a.mermaidDiagram);
 
   return (

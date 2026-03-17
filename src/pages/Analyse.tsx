@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { getAutomatiseringen } from "@/lib/storage";
+import { useAutomatiseringen } from "@/lib/hooks";
 import {
   Automatisering,
   KLANT_FASEN,
@@ -12,7 +12,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
-import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 
 const FASE_COLORS: Record<KlantFase, string> = {
   Marketing: "#8b5cf6",
@@ -74,21 +74,21 @@ function findCascadeFailures(
 }
 
 export default function Analyse() {
-  const data = useMemo(() => getAutomatiseringen(), []);
+  const { data: fetchedData, isLoading } = useAutomatiseringen();
+  const data = fetchedData || [];
   const smartEdges = useMemo(() => computeSmartEdges(data), [data]);
   const [expandedFailure, setExpandedFailure] = useState<string | null>(null);
 
-  const categorieData = groupBy(data, "categorie");
-  const statusData = groupBy(data, "status");
-  const ownerData = groupBy(data, "owner");
+  const categorieData = useMemo(() => groupBy(data, "categorie"), [data]);
+  const statusData = useMemo(() => groupBy(data, "status"), [data]);
+  const ownerData = useMemo(() => groupBy(data, "owner"), [data]);
 
-  const systeemData = (() => {
+  const systeemData = useMemo(() => {
     const counts: Record<string, number> = {};
     data.forEach((a) => a.systemen.forEach((s) => { counts[s] = (counts[s] || 0) + 1; }));
     return Object.entries(counts).map(([name, count]) => ({ name, count }));
-  })();
+  }, [data]);
 
-  // Scores
   const scoredData = useMemo(() =>
     data.map((a) => ({
       ...a,
@@ -99,7 +99,6 @@ export default function Analyse() {
     [data]
   );
 
-  // Timeline data per fase
   const faseAutoMap = useMemo(() => {
     const map: Record<KlantFase, Automatisering[]> = {
       Marketing: [], Sales: [], Onboarding: [], Boekhouding: [], Offboarding: [],
@@ -113,6 +112,14 @@ export default function Analyse() {
   }, [data]);
 
   const COLORS = ["#0f172a", "#0066cc", "#ff7a59", "#ff4a00", "#10b981", "#64748b"];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10">

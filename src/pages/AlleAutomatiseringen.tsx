@@ -1,22 +1,33 @@
-import { useMemo, useState } from "react";
-import { getAutomatiseringen, exportToCSV } from "@/lib/storage";
-import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Categorie, Systeem, Status } from "@/lib/types";
+import { useState } from "react";
+import { useAutomatiseringen } from "@/lib/hooks";
+import { exportToCSV } from "@/lib/supabaseStorage";
+import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Download, Search as SearchIcon } from "lucide-react";
+import { ChevronDown, Download, Search as SearchIcon, Loader2 } from "lucide-react";
 
 export default function AlleAutomatiseringen() {
-  const data = useMemo(() => getAutomatiseringen(), []);
+  const { data, isLoading } = useAutomatiseringen();
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<string>("alle");
   const [sysFilter, setSysFilter] = useState<string>("alle");
   const [statusFilter, setStatusFilter] = useState<string>("alle");
 
-  const filtered = data.filter((a) => {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const all = data || [];
+
+  const filtered = all.filter((a) => {
     const q = query.toLowerCase();
     const matchesQuery =
       !q ||
@@ -46,7 +57,6 @@ export default function AlleAutomatiseringen() {
 
   return (
     <div className="space-y-4">
-      {/* Search & Filter header */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">

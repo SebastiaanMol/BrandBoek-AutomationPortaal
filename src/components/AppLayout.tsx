@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "@/lib/AuthContext";
 import {
   LayoutDashboard,
   PlusCircle,
@@ -8,6 +9,7 @@ import {
   Menu,
   X,
   Map,
+  LogOut,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -22,6 +24,7 @@ const navItems = [
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const { user, signOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -69,6 +72,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+        <div className="border-t border-sidebar-border p-4">
+          <p className="text-[10px] text-sidebar-foreground/40 truncate mb-2">{user?.email}</p>
+          <button
+            onClick={signOut}
+            className="flex items-center gap-2 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Uitloggen
+          </button>
+        </div>
       </aside>
 
       {/* Main */}

@@ -1,15 +1,24 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { getAutomatiseringen } from "@/lib/storage";
 import { StatusBadge, CategorieBadge } from "@/components/Badges";
+import { useAutomatiseringen } from "@/lib/hooks";
+import { Loader2 } from "lucide-react";
 
 export default function Dashboard() {
-  const data = useMemo(() => getAutomatiseringen(), []);
+  const { data, isLoading } = useAutomatiseringen();
 
-  const totaal = data.length;
-  const actief = data.filter((a) => a.status === "Actief").length;
-  const verouderd = data.filter((a) => a.status === "Verouderd").length;
-  const uitgeschakeld = data.filter((a) => a.status === "Uitgeschakeld").length;
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const all = data || [];
+  const totaal = all.length;
+  const actief = all.filter((a) => a.status === "Actief").length;
+  const verouderd = all.filter((a) => a.status === "Verouderd").length;
+  const uitgeschakeld = all.filter((a) => a.status === "Uitgeschakeld").length;
 
   const metrics = [
     { label: "Totaal Vastgelegd", value: totaal, color: "text-foreground" },
@@ -20,7 +29,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {metrics.map((m) => (
           <div key={m.label} className="metric-card">
@@ -30,13 +38,12 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent */}
       <div>
         <h2 className="text-lg font-semibold tracking-tight text-foreground mb-4">
           Recente Automatiseringen
         </h2>
         <div className="space-y-3">
-          {data.slice(-10).reverse().map((a) => (
+          {all.slice(-10).reverse().map((a) => (
             <div
               key={a.id}
               className="bg-card border border-border rounded-[var(--radius-inner)] p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between shadow-sm"
@@ -52,7 +59,7 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
-          {data.length === 0 && (
+          {all.length === 0 && (
             <p className="text-muted-foreground text-sm">Nog geen automatiseringen vastgelegd.</p>
           )}
         </div>

@@ -14,7 +14,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { getAutomatiseringen } from "@/lib/storage";
+import { useAutomatiseringen } from "@/lib/hooks";
 import { Automatisering, Systeem, SYSTEMEN } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
@@ -405,7 +405,7 @@ function buildGraph(
 // --- Component ---
 export default function Mindmap() {
   const navigate = useNavigate();
-  const automatiseringen = useMemo(() => getAutomatiseringen(), []);
+  const { data: automatiseringen = [], isLoading } = useAutomatiseringen();
   const allSmartEdges = useMemo(() => computeSmartEdges(automatiseringen), [automatiseringen]);
 
   const [systemFilter, setSystemFilter] = useState<Set<string>>(new Set());
