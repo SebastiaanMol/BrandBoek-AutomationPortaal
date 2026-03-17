@@ -12,7 +12,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
-import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 
 const FASE_COLORS: Record<KlantFase, string> = {
   Marketing: "#8b5cf6",
