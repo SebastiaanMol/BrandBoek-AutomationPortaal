@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { getAutomatiseringen } from "@/lib/storage";
+import { useAutomatiseringen } from "@/lib/hooks";
 import {
   Automatisering,
   KLANT_FASEN,
