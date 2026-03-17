@@ -443,24 +443,24 @@ export default function AIUpload() {
         </button>
       </div>
 
-      {/* CSV TAB */}
-      {tab === "csv" && !csvResults.length && (
+      {/* BESTAND TAB */}
+      {tab === "bestand" && !csvResults.length && (
         <div className="max-w-2xl space-y-4">
           <p className="text-sm text-muted-foreground">
-            Upload een CSV-export van je HubSpot workflows of Zapier Zaps. Het portaal herkent automatisch de kolommen en vult alle velden in met AI.
+            Upload een CSV-export of Zapier JSON-export. Het portaal herkent automatisch de structuur en vult alle velden in met AI.
           </p>
           <div
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-border rounded-[var(--radius-outer)] p-12 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/50 transition-colors"
           >
             <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-            <p className="text-sm font-medium text-foreground">Klik om een CSV-bestand te uploaden</p>
-            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot workflow exports, Zapier Zap exports en andere CSV-formaten</p>
+            <p className="text-sm font-medium text-foreground">Klik om een CSV- of JSON-bestand te uploaden</p>
+            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot CSV exports, Zapier JSON/CSV exports en andere formaten</p>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv"
-              onChange={handleCSVUpload}
+              accept=".csv,.json"
+              onChange={handleFileUpload}
               className="hidden"
             />
           </div>
@@ -470,16 +470,17 @@ export default function AIUpload() {
             </div>
           )}
           <div className="bg-secondary border border-border rounded-[var(--radius-inner)] p-4 mt-4">
-            <p className="label-uppercase mb-2">Verwachte kolommen</p>
+            <p className="label-uppercase mb-2">Ondersteunde formaten</p>
             <p className="text-sm text-muted-foreground">
-              Het systeem herkent kolommen zoals: <span className="font-mono text-xs">Naam, Name, Workflow, Zap Name, Trigger App, Action App, Beschrijving, Description, Trigger, Owner, Status, Stappen, Steps, Actions, Folder</span> enz.
+              <strong>CSV:</strong> kolommen zoals <span className="font-mono text-xs">Naam, Workflow, Zap Name, Trigger App, Action App, Status</span><br />
+              <strong>JSON:</strong> Zapier export met velden zoals <span className="font-mono text-xs">name, status, steps, trigger, actions</span>
             </p>
           </div>
         </div>
       )}
 
-      {/* CSV RESULTS */}
-      {tab === "csv" && csvResults.length > 0 && (
+      {/* BESTAND RESULTS */}
+      {tab === "bestand" && csvResults.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
