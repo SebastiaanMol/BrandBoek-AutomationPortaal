@@ -117,7 +117,7 @@ export default function Analyse() {
     return map;
   }, [data]);
 
-  const COLORS = ["#0f172a", "#0066cc", "#ff7a59", "#ff4a00", "#10b981", "#64748b"];
+  const COLORS = ["#0f172a", "#0066cc", "#ff7a59", "#65A30D", "#10b981", "#64748b"];
 
   if (isLoading) {
     return (

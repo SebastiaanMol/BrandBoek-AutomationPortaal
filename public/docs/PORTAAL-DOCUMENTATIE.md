@@ -54,7 +54,7 @@ Elke HubSpot deal moet gekoppeld zijn aan zowel een Contact als een Company. Dez
 | Systeem | Kleur |
 |---|---|
 | HubSpot | `#ff7a59` |
-| Zapier | `#ff4a00` |
+| Zapier | `#65A30D` (groen) |
 | Typeform | `#262627` |
 | SharePoint | `#038387` |
 | WeFact | `#f5a623` |
