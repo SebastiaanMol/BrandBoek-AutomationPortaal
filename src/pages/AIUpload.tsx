@@ -411,6 +411,7 @@ export default function AIUpload() {
     // Fallback to local
     setCsvResults(localResults);
     setSavedIds(new Set());
+    setSkippedIds(new Set());
     setLoading(false);
     toast.success(`${localResults.length} automatisering(en) gevonden in CSV (lokaal)`);
   };
