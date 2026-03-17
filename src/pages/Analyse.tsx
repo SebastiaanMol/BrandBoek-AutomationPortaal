@@ -178,8 +178,9 @@ export default function Analyse() {
                       autos.map((a) => (
                         <div
                           key={a.id}
-                          className="bg-card border border-border rounded-lg p-2.5 shadow-sm hover:shadow-md transition-shadow"
+                          className="bg-card border border-border rounded-lg p-2.5 shadow-sm hover:shadow-md transition-shadow cursor-pointer hover:bg-secondary/50"
                           style={{ borderLeftWidth: 3, borderLeftColor: color }}
+                          onClick={() => navigate(`/alle?open=${a.id}`)}
                         >
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-[9px] text-muted-foreground">{a.id}</span>
