@@ -68,10 +68,25 @@ const STATUS_ICON: Record<string, string> = {
 const SYSTEM_HUB_PREFIX = "sys-hub-";
 
 function getPrimarySystem(auto: Automatisering): string {
-  if (auto.systemen.includes("HubSpot")) return "HubSpot";
-  if (auto.systemen.includes("Zapier")) return "Zapier";
-  if (auto.systemen.includes("Backend")) return "Backend";
-  return auto.systemen[0] || "API";
+  // Determine origin system based on categorie
+  switch (auto.categorie) {
+    case "HubSpot Workflow": return "HubSpot";
+    case "Zapier Zap": return "Zapier";
+    case "HubSpot + Zapier": return "HubSpot";
+    case "Backend Script": return "Backend";
+    default: return auto.systemen[0] || "Anders";
+  }
+}
+
+/** Get origin systems — used for hub connections (only the source platform) */
+function getOriginSystems(auto: Automatisering): string[] {
+  switch (auto.categorie) {
+    case "HubSpot Workflow": return ["HubSpot"];
+    case "Zapier Zap": return ["Zapier"];
+    case "HubSpot + Zapier": return ["HubSpot", "Zapier"];
+    case "Backend Script": return ["Backend"];
+    default: return [auto.systemen[0] || "Anders"];
+  }
 }
 
 // --- Radial layout with system hubs in center ring ---
