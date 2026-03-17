@@ -138,7 +138,24 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
         </div>
       </Field>
 
-      <Field label="Flow / Stappen">
+      <Field label="Klantproces Fase">
+        <p className="text-[10px] text-muted-foreground mb-2">In welke fase(n) van het klanttraject is deze automatisering actief?</p>
+        <div className="flex flex-wrap gap-3">
+          {KLANT_FASEN.map((f) => (
+            <label key={f} className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={form.fasen?.includes(f)}
+                onCheckedChange={() => {
+                  const curr = form.fasen || [];
+                  set("fasen", curr.includes(f) ? curr.filter((x) => x !== f) : [...curr, f]);
+                }}
+              />
+              {f}
+            </label>
+          ))}
+        </div>
+      </Field>
+
         <div className="space-y-2">
           {(form.stappen || []).map((stap, i) => (
             <div key={i} className="flex gap-2 items-center">
