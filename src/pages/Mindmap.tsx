@@ -87,10 +87,12 @@ function getPrimarySystem(auto: Automatisering): string {
 // --- Dagre layout ---
 function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "LR", nodesep: 80, ranksep: 160, edgesep: 40 });
+  g.setGraph({ rankdir: "TB", nodesep: 120, ranksep: 200, edgesep: 60, marginx: 40, marginy: 40 });
 
   nodes.forEach((n) => {
-    g.setNode(n.id, { width: n.style?.width as number || 200, height: n.style?.height as number || 70 });
+    const w = (n.style?.width as number) || 200;
+    const h = (n.style?.height as number) || 70;
+    g.setNode(n.id, { width: w + 40, height: h + 30 });
   });
   edges.forEach((e) => {
     g.setEdge(e.source, e.target);
@@ -100,7 +102,9 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
 
   return nodes.map((n) => {
     const pos = g.node(n.id);
-    return { ...n, position: { x: pos.x - ((n.style?.width as number || 200) / 2), y: pos.y - ((n.style?.height as number || 70) / 2) } };
+    const w = (n.style?.width as number) || 200;
+    const h = (n.style?.height as number) || 70;
+    return { ...n, position: { x: pos.x - w / 2, y: pos.y - h / 2 } };
   });
 }
 
@@ -138,16 +142,14 @@ function buildGraph(
     const sys = getPrimarySystem(a);
     const color = SYSTEM_COLORS[sys] || "#64748b";
     const conns = countConnections(a.id, visibleEdges);
-    const baseSize = 180;
-    const sizeBoost = Math.min(conns * 8, 60);
-    const width = baseSize + sizeBoost;
+    const width = 200;
     const isHighlighted = highlightId === a.id;
     const isSearchMatch = searchQuery && a.naam.toLowerCase().includes(searchQuery.toLowerCase());
 
     return {
       id: a.id,
       type: "default",
-      position: { x: 0, y: 0 }, // Will be set by dagre
+      position: { x: 0, y: 0 },
       data: {
         label: (
           <div className="text-left leading-tight">
@@ -156,9 +158,12 @@ function buildGraph(
               <span>{CATEGORY_ICONS[a.categorie] || "📦"}</span>
               <span>{STATUS_ICON[a.status] || ""}</span>
             </div>
-            <div className="font-semibold text-xs mt-1 leading-snug" style={{ maxWidth: width - 32 }}>
+            <div className="font-semibold text-xs mt-1 leading-snug truncate" style={{ maxWidth: 160 }}>
               {a.naam}
             </div>
+            {conns > 0 && (
+              <div className="text-[9px] text-muted-foreground mt-0.5 opacity-60">{conns} verbinding{conns > 1 ? "en" : ""}</div>
+            )}
           </div>
         ),
       },
@@ -172,33 +177,33 @@ function buildGraph(
         fontSize: "12px",
         boxShadow: isHighlighted || isSearchMatch
           ? `0 0 0 3px ${color}, 0 0 20px ${color}60`
-          : `0 2px 8px rgba(0,0,0,0.06)`,
-        transition: "box-shadow 0.3s ease",
-        ...(isSearchMatch && searchQuery ? { animation: "pulse 1.5s infinite" } : {}),
+          : `0 1px 4px rgba(0,0,0,0.05)`,
       },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
     };
   });
 
   // Build edges
   const edges: Edge[] = visibleEdges.map((e, idx) => {
     const color = EDGE_TYPE_COLORS[e.type];
+    const isExplicit = e.type === "explicit";
     return {
       id: `edge-${idx}-${e.sourceId}-${e.targetId}`,
       source: e.sourceId,
       target: e.targetId,
-      label: e.label,
-      type: "default",
-      animated: e.type === "explicit",
+      label: isExplicit ? e.label : undefined,
+      type: "smoothstep",
+      animated: isExplicit,
       style: {
         stroke: color,
-        strokeWidth: e.type === "explicit" ? 2.5 : 1.5,
-        opacity: e.type === "explicit" ? 1 : 0.6,
+        strokeWidth: isExplicit ? 2 : 1,
+        opacity: isExplicit ? 0.9 : 0.35,
+        strokeDasharray: isExplicit ? undefined : "6 3",
       },
-      markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 12 },
-      labelStyle: { fontSize: 9, fontWeight: 500, fill: color },
-      labelBgStyle: { fill: "white", fillOpacity: 0.9, stroke: color, strokeWidth: 0.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 10 },
+      labelStyle: { fontSize: 9, fontWeight: 600, fill: "#374151" },
+      labelBgStyle: { fill: "white", fillOpacity: 0.95 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
       data: { edgeType: e.type, reason: e.label },
@@ -224,7 +229,7 @@ export default function Mindmap() {
   const [ownerFilter, setOwnerFilter] = useState<Set<string>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [edgeTypeFilter, setEdgeTypeFilter] = useState<Set<EdgeType>>(
-    new Set(["explicit", "shared_system", "trigger_match", "shared_owner"])
+    new Set(["explicit"])
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [highlightId, setHighlightId] = useState<string | null>(null);
