@@ -5,7 +5,7 @@ export type Categorie =
   | "HubSpot + Zapier"
   | "Anders";
 
-export type Systeem = "HubSpot" | "Zapier" | "Backend" | "E-mail" | "API";
+export type Systeem = "HubSpot" | "Zapier" | "Typeform" | "SharePoint" | "WeFact" | "Docufy" | "Backend" | "E-mail" | "API" | "Anders";
 
 export type Status = "Actief" | "Verouderd" | "In review" | "Uitgeschakeld";
 
@@ -39,6 +39,6 @@ export const CATEGORIEEN: Categorie[] = [
   "Anders",
 ];
 
-export const SYSTEMEN: Systeem[] = ["HubSpot", "Zapier", "Backend", "E-mail", "API"];
+export const SYSTEMEN: Systeem[] = ["HubSpot", "Zapier", "Typeform", "SharePoint", "WeFact", "Docufy", "Backend", "E-mail", "API", "Anders"];
 
 export const STATUSSEN: Status[] = ["Actief", "Verouderd", "In review", "Uitgeschakeld"];

@@ -124,7 +124,8 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
         <Input value={form.trigger} onChange={(e) => set("trigger", e.target.value)} placeholder="Waardoor start het?" />
       </Field>
 
-      <Field label="Betrokken Systemen">
+      <Field label="Primaire Systemen">
+        <p className="text-[10px] text-muted-foreground mb-2">Selecteer alle systemen die deze automatisering gebruikt</p>
         <div className="flex flex-wrap gap-3">
           {SYSTEMEN.map((s) => (
             <label key={s} className="flex items-center gap-2 text-sm">
@@ -150,30 +151,36 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
         </div>
       </Field>
 
-      <Field label="Gekoppeld aan (andere automatiseringen)">
+      <Field label="Directe Koppelingen">
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Leg alleen een koppeling als de output van deze automatisering direct de input/trigger is van een andere, 
+          of als beide op exact hetzelfde object werken.
+        </p>
         <div className="space-y-2">
           {(form.koppelingen || []).map((k, idx) => {
             const target = allAutomatiseringen.find((a) => a.id === k.doelId);
             return (
-              <div key={idx} className="flex gap-2 items-center bg-secondary rounded-[var(--radius-inner)] p-2">
-                <span className="text-xs font-mono font-semibold text-foreground shrink-0">{k.doelId}</span>
-                <span className="text-xs text-muted-foreground truncate shrink-0">{target?.naam || "Onbekend"}</span>
+              <div key={idx} className="bg-secondary rounded-[var(--radius-inner)] p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-semibold text-foreground shrink-0">{k.doelId}</span>
+                  <span className="text-xs text-muted-foreground truncate">{target?.naam || "Onbekend"}</span>
+                  <button onClick={() => removeKoppeling(idx)} className="ml-auto text-destructive shrink-0 hover:opacity-70">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
                 <Input
                   value={k.label}
                   onChange={(e) => updateKoppelingLabel(idx, e.target.value)}
-                  placeholder="Beschrijf de koppeling (bijv. 'Deal aangemaakt')"
+                  placeholder="Beschrijf waarom de koppeling bestaat (bijv. 'Deal aangemaakt door AUTO-001 triggert AUTO-002')"
                   className="text-xs h-8"
                 />
-                <button onClick={() => removeKoppeling(idx)} className="text-destructive shrink-0 hover:opacity-70">
-                  <X className="h-4 w-4" />
-                </button>
               </div>
             );
           })}
           {availableForKoppeling.length > 0 && (
             <Select onValueChange={(v) => addKoppeling(v)}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="+ Koppeling toevoegen..." />
+                <SelectValue placeholder="+ Directe koppeling toevoegen..." />
               </SelectTrigger>
               <SelectContent>
                 {availableForKoppeling.map((a) => (
