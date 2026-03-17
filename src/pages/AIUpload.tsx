@@ -581,7 +581,7 @@ export default function AIUpload() {
                 onClick={saveAll}
                 className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
               >
-                Alles opslaan ({csvResults.length - savedIds.size})
+                Alles opslaan ({csvResults.length - savedIds.size - skippedIds.size})
               </button>
               <button
                   onClick={() => {
