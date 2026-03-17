@@ -79,7 +79,7 @@ Extraheer de automatisering en geef gestructureerde informatie terug. Gebruik AL
                     trigger: { type: "string", description: "Waardoor start de automatisering?" },
                     systemen: {
                       type: "array",
-                      items: { type: "string", enum: ["HubSpot", "Zapier", "Backend", "E-mail", "API"] },
+                      items: { type: "string", enum: ["HubSpot", "Zapier", "Backend", "E-mail", "API", "Typeform", "SharePoint", "WeFact", "Docufy", "Google Sheets", "Slack", "Gmail"] },
                     },
                     stappen: {
                       type: "array",
