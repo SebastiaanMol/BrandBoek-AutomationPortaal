@@ -8,8 +8,9 @@ import { VerificatieBadge } from "@/components/VerificatieBadge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, AlertTriangle, XCircle, Pencil, SkipForward, Keyboard } from "lucide-react";
+import { Loader2, Check, AlertTriangle, XCircle, Pencil, SkipForward, Keyboard, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 
@@ -19,7 +20,6 @@ function sortForVerification(items: Automatisering[]): Automatisering[] {
     const statusB = getVerificatieStatus(b);
     const order = { nooit: 0, verouderd: 1, geverifieerd: 2 };
     if (order[statusA] !== order[statusB]) return order[statusA] - order[statusB];
-    // Within same group, oldest verification first
     const dateA = a.laatstGeverifieerd ? new Date(a.laatstGeverifieerd).getTime() : 0;
     const dateB = b.laatstGeverifieerd ? new Date(b.laatstGeverifieerd).getTime() : 0;
     return dateA - dateB;
@@ -37,6 +37,8 @@ export default function Verificatie() {
   const [notitie, setNotitie] = useState("");
   const [showNotitie, setShowNotitie] = useState<"twijfel" | "verouderd" | null>(null);
   const [direction, setDirection] = useState(1);
+  const [history, setHistory] = useState<string[]>([]);
+  const [tab, setTab] = useState<string>("verificatie");
 
   const all = data || [];
   const sorted = sortForVerification(all);
@@ -44,7 +46,8 @@ export default function Verificatie() {
   const totalCount = all.length;
   const progress = totalCount > 0 ? (verifiedCount / totalCount) * 100 : 0;
 
-  // Filter out skipped for current queue
+  const inReviewItems = all.filter((a) => a.status === "In review");
+
   const queue = sorted.filter((a) => !skipped.has(a.id));
   const current = queue[currentIndex] || null;
   const allDone = queue.length === 0 || currentIndex >= queue.length;
@@ -53,10 +56,30 @@ export default function Verificatie() {
 
   const goNext = useCallback(() => {
     setDirection(1);
+    if (current) setHistory((h) => [...h, current.id]);
     setCurrentIndex((i) => Math.min(i + 1, queue.length));
     setShowNotitie(null);
     setNotitie("");
-  }, [queue.length]);
+  }, [queue.length, current]);
+
+  const goPrev = useCallback(() => {
+    if (history.length === 0) return;
+    const prevId = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setDirection(-1);
+    const idx = queue.findIndex((a) => a.id === prevId);
+    if (idx >= 0) {
+      setCurrentIndex(idx);
+    } else {
+      // Item might have moved in sorted order after verification, find in sorted
+      const sortedIdx = sorted.findIndex((a) => a.id === prevId);
+      if (sortedIdx >= 0) {
+        setCurrentIndex(Math.max(0, currentIndex - 1));
+      }
+    }
+    setShowNotitie(null);
+    setNotitie("");
+  }, [history, queue, sorted, currentIndex]);
 
   const handleVerified = useCallback(async () => {
     if (!current) return;
@@ -108,7 +131,7 @@ export default function Verificatie() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    if (!current || showNotitie) return;
+    if (tab !== "verificatie" || !current || showNotitie) return;
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
       if (e.key === "ArrowRight") handleVerified();
@@ -118,7 +141,7 @@ export default function Verificatie() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [current, showNotitie, handleVerified, handleVerouderd, handleTwijfel, handleSkip]);
+  }, [tab, current, showNotitie, handleVerified, handleVerouderd, handleTwijfel, handleSkip]);
 
   // Confetti when all done
   useEffect(() => {
@@ -151,144 +174,205 @@ export default function Verificatie() {
         <Progress value={progress} className="h-2.5" />
       </div>
 
-      {/* Card */}
-      <AnimatePresence mode="wait">
-        {allDone ? (
-          <motion.div
-            key="done"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-card border border-border rounded-[var(--radius-outer)] p-12 text-center space-y-4"
-          >
-            {verifiedCount === totalCount ? (
-              <>
-                <p className="text-4xl">🎉</p>
-                <h2 className="text-xl font-semibold">Alles geverifieerd!</h2>
-                <p className="text-muted-foreground text-sm">
-                  Alle {totalCount} automatiseringen zijn up-to-date.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-4xl">✅</p>
-                <h2 className="text-xl font-semibold">Wachtrij doorlopen</h2>
-                <p className="text-muted-foreground text-sm">
-                  {skipped.size > 0 && `${skipped.size} overgeslagen. `}
-                  Ga naar Alle Automatiseringen voor het overzicht.
-                </p>
-              </>
+      {/* Tabs */}
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="verificatie">Verificatie</TabsTrigger>
+          <TabsTrigger value="in-review" className="gap-1.5">
+            <Eye className="h-3.5 w-3.5" />
+            In review
+            {inReviewItems.length > 0 && (
+              <span className="ml-1 bg-[hsl(var(--status-review))] text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {inReviewItems.length}
+              </span>
             )}
-          </motion.div>
-        ) : current ? (
-          <motion.div
-            key={current.id}
-            initial={{ opacity: 0, x: direction * 60 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -direction * 60 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden"
-          >
-            {/* Header */}
-            <div className="p-5 border-b border-border flex items-center gap-3 flex-wrap">
-              <span className="font-mono text-xs text-muted-foreground">{current.id}</span>
-              <h2 className="font-semibold text-lg">{current.naam}</h2>
-              <CategorieBadge categorie={current.categorie} />
-              <StatusBadge status={current.status} />
-              <VerificatieBadge item={current} />
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="verificatie" className="space-y-4 mt-4">
+          {/* Back button */}
+          {history.length > 0 && !allDone && (
+            <Button variant="ghost" size="sm" onClick={goPrev} className="text-muted-foreground">
+              <ChevronLeft className="h-4 w-4 mr-1" /> Vorige
+            </Button>
+          )}
+
+          {/* Card */}
+          <AnimatePresence mode="wait">
+            {allDone ? (
+              <motion.div
+                key="done"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-card border border-border rounded-[var(--radius-outer)] p-12 text-center space-y-4"
+              >
+                {verifiedCount === totalCount ? (
+                  <>
+                    <p className="text-4xl">🎉</p>
+                    <h2 className="text-xl font-semibold">Alles geverifieerd!</h2>
+                    <p className="text-muted-foreground text-sm">
+                      Alle {totalCount} automatiseringen zijn up-to-date.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-4xl">✅</p>
+                    <h2 className="text-xl font-semibold">Wachtrij doorlopen</h2>
+                    <p className="text-muted-foreground text-sm">
+                      {skipped.size > 0 && `${skipped.size} overgeslagen. `}
+                      Bekijk het "In review" tabblad voor items die aandacht nodig hebben.
+                    </p>
+                  </>
+                )}
+              </motion.div>
+            ) : current ? (
+              <motion.div
+                key={current.id}
+                initial={{ opacity: 0, x: direction * 60 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -direction * 60 }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden"
+              >
+                {/* Header */}
+                <div className="p-5 border-b border-border flex items-center gap-3 flex-wrap">
+                  <span className="font-mono text-xs text-muted-foreground">{current.id}</span>
+                  <h2 className="font-semibold text-lg">{current.naam}</h2>
+                  <CategorieBadge categorie={current.categorie} />
+                  <StatusBadge status={current.status} />
+                  <VerificatieBadge item={current} />
+                </div>
+
+                {/* Body */}
+                <div className="p-5 space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <Field label="Trigger" value={current.trigger} />
+                    <Field label="Owner" value={current.owner} />
+                    <Field label="Afhankelijkheden" value={current.afhankelijkheden} />
+                    <Field label="Laatst geverifieerd" value={
+                      current.laatstGeverifieerd
+                        ? `${new Date(current.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${current.geverifieerdDoor}`
+                        : "Nooit"
+                    } />
+                  </div>
+
+                  <div>
+                    <p className="label-uppercase mb-1">Systemen</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {current.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="label-uppercase mb-1">Flow stappen</p>
+                    <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
+                      {current.stappen.map((s, i) => <li key={i}>{s}</li>)}
+                    </ol>
+                  </div>
+
+                  {/* Optional notitie */}
+                  <AnimatePresence>
+                    {showNotitie && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                      >
+                        <p className="label-uppercase mb-1">
+                          Notitie ({showNotitie === "twijfel" ? "twijfel" : "verouderd"})
+                        </p>
+                        <Textarea
+                          value={notitie}
+                          onChange={(e) => setNotitie(e.target.value)}
+                          placeholder="Optioneel: beschrijf wat er mis is..."
+                          rows={2}
+                          autoFocus
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Actions */}
+                <div className="p-5 border-t border-border grid grid-cols-2 md:grid-cols-5 gap-2">
+                  <Button
+                    onClick={handleVerified}
+                    disabled={verifieer.isPending}
+                    className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white"
+                  >
+                    <Check className="h-4 w-4 mr-1" /> Geverifieerd
+                  </Button>
+                  <Button
+                    onClick={handleTwijfel}
+                    disabled={verifieer.isPending}
+                    variant="outline"
+                    className="border-[hsl(var(--status-review))] text-[hsl(var(--status-review))] hover:bg-[hsl(var(--status-review)/0.1)]"
+                  >
+                    <AlertTriangle className="h-4 w-4 mr-1" /> Twijfel
+                  </Button>
+                  <Button
+                    onClick={handleVerouderd}
+                    disabled={verifieer.isPending}
+                    variant="outline"
+                    className="border-[hsl(var(--status-outdated))] text-[hsl(var(--status-outdated))] hover:bg-[hsl(var(--status-outdated)/0.1)]"
+                  >
+                    <XCircle className="h-4 w-4 mr-1" /> Verouderd
+                  </Button>
+                  <Button
+                    onClick={() => navigate(`/bewerk/${current.id}`)}
+                    variant="outline"
+                  >
+                    <Pencil className="h-4 w-4 mr-1" /> Bewerken
+                  </Button>
+                  <Button
+                    onClick={handleSkip}
+                    variant="ghost"
+                    className="text-muted-foreground"
+                  >
+                    <SkipForward className="h-4 w-4 mr-1" /> Skip
+                  </Button>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </TabsContent>
+
+        <TabsContent value="in-review" className="mt-4 space-y-3">
+          {inReviewItems.length === 0 ? (
+            <div className="bg-card border border-border rounded-[var(--radius-outer)] p-12 text-center space-y-2">
+              <p className="text-3xl">👍</p>
+              <h2 className="text-lg font-semibold">Geen openstaande twijfels</h2>
+              <p className="text-sm text-muted-foreground">Er zijn geen automatiseringen met de status "In review".</p>
             </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <Field label="Trigger" value={current.trigger} />
-                <Field label="Owner" value={current.owner} />
-                <Field label="Afhankelijkheden" value={current.afhankelijkheden} />
-                <Field label="Laatst geverifieerd" value={
-                  current.laatstGeverifieerd
-                    ? `${new Date(current.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${current.geverifieerdDoor}`
-                    : "Nooit"
-                } />
-              </div>
-
-              <div>
-                <p className="label-uppercase mb-1">Systemen</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {current.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+          ) : (
+            inReviewItems.map((a) => (
+              <div key={a.id} className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm p-4 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
+                    <span className="font-medium truncate">{a.naam}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CategorieBadge categorie={a.categorie} />
+                    {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+                    <span className="text-xs text-muted-foreground">
+                      Owner: {a.owner || "—"} · Geverifieerd door: {a.geverifieerdDoor || "—"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => navigate(`/bewerk/${a.id}`)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Bewerken
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => navigate(`/alle?open=${a.id}`)}>
+                    <ChevronRight className="h-3.5 w-3.5 mr-1" /> Bekijken
+                  </Button>
                 </div>
               </div>
-
-              <div>
-                <p className="label-uppercase mb-1">Flow stappen</p>
-                <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
-                  {current.stappen.map((s, i) => <li key={i}>{s}</li>)}
-                </ol>
-              </div>
-
-              {/* Optional notitie */}
-              <AnimatePresence>
-                {showNotitie && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                  >
-                    <p className="label-uppercase mb-1">
-                      Notitie ({showNotitie === "twijfel" ? "twijfel" : "verouderd"})
-                    </p>
-                    <Textarea
-                      value={notitie}
-                      onChange={(e) => setNotitie(e.target.value)}
-                      placeholder="Optioneel: beschrijf wat er mis is..."
-                      rows={2}
-                      autoFocus
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Actions */}
-            <div className="p-5 border-t border-border grid grid-cols-2 md:grid-cols-5 gap-2">
-              <Button
-                onClick={handleVerified}
-                disabled={verifieer.isPending}
-                className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white"
-              >
-                <Check className="h-4 w-4 mr-1" /> Geverifieerd
-              </Button>
-              <Button
-                onClick={handleTwijfel}
-                disabled={verifieer.isPending}
-                variant="outline"
-                className="border-[hsl(var(--status-review))] text-[hsl(var(--status-review))] hover:bg-[hsl(var(--status-review)/0.1)]"
-              >
-                <AlertTriangle className="h-4 w-4 mr-1" /> Twijfel
-              </Button>
-              <Button
-                onClick={handleVerouderd}
-                disabled={verifieer.isPending}
-                variant="outline"
-                className="border-[hsl(var(--status-outdated))] text-[hsl(var(--status-outdated))] hover:bg-[hsl(var(--status-outdated)/0.1)]"
-              >
-                <XCircle className="h-4 w-4 mr-1" /> Verouderd
-              </Button>
-              <Button
-                onClick={() => navigate(`/bewerk/${current.id}`)}
-                variant="outline"
-              >
-                <Pencil className="h-4 w-4 mr-1" /> Bewerken
-              </Button>
-              <Button
-                onClick={handleSkip}
-                variant="ghost"
-                className="text-muted-foreground"
-              >
-                <SkipForward className="h-4 w-4 mr-1" /> Skip
-              </Button>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+            ))
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
