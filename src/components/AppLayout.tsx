@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "@/lib/AuthContext";
 import {
   LayoutDashboard,
   PlusCircle,
