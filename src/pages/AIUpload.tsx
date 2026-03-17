@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import NieuweAutomatisering from "./NieuweAutomatisering";
 import { Automatisering, Categorie, Systeem, Status } from "@/lib/types";
 import { insertAutomatisering, generateNextId } from "@/lib/supabaseStorage";
-import { Upload, FileText, Loader2, FileSpreadsheet, ChevronDown, Check, Sparkles } from "lucide-react";
+import { Upload, FileText, Loader2, FileSpreadsheet, ChevronDown, Check } from "lucide-react";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -176,6 +176,7 @@ export default function AIUpload() {
   const [csvResults, setCsvResults] = useState<ParsedAutomation[]>([]);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+  const [skippedIds, setSkippedIds] = useState<Set<number>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- TEXT TAB ---
@@ -328,6 +329,7 @@ export default function AIUpload() {
       if (allAiResults.length > 0) {
         setCsvResults(allAiResults);
         setSavedIds(new Set());
+        setSkippedIds(new Set());
         setLoading(false);
         toast.success(`AI heeft ${allAiResults.length} automatisering(en) geanalyseerd`);
         return;
@@ -337,6 +339,7 @@ export default function AIUpload() {
       const fallbackResults = rows.map(mapRow);
       setCsvResults(fallbackResults);
       setSavedIds(new Set());
+      setSkippedIds(new Set());
       setLoading(false);
       toast.success(`${fallbackResults.length} automatisering(en) gevonden in JSON (lokaal)`);
     } catch (e) {
@@ -395,6 +398,7 @@ export default function AIUpload() {
         }));
         setCsvResults(aiResults);
         setSavedIds(new Set());
+        setSkippedIds(new Set());
         setLoading(false);
         toast.success(`AI heeft ${aiResults.length} automatisering(en) geanalyseerd`);
         return;
@@ -407,13 +411,27 @@ export default function AIUpload() {
     // Fallback to local
     setCsvResults(localResults);
     setSavedIds(new Set());
+    setSkippedIds(new Set());
     setLoading(false);
     toast.success(`${localResults.length} automatisering(en) gevonden in CSV (lokaal)`);
   };
 
-  const saveOne = async (idx: number) => {
+  type SaveOutcome = "saved" | "duplicate" | "error";
+
+  const isDuplicateError = (err: any) => {
+    const msg = String(err?.message || "").toLowerCase();
+    return (
+      err?.code === "23505" ||
+      msg.includes("duplicate key") ||
+      msg.includes("bestaat al") ||
+      msg.includes("naam_normalized")
+    );
+  };
+
+  const saveOne = async (idx: number, options?: { silent?: boolean }): Promise<SaveOutcome> => {
     const item = csvResults[idx];
-    if (!item) return;
+    if (!item) return "error";
+
     try {
       const id = await generateNextId();
       const full: Automatisering = {
@@ -433,25 +451,62 @@ export default function AIUpload() {
         fasen: [],
         createdAt: new Date().toISOString(),
       };
+
       await insertAutomatisering(full);
       setSavedIds((prev) => new Set(prev).add(idx));
-      toast.success(`"${full.naam}" opgeslagen als ${full.id}`);
+      setSkippedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(idx);
+        return next;
+      });
+
+      if (!options?.silent) {
+        toast.success(`"${full.naam}" opgeslagen als ${full.id}`);
+      }
+
+      return "saved";
     } catch (err: any) {
-      toast.error(err.message || "Opslaan mislukt");
+      if (isDuplicateError(err)) {
+        setSkippedIds((prev) => new Set(prev).add(idx));
+        if (!options?.silent) {
+          toast.info(`"${item.mapped.naam}" bestaat al en is overgeslagen`);
+        }
+        return "duplicate";
+      }
+
+      if (!options?.silent) {
+        toast.error(err.message || "Opslaan mislukt");
+      }
+      return "error";
     }
   };
 
   const saveAll = async () => {
-    const toSave = csvResults.map((_, idx) => idx).filter((idx) => !savedIds.has(idx));
+    const toSave = csvResults
+      .map((_, idx) => idx)
+      .filter((idx) => !savedIds.has(idx) && !skippedIds.has(idx));
+
     if (toSave.length === 0) {
-      toast.info("Alle items zijn al opgeslagen");
+      toast.info("Geen nieuwe items om op te slaan");
       return;
     }
-    toast.info(`${toSave.length} items opslaan...`);
+
+    let savedCount = 0;
+    let duplicateCount = 0;
+    let errorCount = 0;
+
+    toast.info(`${toSave.length} items verwerken...`);
+
     for (const idx of toSave) {
-      await saveOne(idx);
+      const outcome = await saveOne(idx, { silent: true });
+      if (outcome === "saved") savedCount += 1;
+      if (outcome === "duplicate") duplicateCount += 1;
+      if (outcome === "error") errorCount += 1;
     }
-    toast.success(`Klaar! ${toSave.length} automatisering(en) opgeslagen`);
+
+    if (savedCount > 0) toast.success(`${savedCount} automatisering(en) opgeslagen`);
+    if (duplicateCount > 0) toast.info(`${duplicateCount} duplicaat/duplicaten overgeslagen`);
+    if (errorCount > 0) toast.error(`${errorCount} item(s) konden niet worden opgeslagen`);
   };
 
   return (
@@ -526,13 +581,14 @@ export default function AIUpload() {
                 onClick={saveAll}
                 className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
               >
-                Alles opslaan ({csvResults.length - savedIds.size})
+                Alles opslaan ({csvResults.length - savedIds.size - skippedIds.size})
               </button>
               <button
-                onClick={() => {
-                  setCsvResults([]);
-                  setSavedIds(new Set());
-                }}
+                  onClick={() => {
+                    setCsvResults([]);
+                    setSavedIds(new Set());
+                    setSkippedIds(new Set());
+                  }}
                 className="text-sm text-muted-foreground hover:underline px-3 py-2"
               >
                 Opnieuw uploaden
@@ -543,11 +599,16 @@ export default function AIUpload() {
           {csvResults.map((result, idx) => {
             const isExpanded = expandedIdx === idx;
             const isSaved = savedIds.has(idx);
+            const isSkipped = skippedIds.has(idx);
             return (
               <div
                 key={idx}
                 className={`bg-card border rounded-[var(--radius-outer)] overflow-hidden transition-colors ${
-                  isSaved ? "border-primary/30 bg-primary/5" : "border-border"
+                  isSaved
+                    ? "border-primary/30 bg-primary/5"
+                    : isSkipped
+                      ? "border-border bg-secondary/40"
+                      : "border-border"
                 }`}
               >
                 <button
@@ -623,7 +684,7 @@ export default function AIUpload() {
                       </div>
                     </div>
 
-                    {!isSaved && (
+                    {!isSaved && !isSkipped && (
                       <button
                         onClick={() => saveOne(idx)}
                         className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
@@ -634,6 +695,11 @@ export default function AIUpload() {
                     {isSaved && (
                       <p className="text-sm text-primary font-medium flex items-center gap-1">
                         <Check className="h-4 w-4" /> Opgeslagen
+                      </p>
+                    )}
+                    {isSkipped && (
+                      <p className="text-sm text-muted-foreground font-medium">
+                        Bestaat al in portaal (overgeslagen)
                       </p>
                     )}
                   </div>
