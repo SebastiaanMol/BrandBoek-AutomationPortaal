@@ -187,21 +187,23 @@ function buildGraph(
   // Build edges
   const edges: Edge[] = visibleEdges.map((e, idx) => {
     const color = EDGE_TYPE_COLORS[e.type];
+    const isExplicit = e.type === "explicit";
     return {
       id: `edge-${idx}-${e.sourceId}-${e.targetId}`,
       source: e.sourceId,
       target: e.targetId,
-      label: e.label,
-      type: "default",
-      animated: e.type === "explicit",
+      label: isExplicit ? e.label : undefined,
+      type: "smoothstep",
+      animated: isExplicit,
       style: {
         stroke: color,
-        strokeWidth: e.type === "explicit" ? 2.5 : 1.5,
-        opacity: e.type === "explicit" ? 1 : 0.6,
+        strokeWidth: isExplicit ? 2 : 1,
+        opacity: isExplicit ? 0.9 : 0.35,
+        strokeDasharray: isExplicit ? undefined : "6 3",
       },
-      markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 12 },
-      labelStyle: { fontSize: 9, fontWeight: 500, fill: color },
-      labelBgStyle: { fill: "white", fillOpacity: 0.9, stroke: color, strokeWidth: 0.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 10 },
+      labelStyle: { fontSize: 9, fontWeight: 600, fill: "#374151" },
+      labelBgStyle: { fill: "white", fillOpacity: 0.95 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
       data: { edgeType: e.type, reason: e.label },
