@@ -484,7 +484,7 @@ export default function AIUpload() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {csvResults.length} automatisering(en) geëxtraheerd uit CSV
+              {csvResults.length} automatisering(en) geëxtraheerd
             </p>
             <div className="flex gap-2">
               <button
