@@ -9,6 +9,8 @@ export type Systeem = "HubSpot" | "Zapier" | "Typeform" | "SharePoint" | "WeFact
 
 export type Status = "Actief" | "Verouderd" | "In review" | "Uitgeschakeld";
 
+export type KlantFase = "Marketing" | "Sales" | "Onboarding" | "Boekhouding" | "Offboarding";
+
 export interface Koppeling {
   doelId: string;
   label: string;
@@ -28,6 +30,7 @@ export interface Automatisering {
   verbeterideeën: string;
   mermaidDiagram: string;
   koppelingen: Koppeling[];
+  fasen: KlantFase[];
   createdAt: string;
 }
 
@@ -42,3 +45,36 @@ export const CATEGORIEEN: Categorie[] = [
 export const SYSTEMEN: Systeem[] = ["HubSpot", "Zapier", "Typeform", "SharePoint", "WeFact", "Docufy", "Backend", "E-mail", "API", "Anders"];
 
 export const STATUSSEN: Status[] = ["Actief", "Verouderd", "In review", "Uitgeschakeld"];
+
+export const KLANT_FASEN: KlantFase[] = ["Marketing", "Sales", "Onboarding", "Boekhouding", "Offboarding"];
+
+// --- Computed scores ---
+
+export function berekenComplexiteit(a: Automatisering): number {
+  const stappenScore = Math.min((a.stappen?.length || 0) * 10, 40);
+  const systemenScore = Math.min((a.systemen?.length || 0) * 12, 36);
+  const afhankelijkhedenScore = a.afhankelijkheden?.trim() ? 15 : 0;
+  const koppelingenScore = Math.min((a.koppelingen?.length || 0) * 5, 15);
+  return Math.min(stappenScore + systemenScore + afhankelijkhedenScore + koppelingenScore, 100);
+}
+
+export function berekenImpact(a: Automatisering, alle: Automatisering[]): number {
+  // Count how many other automations depend on this one (direct + indirect)
+  const directDeps = alle.filter((other) =>
+    other.koppelingen?.some((k) => k.doelId === a.id)
+  ).length;
+
+  // Fasen coverage — more phases = more impact
+  const fasenScore = (a.fasen?.length || 0) * 12;
+
+  // Systems breadth
+  const systemenScore = (a.systemen?.length || 0) * 8;
+
+  // Direct dependencies
+  const depScore = directDeps * 20;
+
+  // Active = higher impact
+  const statusBonus = a.status === "Actief" ? 10 : 0;
+
+  return Math.min(fasenScore + systemenScore + depScore + statusBonus, 100);
+}
