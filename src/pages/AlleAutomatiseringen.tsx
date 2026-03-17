@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAutomatiseringen } from "@/lib/hooks";
 import { exportToCSV } from "@/lib/supabaseStorage";
 import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem } from "@/lib/types";
@@ -10,8 +11,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Download, Search as SearchIcon, Loader2 } from "lucide-react";
 
 export default function AlleAutomatiseringen() {
+  const [searchParams] = useSearchParams();
   const { data, isLoading } = useAutomatiseringen();
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(searchParams.get("open") || null);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<string>("alle");
   const [sysFilter, setSysFilter] = useState<string>("alle");
