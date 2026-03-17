@@ -12,6 +12,7 @@ import { ChevronDown, Download, Search as SearchIcon, Loader2, Pencil } from "lu
 
 export default function AlleAutomatiseringen() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { data, isLoading } = useAutomatiseringen();
   const [openId, setOpenId] = useState<string | null>(searchParams.get("open") || null);
   const [query, setQuery] = useState("");
