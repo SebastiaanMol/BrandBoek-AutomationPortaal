@@ -113,7 +113,7 @@ export default function AlleAutomatiseringen() {
             >
               <div className="flex items-center gap-3 min-w-0">
                 <span className="font-mono text-xs text-muted-foreground shrink-0">{a.id}</span>
-                <span className="font-medium truncate">{a.naam}</span>
+                <span className="font-medium truncate max-w-[260px]" title={a.naam}>{a.naam}</span>
                 <CategorieBadge categorie={a.categorie} />
                 <SystemBadge systeem={a.systemen[0] || "Anders"} />
                 <StatusBadge status={a.status} />
