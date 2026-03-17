@@ -458,7 +458,7 @@ function ChartCard({ title, data, colors }: { title: string; data: { name: strin
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(214 32% 91%)" />
           <XAxis dataKey="name" tick={{ fontSize: 11 }} />
           <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-          <Tooltip />
+          <RechartsTooltip />
           <Bar dataKey="count" radius={[4, 4, 0, 0]}>
             {data.map((_, i) => (
               <Cell key={i} fill={colors[i % colors.length]} />
