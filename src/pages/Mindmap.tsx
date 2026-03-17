@@ -319,7 +319,7 @@ function buildGraph(
     const width = baseWidth + Math.min(conns * 15, 60);
     const isHighlighted = highlightId === a.id;
     const isSearchMatch = searchQuery && a.naam.toLowerCase().includes(searchQuery.toLowerCase());
-    const isDimmed = highlightSystem !== null && !a.systemen.includes(highlightSystem as Systeem);
+    const isDimmed = highlightSystem !== null && !getOriginSystems(a).includes(highlightSystem);
 
     return {
       id: a.id,
