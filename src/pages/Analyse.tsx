@@ -79,25 +79,16 @@ export default function Analyse() {
   const smartEdges = useMemo(() => computeSmartEdges(data), [data]);
   const [expandedFailure, setExpandedFailure] = useState<string | null>(null);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  const categorieData = useMemo(() => groupBy(data, "categorie"), [data]);
+  const statusData = useMemo(() => groupBy(data, "status"), [data]);
+  const ownerData = useMemo(() => groupBy(data, "owner"), [data]);
 
-  const categorieData = groupBy(data, "categorie");
-  const statusData = groupBy(data, "status");
-  const ownerData = groupBy(data, "owner");
-
-  const systeemData = (() => {
+  const systeemData = useMemo(() => {
     const counts: Record<string, number> = {};
     data.forEach((a) => a.systemen.forEach((s) => { counts[s] = (counts[s] || 0) + 1; }));
     return Object.entries(counts).map(([name, count]) => ({ name, count }));
-  })();
+  }, [data]);
 
-  // Scores
   const scoredData = useMemo(() =>
     data.map((a) => ({
       ...a,
@@ -108,7 +99,6 @@ export default function Analyse() {
     [data]
   );
 
-  // Timeline data per fase
   const faseAutoMap = useMemo(() => {
     const map: Record<KlantFase, Automatisering[]> = {
       Marketing: [], Sales: [], Onboarding: [], Boekhouding: [], Offboarding: [],
@@ -117,6 +107,7 @@ export default function Analyse() {
       (a.fasen || []).forEach((f) => {
         if (map[f]) map[f].push(a);
       });
+    });
     });
     return map;
   }, [data]);
