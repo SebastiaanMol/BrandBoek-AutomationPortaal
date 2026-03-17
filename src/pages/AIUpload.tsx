@@ -239,6 +239,11 @@ export default function AIUpload() {
   const processJSON = async (content: string) => {
     try {
       let parsed = JSON.parse(content);
+      
+      // Detect Zapier export format: { metadata: {...}, zaps: [...] }
+      if (!Array.isArray(parsed) && parsed.zaps && Array.isArray(parsed.zaps)) {
+        parsed = parsed.zaps;
+      }
       // Support both array and single object
       if (!Array.isArray(parsed)) parsed = [parsed];
       if (parsed.length === 0) {
@@ -247,15 +252,32 @@ export default function AIUpload() {
         return;
       }
       // Flatten nested objects to string values for uniform processing
-      const rows: Record<string, string>[] = parsed.map((item: any) => {
-        const row: Record<string, string> = {};
-        for (const [key, val] of Object.entries(item)) {
-          if (Array.isArray(val)) row[key] = val.join("; ");
-          else if (typeof val === "object" && val !== null) row[key] = JSON.stringify(val);
-          else row[key] = String(val ?? "");
+      const flattenObj = (obj: any, prefix = ""): Record<string, string> => {
+        const result: Record<string, string> = {};
+        for (const [key, val] of Object.entries(obj)) {
+          const fullKey = prefix ? `${prefix}.${key}` : key;
+          if (Array.isArray(val)) {
+            // For arrays of primitives, join them
+            if (val.length > 0 && typeof val[0] !== "object") {
+              result[fullKey] = val.join("; ");
+            } else if (val.length > 0) {
+              // For arrays of objects (like steps), extract names/descriptions
+              result[fullKey] = val.map((v: any) => 
+                v?.name || v?.action_type || v?.app || JSON.stringify(v)
+              ).join("; ");
+            }
+          } else if (typeof val === "object" && val !== null) {
+            // Flatten one level deep for important nested objects
+            const nested = flattenObj(val, fullKey);
+            Object.assign(result, nested);
+          } else {
+            result[fullKey] = String(val ?? "");
+          }
         }
-        return row;
-      });
+        return result;
+      };
+      
+      const rows: Record<string, string>[] = parsed.map((item: any) => flattenObj(item));
       // Use same AI flow as CSV
       const localResults = rows.map(mapRow);
       try {
