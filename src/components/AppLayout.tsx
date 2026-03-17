@@ -10,6 +10,7 @@ import {
   X,
   Map,
   LogOut,
+  ClipboardCheck,
 } from "lucide-react";
 import { useState } from "react";
 
