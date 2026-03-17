@@ -108,11 +108,18 @@ export default function Analyse() {
         if (map[f]) map[f].push(a);
       });
     });
-    });
     return map;
   }, [data]);
 
   const COLORS = ["#0f172a", "#0066cc", "#ff7a59", "#ff4a00", "#10b981", "#64748b"];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10">
