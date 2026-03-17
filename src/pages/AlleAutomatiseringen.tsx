@@ -125,6 +125,14 @@ export default function AlleAutomatiseringen() {
                   className="overflow-hidden"
                 >
                   <div className="px-5 pb-5 pt-2 border-t border-border space-y-4">
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => navigate(`/bewerk/${a.id}`)}
+                        className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                      >
+                        <Pencil className="h-3.5 w-3.5" /> Bewerken
+                      </button>
+                    </div>
                     <div className="grid md:grid-cols-2 gap-4">
                       <Detail label="Doel" value={a.doel} />
                       <Detail label="Trigger" value={a.trigger} />
