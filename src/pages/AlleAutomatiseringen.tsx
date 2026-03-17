@@ -16,6 +16,7 @@ export default function AlleAutomatiseringen() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { data, isLoading } = useAutomatiseringen();
+  const deleteMutation = useDeleteAutomatisering();
   const [openId, setOpenId] = useState<string | null>(searchParams.get("open") || null);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<string>("alle");
