@@ -374,7 +374,7 @@ export default function AIUpload() {
           >
             <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-foreground">Klik om een CSV-bestand te uploaden</p>
-            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot workflow exports en andere CSV-formaten</p>
+            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot workflow exports, Zapier Zap exports en andere CSV-formaten</p>
             <input
               ref={fileInputRef}
               type="file"
