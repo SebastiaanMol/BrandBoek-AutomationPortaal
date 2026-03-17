@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Controls,
@@ -14,42 +14,52 @@ import {
   Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import Dagre from "@dagrejs/dagre";
 import { getAutomatiseringen } from "@/lib/storage";
-import { Automatisering, Systeem, Categorie } from "@/lib/types";
+import { Automatisering, Systeem, SYSTEMEN } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
-import { X, RotateCcw } from "lucide-react";
+import { computeSmartEdges, SmartEdge, EdgeType, countConnections } from "@/lib/smartEdges";
+import { X, RotateCcw, Search, Eye, EyeOff, Link, Zap, Users, Share2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { useNavigate } from "react-router-dom";
 
+// --- Colors ---
 const SYSTEM_COLORS: Record<string, string> = {
-  HubSpot: "hsl(12, 100%, 67%)",
-  Zapier: "hsl(17, 100%, 50%)",
-  Backend: "hsl(210, 100%, 40%)",
-  "E-mail": "hsl(160, 84%, 39%)",
-  API: "hsl(215, 16%, 47%)",
+  HubSpot: "#ff7a59",
+  Zapier: "#ff4a00",
+  Backend: "#0066cc",
+  "E-mail": "#10b981",
+  API: "#64748b",
 };
 
 const SYSTEM_BG: Record<string, string> = {
-  HubSpot: "hsl(12, 100%, 67%, 0.08)",
-  Zapier: "hsl(17, 100%, 50%, 0.08)",
-  Backend: "hsl(210, 100%, 40%, 0.08)",
-  "E-mail": "hsl(160, 84%, 39%, 0.08)",
-  API: "hsl(215, 16%, 47%, 0.08)",
+  HubSpot: "rgba(255,122,89,0.10)",
+  Zapier: "rgba(255,74,0,0.10)",
+  Backend: "rgba(0,102,204,0.10)",
+  "E-mail": "rgba(16,185,129,0.10)",
+  API: "rgba(100,116,139,0.10)",
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  "HubSpot Workflow": "hsl(12, 100%, 67%, 0.15)",
-  "Zapier Zap": "hsl(17, 100%, 50%, 0.15)",
-  "Backend Script": "hsl(210, 100%, 40%, 0.15)",
-  "HubSpot + Zapier": "hsl(30, 100%, 55%, 0.15)",
-  "Anders": "hsl(215, 16%, 47%, 0.15)",
+const EDGE_TYPE_COLORS: Record<EdgeType, string> = {
+  explicit: "#6366f1",
+  shared_system: "#f59e0b",
+  trigger_match: "#ec4899",
+  shared_owner: "#14b8a6",
 };
 
-const CATEGORY_BORDER: Record<string, string> = {
-  "HubSpot Workflow": "hsl(12, 100%, 67%, 0.35)",
-  "Zapier Zap": "hsl(17, 100%, 50%, 0.35)",
-  "Backend Script": "hsl(210, 100%, 40%, 0.35)",
-  "HubSpot + Zapier": "hsl(30, 100%, 55%, 0.35)",
-  "Anders": "hsl(215, 16%, 47%, 0.35)",
+const EDGE_TYPE_LABELS: Record<EdgeType, string> = {
+  explicit: "Expliciet",
+  shared_system: "Gedeeld systeem",
+  trigger_match: "Trigger match",
+  shared_owner: "Zelfde owner",
+};
+
+const EDGE_TYPE_ICONS: Record<EdgeType, typeof Link> = {
+  explicit: Link,
+  shared_system: Share2,
+  trigger_match: Zap,
+  shared_owner: Users,
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -57,7 +67,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   "Zapier Zap": "⚡",
   "Backend Script": "💻",
   "HubSpot + Zapier": "🔗",
-  "Anders": "📦",
+  Anders: "📦",
 };
 
 const STATUS_ICON: Record<string, string> = {
@@ -74,322 +84,445 @@ function getPrimarySystem(auto: Automatisering): string {
   return auto.systemen[0] || "API";
 }
 
-// Hub positions for layout
-const HUB_POSITIONS: Record<string, { x: number; y: number }> = {
-  HubSpot: { x: 0, y: 0 },
-  Zapier: { x: 800, y: 0 },
-  Backend: { x: 400, y: 600 },
-};
+// --- Dagre layout ---
+function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
+  const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "LR", nodesep: 80, ranksep: 160, edgesep: 40 });
 
-function buildGraph(
-  automatiseringen: Automatisering[],
-  filter: string | null
-): { nodes: Node[]; edges: Edge[] } {
-  const filtered = filter
-    ? automatiseringen.filter((a) => a.systemen.includes(filter as Systeem))
-    : automatiseringen;
-
-  // Group by primary system, then by categorie
-  const groups: Record<string, Record<string, Automatisering[]>> = {};
-  filtered.forEach((a) => {
-    const sys = getPrimarySystem(a);
-    if (!groups[sys]) groups[sys] = {};
-    if (!groups[sys][a.categorie]) groups[sys][a.categorie] = [];
-    groups[sys][a.categorie].push(a);
+  nodes.forEach((n) => {
+    g.setNode(n.id, { width: n.style?.width as number || 200, height: n.style?.height as number || 70 });
+  });
+  edges.forEach((e) => {
+    g.setEdge(e.source, e.target);
   });
 
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
+  Dagre.layout(g);
 
-  // Create hub nodes
-  const activeHubs = new Set(filtered.map(getPrimarySystem));
-  activeHubs.forEach((sys) => {
-    const pos = HUB_POSITIONS[sys] || { x: 1200, y: 300 };
-    const totalInHub = Object.values(groups[sys] || {}).reduce((s, arr) => s + arr.length, 0);
-    nodes.push({
-      id: `hub-${sys}`,
+  return nodes.map((n) => {
+    const pos = g.node(n.id);
+    return { ...n, position: { x: pos.x - ((n.style?.width as number || 200) / 2), y: pos.y - ((n.style?.height as number || 70) / 2) } };
+  });
+}
+
+// --- Build graph ---
+function buildGraph(
+  automatiseringen: Automatisering[],
+  smartEdges: SmartEdge[],
+  filters: { systems: Set<string>; owners: Set<string>; categories: Set<string>; edgeTypes: Set<EdgeType> },
+  searchQuery: string,
+  highlightId: string | null
+): { nodes: Node[]; edges: Edge[] } {
+  // Filter automations
+  let filtered = automatiseringen;
+  if (filters.systems.size > 0) {
+    filtered = filtered.filter((a) => a.systemen.some((s) => filters.systems.has(s)));
+  }
+  if (filters.owners.size > 0) {
+    filtered = filtered.filter((a) => filters.owners.has(a.owner));
+  }
+  if (filters.categories.size > 0) {
+    filtered = filtered.filter((a) => filters.categories.has(a.categorie));
+  }
+  const filteredIds = new Set(filtered.map((a) => a.id));
+
+  // Filter edges
+  const visibleEdges = smartEdges.filter(
+    (e) =>
+      filteredIds.has(e.sourceId) &&
+      filteredIds.has(e.targetId) &&
+      filters.edgeTypes.has(e.type)
+  );
+
+  // Build nodes
+  const nodes: Node[] = filtered.map((a) => {
+    const sys = getPrimarySystem(a);
+    const color = SYSTEM_COLORS[sys] || "#64748b";
+    const conns = countConnections(a.id, visibleEdges);
+    const baseSize = 180;
+    const sizeBoost = Math.min(conns * 8, 60);
+    const width = baseSize + sizeBoost;
+    const isHighlighted = highlightId === a.id;
+    const isSearchMatch = searchQuery && a.naam.toLowerCase().includes(searchQuery.toLowerCase());
+
+    return {
+      id: a.id,
       type: "default",
-      position: pos,
+      position: { x: 0, y: 0 }, // Will be set by dagre
       data: {
         label: (
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-lg font-bold">{sys}</span>
-            <span className="text-xs opacity-70">({totalInHub})</span>
+          <div className="text-left leading-tight">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-mono opacity-60">{a.id}</span>
+              <span>{CATEGORY_ICONS[a.categorie] || "📦"}</span>
+              <span>{STATUS_ICON[a.status] || ""}</span>
+            </div>
+            <div className="font-semibold text-xs mt-1 leading-snug" style={{ maxWidth: width - 32 }}>
+              {a.naam}
+            </div>
           </div>
         ),
       },
       style: {
-        background: SYSTEM_COLORS[sys],
-        color: "#fff",
-        borderRadius: "50%",
-        width: 140,
-        height: 140,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        border: `3px solid ${SYSTEM_COLORS[sys]}`,
-        fontSize: "14px",
-        fontWeight: 700,
-        boxShadow: `0 4px 24px ${SYSTEM_COLORS[sys]}40`,
-        zIndex: 10,
+        background: SYSTEM_BG[sys],
+        border: `2px solid ${color}`,
+        borderRadius: "10px",
+        padding: "10px 14px",
+        width,
+        cursor: "pointer",
+        fontSize: "12px",
+        boxShadow: isHighlighted || isSearchMatch
+          ? `0 0 0 3px ${color}, 0 0 20px ${color}60`
+          : `0 2px 8px rgba(0,0,0,0.06)`,
+        transition: "box-shadow 0.3s ease",
+        ...(isSearchMatch && searchQuery ? { animation: "pulse 1.5s infinite" } : {}),
       },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-    });
+    };
   });
 
-  // Place subcategory groups as clusters around each hub
-  Object.entries(groups).forEach(([sys, catGroups]) => {
-    const hub = HUB_POSITIONS[sys] || { x: 1200, y: 300 };
-    const categories = Object.keys(catGroups);
-    const clusterRadius = 320;
-
-    categories.forEach((cat, catIdx) => {
-      const autos = catGroups[cat];
-      const catAngle = (2 * Math.PI * catIdx) / categories.length - Math.PI / 2;
-      const clusterCenterX = hub.x + clusterRadius * Math.cos(catAngle) + 70;
-      const clusterCenterY = hub.y + clusterRadius * Math.sin(catAngle) + 70;
-
-      // Subcategory group node (background container)
-      const padding = 30;
-      const nodeWidth = 180;
-      const nodeHeight = 52;
-      const cols = Math.min(autos.length, 2);
-      const rows = Math.ceil(autos.length / cols);
-      const groupW = cols * (nodeWidth + 16) + padding * 2;
-      const groupH = rows * (nodeHeight + 12) + padding * 2 + 32; // 32 for header
-
-      const groupId = `group-${sys}-${cat}`;
-      nodes.push({
-        id: groupId,
-        type: "default",
-        position: {
-          x: clusterCenterX - groupW / 2,
-          y: clusterCenterY - groupH / 2,
-        },
-        data: {
-          label: (
-            <div style={{ width: groupW - 24, height: groupH - 16 }} className="relative">
-              <div className="absolute top-0 left-0 right-0 flex items-center gap-1.5 pb-1">
-                <span>{CATEGORY_ICONS[cat] || "📦"}</span>
-                <span className="text-xs font-bold opacity-80">{cat}</span>
-                <span className="text-[10px] opacity-50">({autos.length})</span>
-              </div>
-            </div>
-          ),
-        },
-        style: {
-          background: CATEGORY_COLORS[cat] || "hsl(0,0%,95%,0.5)",
-          border: `1.5px dashed ${CATEGORY_BORDER[cat] || "hsl(0,0%,70%,0.4)"}`,
-          borderRadius: "12px",
-          width: groupW,
-          height: groupH,
-          padding: "8px 12px",
-          zIndex: 0,
-          pointerEvents: "none" as const,
-        },
-        selectable: false,
-        draggable: true,
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-      });
-
-      // Edge from hub to subcategory group
-      edges.push({
-        id: `hub-${sys}-${groupId}`,
-        source: `hub-${sys}`,
-        target: groupId,
-        type: "default",
-        style: { stroke: SYSTEM_COLORS[sys], strokeWidth: 1.5, opacity: 0.25 },
-      });
-
-      // Place automation nodes inside the group
-      autos.forEach((a, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = clusterCenterX - groupW / 2 + padding + col * (nodeWidth + 16);
-        const y = clusterCenterY - groupH / 2 + padding + 28 + row * (nodeHeight + 12);
-        const color = SYSTEM_COLORS[sys] || "#888";
-
-        nodes.push({
-          id: a.id,
-          type: "default",
-          position: { x, y },
-          data: {
-            label: (
-              <div className="text-left leading-tight">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-mono opacity-70">{a.id}</span>
-                  <span>{STATUS_ICON[a.status] || ""}</span>
-                </div>
-                <div className="font-semibold text-xs mt-0.5 truncate max-w-[140px]">{a.naam}</div>
-              </div>
-            ),
-          },
-          style: {
-            background: SYSTEM_BG[sys] || "#f5f5f5",
-            border: `2px solid ${color}`,
-            borderRadius: "var(--radius-inner, 8px)",
-            padding: "8px 12px",
-            width: nodeWidth,
-            cursor: "pointer",
-            fontSize: "12px",
-            zIndex: 5,
-          },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-        });
-      });
-    });
+  // Build edges
+  const edges: Edge[] = visibleEdges.map((e, idx) => {
+    const color = EDGE_TYPE_COLORS[e.type];
+    return {
+      id: `edge-${idx}-${e.sourceId}-${e.targetId}`,
+      source: e.sourceId,
+      target: e.targetId,
+      label: e.label,
+      type: "default",
+      animated: e.type === "explicit",
+      style: {
+        stroke: color,
+        strokeWidth: e.type === "explicit" ? 2.5 : 1.5,
+        opacity: e.type === "explicit" ? 1 : 0.6,
+      },
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 12 },
+      labelStyle: { fontSize: 9, fontWeight: 500, fill: color },
+      labelBgStyle: { fill: "white", fillOpacity: 0.9, stroke: color, strokeWidth: 0.5 },
+      labelBgPadding: [6, 3] as [number, number],
+      labelBgBorderRadius: 4,
+      data: { edgeType: e.type, reason: e.label },
+    };
   });
 
-  // Koppeling edges between automations
-  filtered.forEach((a) => {
-    (a.koppelingen || []).forEach((k) => {
-      const target = filtered.find((t) => t.id === k.doelId);
-      if (!target) return;
-      const sys = getPrimarySystem(a);
-      const color = SYSTEM_COLORS[sys] || "#888";
-      edges.push({
-        id: `link-${a.id}-${k.doelId}`,
-        source: a.id,
-        target: k.doelId,
-        label: k.label || undefined,
-        type: "default",
-        animated: true,
-        style: { stroke: color, strokeWidth: 2 },
-        markerEnd: { type: MarkerType.ArrowClosed, color },
-        labelStyle: { fontSize: 10, fontWeight: 500, fill: "hsl(222, 47%, 11%)" },
-        labelBgStyle: { fill: "hsl(0, 0%, 100%)", fillOpacity: 0.85 },
-        labelBgPadding: [6, 3] as [number, number],
-        labelBgBorderRadius: 4,
-      });
-    });
-  });
-
-  return { nodes, edges };
+  // Apply dagre layout
+  const layoutNodes = applyDagreLayout(nodes, edges);
+  return { nodes: layoutNodes, edges };
 }
 
+// --- Component ---
 export default function Mindmap() {
+  const navigate = useNavigate();
   const automatiseringen = useMemo(() => getAutomatiseringen(), []);
-  const [filter, setFilter] = useState<string | null>(null);
+  const allSmartEdges = useMemo(() => computeSmartEdges(automatiseringen), [automatiseringen]);
+
+  // Unique owners and categories
+  const allOwners = useMemo(() => [...new Set(automatiseringen.map((a) => a.owner).filter(Boolean))], [automatiseringen]);
+  const allCategories = useMemo(() => [...new Set(automatiseringen.map((a) => a.categorie))], [automatiseringen]);
+
+  const [systemFilter, setSystemFilter] = useState<Set<string>>(new Set());
+  const [ownerFilter, setOwnerFilter] = useState<Set<string>>(new Set());
+  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
+  const [edgeTypeFilter, setEdgeTypeFilter] = useState<Set<EdgeType>>(
+    new Set(["explicit", "shared_system", "trigger_match", "shared_owner"])
+  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [selectedAuto, setSelectedAuto] = useState<Automatisering | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<{ type: EdgeType; reason: string } | null>(null);
+  const [showFilters, setShowFilters] = useState(true);
+
+  const filters = useMemo(
+    () => ({ systems: systemFilter, owners: ownerFilter, categories: categoryFilter, edgeTypes: edgeTypeFilter }),
+    [systemFilter, ownerFilter, categoryFilter, edgeTypeFilter]
+  );
 
   const { nodes: initNodes, edges: initEdges } = useMemo(
-    () => buildGraph(automatiseringen, filter),
-    [automatiseringen, filter]
+    () => buildGraph(automatiseringen, allSmartEdges, filters, searchQuery, highlightId),
+    [automatiseringen, allSmartEdges, filters, searchQuery, highlightId]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
 
   useEffect(() => {
-    const { nodes: n, edges: e } = buildGraph(automatiseringen, filter);
+    const { nodes: n, edges: e } = buildGraph(automatiseringen, allSmartEdges, filters, searchQuery, highlightId);
     setNodes(n);
     setEdges(e);
-  }, [filter, automatiseringen, setNodes, setEdges]);
+  }, [filters, automatiseringen, allSmartEdges, searchQuery, highlightId, setNodes, setEdges]);
 
   const resetLayout = useCallback(() => {
-    const { nodes: n, edges: e } = buildGraph(automatiseringen, filter);
+    const { nodes: n, edges: e } = buildGraph(automatiseringen, allSmartEdges, filters, searchQuery, highlightId);
     setNodes(n);
     setEdges(e);
-  }, [automatiseringen, filter, setNodes, setEdges]);
+  }, [automatiseringen, allSmartEdges, filters, searchQuery, highlightId, setNodes, setEdges]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      if (node.id.startsWith("hub-") || node.id.startsWith("group-")) return;
       const auto = automatiseringen.find((a) => a.id === node.id);
-      if (auto) setSelectedAuto(auto);
+      if (auto) {
+        setSelectedAuto(auto);
+        setSelectedEdge(null);
+      }
     },
     [automatiseringen]
   );
 
-  const filters: string[] = ["HubSpot", "Zapier", "Backend"];
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    const data = edge.data as { edgeType: EdgeType; reason: string } | undefined;
+    if (data) {
+      setSelectedEdge({ type: data.edgeType, reason: data.reason });
+      setSelectedAuto(null);
+    }
+  }, []);
+
+  const toggleSet = <T,>(set: Set<T>, value: T, setter: React.Dispatch<React.SetStateAction<Set<T>>>) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  };
+
+  // Connections for selected auto
+  const selectedAutoEdges = useMemo(() => {
+    if (!selectedAuto) return [];
+    return allSmartEdges.filter(
+      (e) =>
+        (e.sourceId === selectedAuto.id || e.targetId === selectedAuto.id) &&
+        edgeTypeFilter.has(e.type)
+    );
+  }, [selectedAuto, allSmartEdges, edgeTypeFilter]);
+
+  // Search highlight
+  useEffect(() => {
+    if (searchQuery.length >= 2) {
+      const match = automatiseringen.find((a) => a.naam.toLowerCase().includes(searchQuery.toLowerCase()));
+      setHighlightId(match?.id || null);
+    } else {
+      setHighlightId(null);
+    }
+  }, [searchQuery, automatiseringen]);
+
+  // Edge type stats
+  const edgeStats = useMemo(() => {
+    const stats: Record<EdgeType, number> = { explicit: 0, shared_system: 0, trigger_match: 0, shared_owner: 0 };
+    allSmartEdges.forEach((e) => stats[e.type]++);
+    return stats;
+  }, [allSmartEdges]);
 
   return (
-    <div className="h-[calc(100vh-7rem)] w-full relative">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={onNodeClick}
-        fitView
-        fitViewOptions={{ padding: 0.3 }}
-        minZoom={0.2}
-        maxZoom={2}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(214, 32%, 91%)" />
-        <Controls position="bottom-left" />
-        <MiniMap
-          position="bottom-right"
-          nodeStrokeWidth={3}
-          pannable
-          zoomable
-          style={{ borderRadius: "var(--radius-inner, 8px)", border: "1px solid hsl(214, 32%, 91%)" }}
-        />
+    <div className="h-[calc(100vh-7rem)] w-full relative flex">
+      {/* Filter sidebar */}
+      {showFilters && (
+        <div className="w-64 shrink-0 bg-card border-r border-border overflow-y-auto p-4 space-y-5">
+          {/* Search */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Zoeken</span>
+            </div>
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Zoek automatisering..."
+              className="h-8 text-xs"
+            />
+          </div>
 
-        {/* Filter panel */}
-        <Panel position="top-left">
-          <div className="flex gap-2 bg-card/90 backdrop-blur border border-border rounded-[var(--radius-inner)] p-2 shadow-sm">
-            <button
-              onClick={() => setFilter(null)}
-              className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
-                !filter ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
-              }`}
-            >
-              Alles
-            </button>
-            {filters.map((f) => (
+          {/* Edge type toggles */}
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Koppelingen</span>
+            <div className="space-y-1.5 mt-2">
+              {(Object.keys(EDGE_TYPE_COLORS) as EdgeType[]).map((type) => {
+                const Icon = EDGE_TYPE_ICONS[type];
+                const active = edgeTypeFilter.has(type);
+                return (
+                  <button
+                    key={type}
+                    onClick={() => toggleSet(edgeTypeFilter, type, setEdgeTypeFilter)}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                      active ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/50"
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: EDGE_TYPE_COLORS[type], opacity: active ? 1 : 0.3 }} />
+                    <Icon className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{EDGE_TYPE_LABELS[type]}</span>
+                    <span className="ml-auto text-[10px] opacity-60">{edgeStats[type]}</span>
+                    {active ? <Eye className="h-3 w-3 shrink-0 opacity-50" /> : <EyeOff className="h-3 w-3 shrink-0 opacity-30" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* System filter */}
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Systemen</span>
+            <div className="space-y-1 mt-2">
+              {SYSTEMEN.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => toggleSet(systemFilter, s, setSystemFilter)}
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                    systemFilter.has(s) ? "font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/50"
+                  }`}
+                  style={systemFilter.has(s) ? { background: `${SYSTEM_COLORS[s]}18` } : undefined}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: SYSTEM_COLORS[s] }} />
+                  {s}
+                  <span className="ml-auto text-[10px] opacity-60">
+                    {automatiseringen.filter((a) => a.systemen.includes(s as Systeem)).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Category filter */}
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Categorieën</span>
+            <div className="space-y-1 mt-2">
+              {allCategories.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => toggleSet(categoryFilter, c, setCategoryFilter)}
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                    categoryFilter.has(c) ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/50"
+                  }`}
+                >
+                  <span>{CATEGORY_ICONS[c] || "📦"}</span>
+                  <span className="truncate">{c}</span>
+                  <span className="ml-auto text-[10px] opacity-60">
+                    {automatiseringen.filter((a) => a.categorie === c).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Owner filter */}
+          {allOwners.length > 0 && (
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Owners</span>
+              <div className="space-y-1 mt-2">
+                {allOwners.map((o) => (
+                  <button
+                    key={o}
+                    onClick={() => toggleSet(ownerFilter, o, setOwnerFilter)}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                      ownerFilter.has(o) ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-secondary/50"
+                    }`}
+                  >
+                    <Users className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{o}</span>
+                    <span className="ml-auto text-[10px] opacity-60">
+                      {automatiseringen.filter((a) => a.owner === o).length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Reset all */}
+          <button
+            onClick={() => {
+              setSystemFilter(new Set());
+              setOwnerFilter(new Set());
+              setCategoryFilter(new Set());
+              setEdgeTypeFilter(new Set(["explicit", "shared_system", "trigger_match", "shared_owner"]));
+              setSearchQuery("");
+            }}
+            className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 hover:underline"
+          >
+            Reset alle filters
+          </button>
+        </div>
+      )}
+
+      {/* Graph area */}
+      <div className="flex-1 relative">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          fitView
+          fitViewOptions={{ padding: 0.3 }}
+          minZoom={0.1}
+          maxZoom={3}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(214, 32%, 91%)" />
+          <Controls position="bottom-left" />
+          <MiniMap
+            position="bottom-right"
+            nodeStrokeWidth={3}
+            pannable
+            zoomable
+            style={{ borderRadius: "8px", border: "1px solid hsl(214, 32%, 91%)" }}
+          />
+
+          {/* Top bar */}
+          <Panel position="top-left">
+            <div className="flex gap-2 items-center">
               <button
-                key={f}
-                onClick={() => setFilter(filter === f ? null : f)}
-                className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors flex items-center gap-1.5 ${
-                  filter === f ? "text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
-                }`}
-                style={filter === f ? { background: SYSTEM_COLORS[f] } : undefined}
+                onClick={() => setShowFilters(!showFilters)}
+                className="bg-card/90 backdrop-blur border border-border rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors shadow-sm"
               >
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: SYSTEM_COLORS[f] }}
-                />
-                {f}
+                {showFilters ? "◀ Verberg filters" : "▶ Toon filters"}
               </button>
-            ))}
-            <div className="w-px bg-border mx-1" />
-            <button
-              onClick={resetLayout}
-              className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-secondary flex items-center gap-1.5 transition-colors"
-            >
-              <RotateCcw className="h-3 w-3" />
-              Reset
-            </button>
-          </div>
-        </Panel>
+              <button
+                onClick={resetLayout}
+                className="bg-card/90 backdrop-blur border border-border rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset layout
+              </button>
+            </div>
+          </Panel>
 
-        {/* Stats */}
-        <Panel position="top-right">
-          <div className="bg-card/90 backdrop-blur border border-border rounded-[var(--radius-inner)] px-4 py-2 shadow-sm">
-            <span className="text-xs text-muted-foreground">
-              {automatiseringen.length} automatiseringen · {automatiseringen.reduce((s, a) => s + (a.koppelingen?.length || 0), 0)} koppelingen
-            </span>
+          {/* Stats */}
+          <Panel position="top-right">
+            <div className="bg-card/90 backdrop-blur border border-border rounded-lg px-4 py-2 shadow-sm space-y-0.5">
+              <span className="text-xs text-muted-foreground block">
+                {automatiseringen.length} automatiseringen
+              </span>
+              <span className="text-xs text-muted-foreground block">
+                {allSmartEdges.length} koppelingen ({edgeStats.explicit} expliciet)
+              </span>
+            </div>
+          </Panel>
+        </ReactFlow>
+
+        {/* Edge tooltip */}
+        {selectedEdge && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50 bg-card border border-border rounded-lg shadow-lg p-3 max-w-xs">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-3 h-3 rounded-full" style={{ background: EDGE_TYPE_COLORS[selectedEdge.type] }} />
+              <span className="text-xs font-semibold">{EDGE_TYPE_LABELS[selectedEdge.type]}</span>
+              <button onClick={() => setSelectedEdge(null)} className="ml-auto p-0.5 hover:bg-secondary rounded">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">{selectedEdge.reason}</p>
           </div>
-        </Panel>
-      </ReactFlow>
+        )}
+      </div>
 
       {/* Detail sidebar */}
       {selectedAuto && (
-        <div className="absolute top-0 right-0 h-full w-96 bg-card border-l border-border shadow-xl z-50 overflow-y-auto">
+        <div className="w-96 shrink-0 bg-card border-l border-border overflow-y-auto">
           <div className="sticky top-0 bg-card border-b border-border p-4 flex items-center justify-between z-10">
             <div>
               <p className="font-mono text-xs text-muted-foreground">{selectedAuto.id}</p>
               <h2 className="font-bold text-foreground">{selectedAuto.naam}</h2>
             </div>
-            <button
-              onClick={() => setSelectedAuto(null)}
-              className="p-1.5 rounded-md hover:bg-secondary transition-colors"
-            >
+            <button onClick={() => setSelectedAuto(null)} className="p-1.5 rounded-md hover:bg-secondary transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -420,25 +553,33 @@ export default function Mindmap() {
 
             <DetailBlock title="Afhankelijkheden">{selectedAuto.afhankelijkheden || "—"}</DetailBlock>
 
-            {(selectedAuto.koppelingen || []).length > 0 && (
+            {/* Connected automations with reasons */}
+            {selectedAutoEdges.length > 0 && (
               <div>
-                <p className="label-uppercase mb-1.5">Koppelingen</p>
+                <p className="label-uppercase mb-1.5">Verbonden automatiseringen ({selectedAutoEdges.length})</p>
                 <div className="space-y-1.5">
-                  {selectedAuto.koppelingen.map((k, i) => {
-                    const target = automatiseringen.find((a) => a.id === k.doelId);
+                  {selectedAutoEdges.map((e, i) => {
+                    const otherId = e.sourceId === selectedAuto.id ? e.targetId : e.sourceId;
+                    const other = automatiseringen.find((a) => a.id === otherId);
                     return (
                       <div
                         key={i}
-                        className="flex items-center gap-2 text-sm bg-secondary rounded-[var(--radius-inner)] p-2 cursor-pointer hover:bg-accent transition-colors"
+                        className="flex items-start gap-2 text-sm bg-secondary rounded-lg p-2.5 cursor-pointer hover:bg-accent transition-colors"
                         onClick={() => {
-                          if (target) setSelectedAuto(target);
+                          if (other) setSelectedAuto(other);
                         }}
                       >
-                        <span className="font-mono text-xs font-semibold">{k.doelId}</span>
-                        <span className="text-muted-foreground text-xs truncate">{target?.naam}</span>
-                        {k.label && (
-                          <span className="ml-auto text-xs text-ring">→ {k.label}</span>
-                        )}
+                        <span
+                          className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                          style={{ background: EDGE_TYPE_COLORS[e.type] }}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[10px] font-semibold">{otherId}</span>
+                            <span className="text-xs text-muted-foreground truncate">{other?.naam}</span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">{e.label}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -448,6 +589,25 @@ export default function Mindmap() {
 
             <DetailBlock title="Verbeterideeën">{selectedAuto.verbeterideeën || "—"}</DetailBlock>
 
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-2">
+              {selectedAuto.mermaidDiagram && (
+                <button
+                  onClick={() => navigate(`/bpmn?id=${selectedAuto.id}`)}
+                  className="flex-1 bg-secondary text-foreground px-3 py-2 rounded-lg text-xs font-medium hover:bg-accent transition-colors"
+                >
+                  Bekijk BPMN diagram
+                </button>
+              )}
+              <button
+                onClick={() => navigate(`/nieuw`)}
+                className="flex-1 bg-primary text-primary-foreground px-3 py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity"
+              >
+                Bewerk automatisering
+              </button>
+            </div>
+
+            {/* BPMN preview */}
             {selectedAuto.mermaidDiagram && (
               <div>
                 <p className="label-uppercase mb-1.5">BPMN Diagram</p>
