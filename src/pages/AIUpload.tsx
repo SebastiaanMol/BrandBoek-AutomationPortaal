@@ -27,12 +27,25 @@ function detectCategory(row: Record<string, string>): Categorie {
 
 function detectSystemen(row: Record<string, string>): Systeem[] {
   const all = Object.values(row).join(" ").toLowerCase();
+  const keys = Object.keys(row).join(" ").toLowerCase();
   const systemen: Systeem[] = [];
   if (all.includes("hubspot")) systemen.push("HubSpot");
-  if (all.includes("zapier")) systemen.push("Zapier");
+  if (all.includes("zapier") || keys.includes("trigger app") || keys.includes("action app")) systemen.push("Zapier");
+  if (all.includes("typeform")) systemen.push("Typeform");
+  if (all.includes("sharepoint")) systemen.push("SharePoint");
+  if (all.includes("wefact")) systemen.push("WeFact");
+  if (all.includes("docufy")) systemen.push("Docufy");
   if (all.includes("backend") || all.includes("script") || all.includes("python")) systemen.push("Backend");
-  if (all.includes("email") || all.includes("e-mail") || all.includes("mail")) systemen.push("E-mail");
+  if (all.includes("email") || all.includes("e-mail") || all.includes("mail") || all.includes("gmail")) systemen.push("E-mail");
   if (all.includes("api") || all.includes("webhook")) systemen.push("API");
+  // Detect specific apps from Zapier trigger/action app columns
+  const triggerApp = findField(row, ["trigger app", "trigger_app"]).toLowerCase();
+  const actionApp = findField(row, ["action app", "action_app"]).toLowerCase();
+  for (const app of [triggerApp, actionApp]) {
+    if (app.includes("hubspot") && !systemen.includes("HubSpot")) systemen.push("HubSpot");
+    if (app.includes("typeform") && !systemen.includes("Typeform")) systemen.push("Typeform");
+    if (app.includes("sharepoint") && !systemen.includes("SharePoint")) systemen.push("SharePoint");
+  }
   return systemen.length > 0 ? systemen : ["HubSpot"];
 }
 
