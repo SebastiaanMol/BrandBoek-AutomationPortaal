@@ -120,8 +120,16 @@ function mapRow(row: Record<string, string>): ParsedAutomation {
   const naam = findField(row, ["naam", "name", "titel", "title", "workflow", "automation", "zap name", "zap"]) || Object.values(row)[0] || "Onbekend";
   const doel = findField(row, ["doel", "goal", "beschrijving", "description", "purpose", "omschrijving", "notes"]);
   const trigger = findField(row, ["trigger", "start", "event", "wanneer", "when"]);
-  const owner = findField(row, ["owner", "eigenaar", "verantwoordelijk", "assigned"]);
-  const stappen_raw = findField(row, ["stappen", "steps", "flow", "acties", "actions"]);
+  const owner = findField(row, ["owner", "eigenaar", "verantwoordelijk", "assigned", "created by", "folder"]);
+  const stappen_raw = findField(row, ["stappen", "steps", "flow", "acties", "actions", "action app"]);
+  // For Zapier: combine trigger app + action app as steps if no explicit steps
+  const triggerApp = findField(row, ["trigger app", "trigger_app"]);
+  const actionApp = findField(row, ["action app", "action_app"]);
+  let stappen = stappen_raw ? stappen_raw.split(/[;\|→]/).map((s) => s.trim()).filter(Boolean) : [];
+  if (stappen.length === 0 && (triggerApp || actionApp)) {
+    if (triggerApp) stappen.push(`Trigger: ${triggerApp}`);
+    if (actionApp) stappen.push(`Action: ${actionApp}`);
+  }
   const stappen = stappen_raw ? stappen_raw.split(/[;\|→]/).map((s) => s.trim()).filter(Boolean) : [];
   const afhankelijkheden = findField(row, ["afhankelijk", "dependencies", "knelpunt", "blocker"]);
   const verbeterideeën = findField(row, ["verbetering", "improvement", "idee", "todo", "opmerking", "notes"]);
