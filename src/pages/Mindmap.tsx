@@ -336,6 +336,9 @@ function buildGraph(
             <div className="font-semibold text-xs mt-1 leading-snug truncate" style={{ maxWidth: width - 30 }}>
               {a.naam}
             </div>
+            <div className="text-[9px] mt-0.5 font-medium opacity-80" style={{ color }}>
+              {sys}
+            </div>
             {conns > 0 && (
               <div className="text-[9px] text-muted-foreground mt-0.5 opacity-60">
                 {conns} koppeling{conns > 1 ? "en" : ""}

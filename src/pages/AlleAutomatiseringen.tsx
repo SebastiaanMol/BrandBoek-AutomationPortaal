@@ -135,6 +135,7 @@ export default function AlleAutomatiseringen() {
                       </button>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
+                      <Detail label="Bronsysteem" value={a.categorie} />
                       <Detail label="Doel" value={a.doel} />
                       <Detail label="Trigger" value={a.trigger} />
                       <Detail label="Owner" value={a.owner} />
