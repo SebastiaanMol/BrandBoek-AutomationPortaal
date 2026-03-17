@@ -4,8 +4,9 @@ import { toast } from "sonner";
 import NieuweAutomatisering from "./NieuweAutomatisering";
 import { Automatisering, Categorie, Systeem, Status } from "@/lib/types";
 import { saveAutomatisering, generateId } from "@/lib/storage";
-import { Upload, FileText, Loader2, FileSpreadsheet, ChevronDown, Check } from "lucide-react";
+import { Upload, FileText, Loader2, FileSpreadsheet, ChevronDown, Check, Sparkles } from "lucide-react";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
+import { supabase } from "@/integrations/supabase/client";
 
 type Tab = "tekst" | "csv";
 
@@ -157,24 +158,39 @@ export default function AIUpload() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- TEXT TAB ---
-  const extractFields = () => {
+  const extractFields = async () => {
     if (!text.trim()) {
       toast.error("Plak eerst tekst of beschrijving");
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      const lines = text.split("\n").filter((l) => l.trim());
-      setPrefill({
-        naam: lines[0]?.slice(0, 80) || "Onbekende Automatisering",
-        doel: text.slice(0, 200),
-        trigger: "Handmatig geëxtraheerd uit tekst",
-        stappen: lines.slice(1, 6),
-        mermaidDiagram: `graph TD\n    A[Start] --> B[Stap 1]\n    B --> C[Stap 2]\n    C --> D[Einde]`,
+    try {
+      const { data: result, error } = await supabase.functions.invoke("extract-automation", {
+        body: { type: "text", data: text },
       });
-      setLoading(false);
+      if (error) throw error;
+      const auto = result?.automations?.[0];
+      if (!auto) throw new Error("Geen resultaat van AI");
+      setPrefill({
+        naam: auto.naam,
+        categorie: auto.categorie,
+        doel: auto.doel,
+        trigger: auto.trigger,
+        systemen: auto.systemen,
+        stappen: auto.stappen,
+        afhankelijkheden: auto.afhankelijkheden || "",
+        owner: auto.owner || "",
+        status: auto.status,
+        verbeterideeën: auto.verbeterideeën || "",
+        mermaidDiagram: generateMermaid(auto.naam, auto.stappen || []),
+      });
       toast.success("AI heeft velden geëxtraheerd. Controleer en sla op.");
-    }, 1500);
+    } catch (e: any) {
+      console.error("AI extraction error:", e);
+      toast.error(e?.message || "AI-extractie mislukt. Probeer opnieuw.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // --- CSV TAB ---
@@ -194,18 +210,69 @@ export default function AIUpload() {
     reader.readAsText(file);
   };
 
-  const processCSV = (content: string) => {
+  const processCSV = async (content: string) => {
     const rows = parseCSV(content);
     if (rows.length === 0) {
       toast.error("Geen data gevonden in CSV. Controleer het formaat.");
       setLoading(false);
       return;
     }
-    const results = rows.map(mapRow);
-    setCsvResults(results);
+
+    // First do local mapping as fallback
+    const localResults = rows.map(mapRow);
+    
+    try {
+      toast.info("AI analyseert je CSV data...");
+      const { data: result, error } = await supabase.functions.invoke("extract-automation", {
+        body: { type: "csv_rows", data: rows },
+      });
+      
+      if (error) throw error;
+      
+      const aiAutomations = result?.automations;
+      if (aiAutomations && aiAutomations.length > 0) {
+        // Merge AI results with raw CSV data
+        const aiResults: ParsedAutomation[] = aiAutomations.map((auto: any, idx: number) => ({
+          raw: rows[idx] || rows[0],
+          mapped: {
+            naam: auto.naam,
+            categorie: auto.categorie as Categorie,
+            doel: auto.doel,
+            trigger: auto.trigger,
+            systemen: auto.systemen as Systeem[],
+            stappen: auto.stappen,
+            afhankelijkheden: auto.afhankelijkheden || "",
+            owner: auto.owner || "",
+            status: auto.status as Status,
+            verbeterideeën: auto.verbeterideeën || "",
+            mermaidDiagram: generateMermaid(auto.naam, auto.stappen || []),
+          },
+          beschrijving: auto.beschrijving || generateBeschrijving({
+            naam: auto.naam,
+            categorie: auto.categorie,
+            trigger: auto.trigger,
+            doel: auto.doel,
+            systemen: auto.systemen,
+            stappen: auto.stappen,
+            status: auto.status,
+          }),
+        }));
+        setCsvResults(aiResults);
+        setSavedIds(new Set());
+        setLoading(false);
+        toast.success(`AI heeft ${aiResults.length} automatisering(en) geanalyseerd`);
+        return;
+      }
+    } catch (e: any) {
+      console.error("AI CSV extraction error:", e);
+      toast.warning("AI-analyse niet beschikbaar, lokale extractie gebruikt.");
+    }
+
+    // Fallback to local
+    setCsvResults(localResults);
     setSavedIds(new Set());
     setLoading(false);
-    toast.success(`${results.length} automatisering(en) gevonden in CSV`);
+    toast.success(`${localResults.length} automatisering(en) gevonden in CSV (lokaal)`);
   };
 
   const saveOne = (idx: number) => {
