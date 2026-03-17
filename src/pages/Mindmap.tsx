@@ -14,7 +14,7 @@ import {
   Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import Dagre from "@dagrejs/dagre";
+
 import { getAutomatiseringen } from "@/lib/storage";
 import { Automatisering, Systeem, SYSTEMEN } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
