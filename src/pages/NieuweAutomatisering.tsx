@@ -31,6 +31,7 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
     verbeterideeën: "",
     mermaidDiagram: "",
     koppelingen: [],
+    fasen: [],
     ...prefill,
   });
 
