@@ -8,7 +8,7 @@ import { Upload, FileText, Loader2, FileSpreadsheet, ChevronDown, Check, Sparkle
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { supabase } from "@/integrations/supabase/client";
 
-type Tab = "tekst" | "csv";
+type Tab = "tekst" | "bestand";
 
 interface ParsedAutomation {
   raw: Record<string, string>;
@@ -169,7 +169,7 @@ function generateMermaid(naam: string, stappen: string[]): string {
 }
 
 export default function AIUpload() {
-  const [tab, setTab] = useState<Tab>("csv");
+  const [tab, setTab] = useState<Tab>("bestand");
   const [text, setText] = useState("");
   const [prefill, setPrefill] = useState<Partial<Automatisering> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -215,20 +215,101 @@ export default function AIUpload() {
   };
 
   // --- CSV TAB ---
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.endsWith(".csv")) {
-      toast.error("Upload een .csv bestand");
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "csv" && ext !== "json") {
+      toast.error("Upload een .csv of .json bestand");
       return;
     }
     setLoading(true);
     const reader = new FileReader();
     reader.onload = (ev) => {
       const content = ev.target?.result as string;
-      processCSV(content);
+      if (ext === "json") {
+        processJSON(content);
+      } else {
+        processCSV(content);
+      }
     };
     reader.readAsText(file);
+  };
+
+  const processJSON = async (content: string) => {
+    try {
+      let parsed = JSON.parse(content);
+      // Support both array and single object
+      if (!Array.isArray(parsed)) parsed = [parsed];
+      if (parsed.length === 0) {
+        toast.error("Geen data gevonden in JSON bestand.");
+        setLoading(false);
+        return;
+      }
+      // Flatten nested objects to string values for uniform processing
+      const rows: Record<string, string>[] = parsed.map((item: any) => {
+        const row: Record<string, string> = {};
+        for (const [key, val] of Object.entries(item)) {
+          if (Array.isArray(val)) row[key] = val.join("; ");
+          else if (typeof val === "object" && val !== null) row[key] = JSON.stringify(val);
+          else row[key] = String(val ?? "");
+        }
+        return row;
+      });
+      // Use same AI flow as CSV
+      const localResults = rows.map(mapRow);
+      try {
+        toast.info("AI analyseert je Zapier JSON data...");
+        const { data: result, error } = await supabase.functions.invoke("extract-automation", {
+          body: { type: "csv_rows", data: rows },
+        });
+        if (error) throw error;
+        const aiAutomations = result?.automations;
+        if (aiAutomations && aiAutomations.length > 0) {
+          const aiResults: ParsedAutomation[] = aiAutomations.map((auto: any, idx: number) => ({
+            raw: rows[idx] || rows[0],
+            mapped: {
+              naam: auto.naam,
+              categorie: auto.categorie as Categorie,
+              doel: auto.doel,
+              trigger: auto.trigger,
+              systemen: auto.systemen as Systeem[],
+              stappen: auto.stappen,
+              afhankelijkheden: auto.afhankelijkheden || "",
+              owner: auto.owner || "",
+              status: auto.status as Status,
+              verbeterideeën: auto.verbeterideeën || "",
+              mermaidDiagram: generateMermaid(auto.naam, auto.stappen || []),
+            },
+            beschrijving: auto.beschrijving || generateBeschrijving({
+              naam: auto.naam,
+              categorie: auto.categorie,
+              trigger: auto.trigger,
+              doel: auto.doel,
+              systemen: auto.systemen,
+              stappen: auto.stappen,
+              status: auto.status,
+            }),
+          }));
+          setCsvResults(aiResults);
+          setSavedIds(new Set());
+          setLoading(false);
+          toast.success(`AI heeft ${aiResults.length} automatisering(en) geanalyseerd`);
+          return;
+        }
+      } catch (e: any) {
+        console.error("AI JSON extraction error:", e);
+        toast.warning("AI-analyse niet beschikbaar, lokale extractie gebruikt.");
+      }
+      setCsvResults(localResults);
+      setSavedIds(new Set());
+      setLoading(false);
+      toast.success(`${localResults.length} automatisering(en) gevonden in JSON (lokaal)`);
+    } catch (e) {
+      console.error("JSON parse error:", e);
+      toast.error("Ongeldig JSON-bestand. Controleer het formaat.");
+      setLoading(false);
+    }
   };
 
   const processCSV = async (content: string) => {
@@ -343,13 +424,13 @@ export default function AIUpload() {
       {/* Tab switcher */}
       <div className="flex gap-1 bg-secondary p-1 rounded-lg w-fit">
         <button
-          onClick={() => setTab("csv")}
+          onClick={() => setTab("bestand")}
           className={`px-4 py-2 text-sm rounded-md transition-colors ${
-            tab === "csv" ? "bg-card text-foreground shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+            tab === "bestand" ? "bg-card text-foreground shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <FileSpreadsheet className="h-4 w-4 inline mr-2" />
-          CSV Upload (HubSpot / Zapier)
+          Bestand Upload (CSV / JSON)
         </button>
         <button
           onClick={() => setTab("tekst")}
@@ -362,24 +443,24 @@ export default function AIUpload() {
         </button>
       </div>
 
-      {/* CSV TAB */}
-      {tab === "csv" && !csvResults.length && (
+      {/* BESTAND TAB */}
+      {tab === "bestand" && !csvResults.length && (
         <div className="max-w-2xl space-y-4">
           <p className="text-sm text-muted-foreground">
-            Upload een CSV-export van je HubSpot workflows of Zapier Zaps. Het portaal herkent automatisch de kolommen en vult alle velden in met AI.
+            Upload een CSV-export of Zapier JSON-export. Het portaal herkent automatisch de structuur en vult alle velden in met AI.
           </p>
           <div
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-border rounded-[var(--radius-outer)] p-12 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/50 transition-colors"
           >
             <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-            <p className="text-sm font-medium text-foreground">Klik om een CSV-bestand te uploaden</p>
-            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot workflow exports, Zapier Zap exports en andere CSV-formaten</p>
+            <p className="text-sm font-medium text-foreground">Klik om een CSV- of JSON-bestand te uploaden</p>
+            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot CSV exports, Zapier JSON/CSV exports en andere formaten</p>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv"
-              onChange={handleCSVUpload}
+              accept=".csv,.json"
+              onChange={handleFileUpload}
               className="hidden"
             />
           </div>
@@ -389,20 +470,21 @@ export default function AIUpload() {
             </div>
           )}
           <div className="bg-secondary border border-border rounded-[var(--radius-inner)] p-4 mt-4">
-            <p className="label-uppercase mb-2">Verwachte kolommen</p>
+            <p className="label-uppercase mb-2">Ondersteunde formaten</p>
             <p className="text-sm text-muted-foreground">
-              Het systeem herkent kolommen zoals: <span className="font-mono text-xs">Naam, Name, Workflow, Zap Name, Trigger App, Action App, Beschrijving, Description, Trigger, Owner, Status, Stappen, Steps, Actions, Folder</span> enz.
+              <strong>CSV:</strong> kolommen zoals <span className="font-mono text-xs">Naam, Workflow, Zap Name, Trigger App, Action App, Status</span><br />
+              <strong>JSON:</strong> Zapier export met velden zoals <span className="font-mono text-xs">name, status, steps, trigger, actions</span>
             </p>
           </div>
         </div>
       )}
 
-      {/* CSV RESULTS */}
-      {tab === "csv" && csvResults.length > 0 && (
+      {/* BESTAND RESULTS */}
+      {tab === "bestand" && csvResults.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {csvResults.length} automatisering(en) geëxtraheerd uit CSV
+              {csvResults.length} automatisering(en) geëxtraheerd
             </p>
             <div className="flex gap-2">
               <button
@@ -489,9 +571,9 @@ export default function AIUpload() {
                       </div>
                     )}
 
-                    {/* Raw CSV data */}
+                    {/* Raw data */}
                     <div>
-                      <p className="label-uppercase mb-1">Ruwe CSV-data</p>
+                      <p className="label-uppercase mb-1">Ruwe data</p>
                       <div className="bg-muted rounded-[var(--radius-inner)] p-3 overflow-x-auto">
                         <table className="text-xs font-mono w-full">
                           <tbody>
