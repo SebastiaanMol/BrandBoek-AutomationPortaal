@@ -210,18 +210,69 @@ export default function AIUpload() {
     reader.readAsText(file);
   };
 
-  const processCSV = (content: string) => {
+  const processCSV = async (content: string) => {
     const rows = parseCSV(content);
     if (rows.length === 0) {
       toast.error("Geen data gevonden in CSV. Controleer het formaat.");
       setLoading(false);
       return;
     }
-    const results = rows.map(mapRow);
-    setCsvResults(results);
+
+    // First do local mapping as fallback
+    const localResults = rows.map(mapRow);
+    
+    try {
+      toast.info("AI analyseert je CSV data...");
+      const { data: result, error } = await supabase.functions.invoke("extract-automation", {
+        body: { type: "csv_rows", data: rows },
+      });
+      
+      if (error) throw error;
+      
+      const aiAutomations = result?.automations;
+      if (aiAutomations && aiAutomations.length > 0) {
+        // Merge AI results with raw CSV data
+        const aiResults: ParsedAutomation[] = aiAutomations.map((auto: any, idx: number) => ({
+          raw: rows[idx] || rows[0],
+          mapped: {
+            naam: auto.naam,
+            categorie: auto.categorie as Categorie,
+            doel: auto.doel,
+            trigger: auto.trigger,
+            systemen: auto.systemen as Systeem[],
+            stappen: auto.stappen,
+            afhankelijkheden: auto.afhankelijkheden || "",
+            owner: auto.owner || "",
+            status: auto.status as Status,
+            verbeterideeën: auto.verbeterideeën || "",
+            mermaidDiagram: generateMermaid(auto.naam, auto.stappen || []),
+          },
+          beschrijving: auto.beschrijving || generateBeschrijving({
+            naam: auto.naam,
+            categorie: auto.categorie,
+            trigger: auto.trigger,
+            doel: auto.doel,
+            systemen: auto.systemen,
+            stappen: auto.stappen,
+            status: auto.status,
+          }),
+        }));
+        setCsvResults(aiResults);
+        setSavedIds(new Set());
+        setLoading(false);
+        toast.success(`AI heeft ${aiResults.length} automatisering(en) geanalyseerd`);
+        return;
+      }
+    } catch (e: any) {
+      console.error("AI CSV extraction error:", e);
+      toast.warning("AI-analyse niet beschikbaar, lokale extractie gebruikt.");
+    }
+
+    // Fallback to local
+    setCsvResults(localResults);
     setSavedIds(new Set());
     setLoading(false);
-    toast.success(`${results.length} automatisering(en) gevonden in CSV`);
+    toast.success(`${localResults.length} automatisering(en) gevonden in CSV (lokaal)`);
   };
 
   const saveOne = (idx: number) => {
