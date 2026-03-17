@@ -75,6 +75,7 @@ function findCascadeFailures(
 }
 
 export default function Analyse() {
+  const navigate = useNavigate();
   const { data: fetchedData, isLoading } = useAutomatiseringen();
   const data = fetchedData || [];
   const smartEdges = useMemo(() => computeSmartEdges(data), [data]);
