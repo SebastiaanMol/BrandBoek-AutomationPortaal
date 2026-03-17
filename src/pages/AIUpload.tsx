@@ -215,20 +215,101 @@ export default function AIUpload() {
   };
 
   // --- CSV TAB ---
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.endsWith(".csv")) {
-      toast.error("Upload een .csv bestand");
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "csv" && ext !== "json") {
+      toast.error("Upload een .csv of .json bestand");
       return;
     }
     setLoading(true);
     const reader = new FileReader();
     reader.onload = (ev) => {
       const content = ev.target?.result as string;
-      processCSV(content);
+      if (ext === "json") {
+        processJSON(content);
+      } else {
+        processCSV(content);
+      }
     };
     reader.readAsText(file);
+  };
+
+  const processJSON = async (content: string) => {
+    try {
+      let parsed = JSON.parse(content);
+      // Support both array and single object
+      if (!Array.isArray(parsed)) parsed = [parsed];
+      if (parsed.length === 0) {
+        toast.error("Geen data gevonden in JSON bestand.");
+        setLoading(false);
+        return;
+      }
+      // Flatten nested objects to string values for uniform processing
+      const rows: Record<string, string>[] = parsed.map((item: any) => {
+        const row: Record<string, string> = {};
+        for (const [key, val] of Object.entries(item)) {
+          if (Array.isArray(val)) row[key] = val.join("; ");
+          else if (typeof val === "object" && val !== null) row[key] = JSON.stringify(val);
+          else row[key] = String(val ?? "");
+        }
+        return row;
+      });
+      // Use same AI flow as CSV
+      const localResults = rows.map(mapRow);
+      try {
+        toast.info("AI analyseert je Zapier JSON data...");
+        const { data: result, error } = await supabase.functions.invoke("extract-automation", {
+          body: { type: "csv_rows", data: rows },
+        });
+        if (error) throw error;
+        const aiAutomations = result?.automations;
+        if (aiAutomations && aiAutomations.length > 0) {
+          const aiResults: ParsedAutomation[] = aiAutomations.map((auto: any, idx: number) => ({
+            raw: rows[idx] || rows[0],
+            mapped: {
+              naam: auto.naam,
+              categorie: auto.categorie as Categorie,
+              doel: auto.doel,
+              trigger: auto.trigger,
+              systemen: auto.systemen as Systeem[],
+              stappen: auto.stappen,
+              afhankelijkheden: auto.afhankelijkheden || "",
+              owner: auto.owner || "",
+              status: auto.status as Status,
+              verbeterideeën: auto.verbeterideeën || "",
+              mermaidDiagram: generateMermaid(auto.naam, auto.stappen || []),
+            },
+            beschrijving: auto.beschrijving || generateBeschrijving({
+              naam: auto.naam,
+              categorie: auto.categorie,
+              trigger: auto.trigger,
+              doel: auto.doel,
+              systemen: auto.systemen,
+              stappen: auto.stappen,
+              status: auto.status,
+            }),
+          }));
+          setCsvResults(aiResults);
+          setSavedIds(new Set());
+          setLoading(false);
+          toast.success(`AI heeft ${aiResults.length} automatisering(en) geanalyseerd`);
+          return;
+        }
+      } catch (e: any) {
+        console.error("AI JSON extraction error:", e);
+        toast.warning("AI-analyse niet beschikbaar, lokale extractie gebruikt.");
+      }
+      setCsvResults(localResults);
+      setSavedIds(new Set());
+      setLoading(false);
+      toast.success(`${localResults.length} automatisering(en) gevonden in JSON (lokaal)`);
+    } catch (e) {
+      console.error("JSON parse error:", e);
+      toast.error("Ongeldig JSON-bestand. Controleer het formaat.");
+      setLoading(false);
+    }
   };
 
   const processCSV = async (content: string) => {
