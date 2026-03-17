@@ -15,6 +15,13 @@ mermaid.initialize({
 function sanitizeChart(raw: string): string {
   return raw
     .split("\n")
+    .map((line) => {
+      // Escape parentheses inside square-bracket labels [...] to avoid Mermaid parse errors
+      return line.replace(/\[([^\]]*)\]/g, (_match, content: string) => {
+        const escaped = content.replace(/\(/g, "#40;").replace(/\)/g, "#41;");
+        return `[${escaped}]`;
+      });
+    })
     .flatMap((line) => {
       // Match chains like  X[...] --> Y[...] --> Z[...]
       const parts = line.split(/\s*-->\s*/);
