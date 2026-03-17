@@ -119,7 +119,7 @@ function parseCSV(text: string): Record<string, string>[] {
 function mapRow(row: Record<string, string>): ParsedAutomation {
   const naam = findField(row, ["naam", "name", "titel", "title", "workflow", "automation", "zap name", "zap"]) || Object.values(row)[0] || "Onbekend";
   const doel = findField(row, ["doel", "goal", "beschrijving", "description", "purpose", "omschrijving", "notes"]);
-  const trigger = findField(row, ["trigger", "start", "event", "wanneer", "when"]);
+  const trigger = findField(row, ["trigger", "start", "event", "wanneer", "when", "trigger app", "enrollment trigger"]);
   const owner = findField(row, ["owner", "eigenaar", "verantwoordelijk", "assigned", "created by", "folder"]);
   const stappen_raw = findField(row, ["stappen", "steps", "flow", "acties", "actions", "action app"]);
   // For Zapier: combine trigger app + action app as steps if no explicit steps
