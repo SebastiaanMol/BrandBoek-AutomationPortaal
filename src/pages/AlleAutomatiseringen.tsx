@@ -4,6 +4,7 @@ import { useAutomatiseringen, useDeleteAutomatisering } from "@/lib/hooks";
 import { exportToCSV } from "@/lib/supabaseStorage";
 import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
+import { VerificatieBadge } from "@/components/VerificatieBadge";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
