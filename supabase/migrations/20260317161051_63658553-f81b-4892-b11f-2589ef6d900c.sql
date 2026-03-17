@@ -1,0 +1,1 @@
+ALTER TABLE public.automatiseringen ADD CONSTRAINT automatiseringen_naam_unique UNIQUE (naam);
