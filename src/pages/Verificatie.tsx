@@ -85,19 +85,10 @@ export default function Verificatie() {
     const prevId = history[history.length - 1];
     setHistory((h) => h.slice(0, -1));
     setDirection(-1);
-    const idx = queue.findIndex((a) => a.id === prevId);
-    if (idx >= 0) {
-      setCurrentIndex(idx);
-    } else {
-      // Item might have moved in sorted order after verification, find in sorted
-      const sortedIdx = sorted.findIndex((a) => a.id === prevId);
-      if (sortedIdx >= 0) {
-        setCurrentIndex(Math.max(0, currentIndex - 1));
-      }
-    }
+    setCurrentId(prevId);
     setShowNotitie(null);
     setNotitie("");
-  }, [history, queue, sorted, currentIndex]);
+  }, [history]);
 
   const handleVerified = useCallback(async () => {
     if (!current) return;
