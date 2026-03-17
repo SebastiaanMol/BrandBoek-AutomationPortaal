@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Automatisering, CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem, Categorie, Status, Koppeling } from "@/lib/types";
+import { Automatisering, CATEGORIEEN, SYSTEMEN, STATUSSEN, KLANT_FASEN, Systeem, Categorie, Status, KlantFase, Koppeling } from "@/lib/types";
 import { generateId, saveAutomatisering, getAutomatiseringen } from "@/lib/storage";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,7 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
     verbeterideeën: "",
     mermaidDiagram: "",
     koppelingen: [],
+    fasen: [],
     ...prefill,
   });
 
@@ -85,6 +86,7 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
       verbeterideeën: form.verbeterideeën || "",
       mermaidDiagram: form.mermaidDiagram || "",
       koppelingen: (form.koppelingen || []).filter((k) => k.doelId),
+      fasen: (form.fasen || []) as KlantFase[],
       createdAt: new Date().toISOString(),
     };
     saveAutomatisering(item);
@@ -131,6 +133,24 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
             <label key={s} className="flex items-center gap-2 text-sm">
               <Checkbox checked={form.systemen?.includes(s)} onCheckedChange={() => toggleSysteem(s)} />
               {s}
+            </label>
+          ))}
+        </div>
+      </Field>
+
+      <Field label="Klantproces Fase">
+        <p className="text-[10px] text-muted-foreground mb-2">In welke fase(n) van het klanttraject is deze automatisering actief?</p>
+        <div className="flex flex-wrap gap-3">
+          {KLANT_FASEN.map((f) => (
+            <label key={f} className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={form.fasen?.includes(f)}
+                onCheckedChange={() => {
+                  const curr = form.fasen || [];
+                  set("fasen", curr.includes(f) ? curr.filter((x) => x !== f) : [...curr, f]);
+                }}
+              />
+              {f}
             </label>
           ))}
         </div>

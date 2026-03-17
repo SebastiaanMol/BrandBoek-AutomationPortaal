@@ -25,9 +25,10 @@ const SEED_DATA: Automatisering[] = [
     C -->|POST| D[Slack API]
     D --> E[#sales Melding]`,
     koppelingen: [
-      { doelId: "AUTO-002", label: "Geen reactie op deal" },
-      { doelId: "AUTO-003", label: "Deal akkoord → Klantenbestand" },
+      { doelId: "AUTO-002", label: "Geen reactie op deal triggert lead follow-up" },
+      { doelId: "AUTO-003", label: "Deal akkoord levert data voor rapportage" },
     ],
+    fasen: ["Sales"],
     createdAt: new Date().toISOString(),
   },
   {
@@ -55,6 +56,7 @@ const SEED_DATA: Automatisering[] = [
     koppelingen: [
       { doelId: "AUTO-001", label: "Klant reageert → terug naar Sales flow" },
     ],
+    fasen: ["Marketing", "Sales"],
     createdAt: new Date().toISOString(),
   },
   {
@@ -82,18 +84,23 @@ const SEED_DATA: Automatisering[] = [
     D --> E[CSV Generatie]
     E --> F[SharePoint Upload]`,
     koppelingen: [],
+    fasen: ["Boekhouding"],
     createdAt: new Date().toISOString(),
   },
 ];
+
 export function getAutomatiseringen(): Automatisering[] {
   const data = localStorage.getItem(STORAGE_KEY);
   if (!data) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_DATA));
     return SEED_DATA;
   }
-  // Migrate old data missing koppelingen
   const parsed: Automatisering[] = JSON.parse(data);
-  return parsed.map((a) => ({ ...a, koppelingen: a.koppelingen || [] }));
+  return parsed.map((a) => ({
+    ...a,
+    koppelingen: a.koppelingen || [],
+    fasen: a.fasen || [],
+  }));
 }
 
 export function saveAutomatisering(item: Automatisering): void {
@@ -116,10 +123,10 @@ export function generateId(): string {
 }
 
 export function exportToCSV(data: Automatisering[]): string {
-  const headers = ["ID", "Naam", "Categorie", "Doel", "Trigger", "Systemen", "Owner", "Status"];
+  const headers = ["ID", "Naam", "Categorie", "Doel", "Trigger", "Systemen", "Owner", "Status", "Fasen"];
   const rows = data.map((a) => [
     a.id, a.naam, a.categorie, a.doel, a.trigger,
-    a.systemen.join("; "), a.owner, a.status,
+    a.systemen.join("; "), a.owner, a.status, (a.fasen || []).join("; "),
   ]);
   return [headers.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
 }

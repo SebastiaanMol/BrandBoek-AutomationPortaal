@@ -292,6 +292,7 @@ export default function AIUpload() {
       verbeterideeën: item.mapped.verbeterideeën || "",
       mermaidDiagram: item.mapped.mermaidDiagram || "",
       koppelingen: [],
+      fasen: [],
       createdAt: new Date().toISOString(),
     };
     saveAutomatisering(full);
