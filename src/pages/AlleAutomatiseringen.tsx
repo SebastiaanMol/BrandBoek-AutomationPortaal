@@ -129,13 +129,45 @@ export default function AlleAutomatiseringen() {
                   className="overflow-hidden"
                 >
                   <div className="px-5 pb-5 pt-2 border-t border-border space-y-4">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-3">
                       <button
                         onClick={() => navigate(`/bewerk/${a.id}`)}
                         className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
                       >
                         <Pencil className="h-3.5 w-3.5" /> Bewerken
                       </button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button className="inline-flex items-center gap-1.5 text-sm text-destructive hover:underline">
+                            <Trash2 className="h-3.5 w-3.5" /> Verwijderen
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Automatisering verwijderen?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Weet je zeker dat je <strong>{a.id} — {a.naam}</strong> wilt verwijderen? Dit verwijdert ook alle koppelingen. Deze actie kan niet ongedaan worden gemaakt.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Annuleren</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={async () => {
+                                try {
+                                  await deleteMutation.mutateAsync(a.id);
+                                  setOpenId(null);
+                                  toast.success(`${a.id} verwijderd`);
+                                } catch (err: any) {
+                                  toast.error(err.message || "Verwijderen mislukt");
+                                }
+                              }}
+                            >
+                              Verwijderen
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                       <Detail label="Bronsysteem" value={a.categorie} />

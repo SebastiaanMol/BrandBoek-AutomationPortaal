@@ -123,6 +123,22 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
   }
 }
 
+// --- Delete automatisering + koppelingen ---
+export async function deleteAutomatisering(id: string): Promise<void> {
+  // Delete koppelingen first (both as bron and doel)
+  const { error: kopError } = await supabase
+    .from("koppelingen")
+    .delete()
+    .or(`bron_id.eq.${id},doel_id.eq.${id}`);
+  if (kopError) throw kopError;
+
+  const { error } = await supabase
+    .from("automatiseringen")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}
+
 // --- Generate next ID ---
 export async function generateNextId(): Promise<string> {
   const { data, error } = await supabase.rpc("generate_auto_id");
