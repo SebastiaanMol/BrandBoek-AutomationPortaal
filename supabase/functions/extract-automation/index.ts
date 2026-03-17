@@ -17,8 +17,23 @@ serve(async (req) => {
     let prompt = "";
 
     if (type === "csv_rows") {
-      // data is an array of { raw: Record<string,string> }
-      prompt = `Je bent een expert in procesautomatisering bij een boekhoudkantoor. Analyseer de volgende CSV-rijen van HubSpot workflow exports en extraheer voor ELKE rij gestructureerde informatie.
+      prompt = `Je bent een expert in procesautomatisering bij een boekhoudkantoor. Analyseer de volgende CSV-rijen en extraheer voor ELKE rij gestructureerde informatie.
+
+De CSV kan afkomstig zijn van:
+- HubSpot workflow exports (kolommen zoals: Workflow name, Type, Status, Enrollment triggers, etc.)
+- Zapier Zap exports (kolommen zoals: Name, Status, Trigger App, Action App, Steps, Folder, etc.)
+- Andere automatiseringstools
+
+ZAPIER-SPECIFIEK:
+- Herken "Trigger App" + "Action App" als betrokken systemen
+- De "Steps" of individuele stappen-kolommen beschrijven de flow
+- Een Zap heeft altijd minimaal een trigger en een action
+- Herken apps als: HubSpot, Gmail, Slack, Google Sheets, Typeform, SharePoint, WeFact, Docufy, etc.
+- Categorie moet "Zapier Zap" zijn, tenzij het ook HubSpot bevat → dan "HubSpot + Zapier"
+
+HUBSPOT-SPECIFIEK:
+- Workflows hebben enrollment triggers en actions
+- Categorie is "HubSpot Workflow"
 
 CSV data (JSON):
 ${JSON.stringify(data, null, 2)}
@@ -26,6 +41,9 @@ ${JSON.stringify(data, null, 2)}
 Geef per rij de volgende informatie terug. Gebruik ALTIJD Nederlands.`;
     } else if (type === "text") {
       prompt = `Je bent een expert in procesautomatisering bij een boekhoudkantoor. Analyseer de volgende tekst en extraheer alle automatiseringsinformatie.
+
+Herken automatiseringen uit alle bronnen: HubSpot workflows, Zapier Zaps, backend scripts, API-koppelingen, etc.
+Als het een Zapier Zap beschrijft, gebruik categorie "Zapier Zap" en herken de betrokken apps als systemen.
 
 Tekst:
 ${data}
