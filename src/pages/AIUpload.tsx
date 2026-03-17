@@ -158,24 +158,39 @@ export default function AIUpload() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- TEXT TAB ---
-  const extractFields = () => {
+  const extractFields = async () => {
     if (!text.trim()) {
       toast.error("Plak eerst tekst of beschrijving");
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      const lines = text.split("\n").filter((l) => l.trim());
-      setPrefill({
-        naam: lines[0]?.slice(0, 80) || "Onbekende Automatisering",
-        doel: text.slice(0, 200),
-        trigger: "Handmatig geëxtraheerd uit tekst",
-        stappen: lines.slice(1, 6),
-        mermaidDiagram: `graph TD\n    A[Start] --> B[Stap 1]\n    B --> C[Stap 2]\n    C --> D[Einde]`,
+    try {
+      const { data: result, error } = await supabase.functions.invoke("extract-automation", {
+        body: { type: "text", data: text },
       });
-      setLoading(false);
+      if (error) throw error;
+      const auto = result?.automations?.[0];
+      if (!auto) throw new Error("Geen resultaat van AI");
+      setPrefill({
+        naam: auto.naam,
+        categorie: auto.categorie,
+        doel: auto.doel,
+        trigger: auto.trigger,
+        systemen: auto.systemen,
+        stappen: auto.stappen,
+        afhankelijkheden: auto.afhankelijkheden || "",
+        owner: auto.owner || "",
+        status: auto.status,
+        verbeterideeën: auto.verbeterideeën || "",
+        mermaidDiagram: generateMermaid(auto.naam, auto.stappen || []),
+      });
       toast.success("AI heeft velden geëxtraheerd. Controleer en sla op.");
-    }, 1500);
+    } catch (e: any) {
+      console.error("AI extraction error:", e);
+      toast.error(e?.message || "AI-extractie mislukt. Probeer opnieuw.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // --- CSV TAB ---
