@@ -97,7 +97,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {navItems.find((n) => n.url === location.pathname)?.title || "Portaal"}
           </span>
         </header>
-        <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] w-full mx-auto">
+        <main className={`flex-1 w-full ${
+          location.pathname === "/mindmap"
+            ? "p-0"
+            : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
+        }`}>
           {children}
         </main>
       </div>
