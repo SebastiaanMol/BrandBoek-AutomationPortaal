@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, AlertTriangle, XCircle, Pencil, SkipForward, Keyboard, ChevronLeft, ChevronRight, Eye } from "lucide-react";
+import { Loader2, Check, AlertTriangle, XCircle, Pencil, SkipForward, Keyboard, ChevronLeft, ChevronRight, Eye, ShieldCheck, Clock } from "lucide-react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 
