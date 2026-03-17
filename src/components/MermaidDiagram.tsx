@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useId } from "react";
 import mermaid from "mermaid";
 
 mermaid.initialize({
@@ -8,23 +8,47 @@ mermaid.initialize({
   fontFamily: "IBM Plex Sans",
 });
 
+/**
+ * Expand chained arrows on single lines into separate lines.
+ * e.g. "A --> B --> C" becomes "A --> B\n    B --> C"
+ */
+function sanitizeChart(raw: string): string {
+  return raw
+    .split("\n")
+    .flatMap((line) => {
+      // Match chains like  X[...] --> Y[...] --> Z[...]
+      const parts = line.split(/\s*-->\s*/);
+      if (parts.length <= 2) return [line];
+      const indent = line.match(/^(\s*)/)?.[1] ?? "    ";
+      const lines: string[] = [];
+      for (let i = 0; i < parts.length - 1; i++) {
+        lines.push(`${indent}${parts[i].trim()} --> ${parts[i + 1].trim()}`);
+      }
+      return lines;
+    })
+    .join("\n");
+}
+
 let idCounter = 0;
 
 export function MermaidDiagram({ chart }: { chart: string }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!chart?.trim()) return;
-    const id = `mermaid-${++idCounter}`;
+    const id = `mermaid-${Date.now()}-${++idCounter}`;
+    const sanitized = sanitizeChart(chart);
+
     mermaid
-      .render(id, chart)
+      .render(id, sanitized)
       .then((result) => {
         setSvg(result.svg);
         setError("");
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn("Mermaid render error:", err);
         setError("Ongeldig Mermaid diagram");
         setSvg("");
       });
@@ -35,7 +59,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
 
   return (
     <div
-      ref={ref}
+      ref={containerRef}
       className="mermaid-container [&_svg]:max-w-full"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
