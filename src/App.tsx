@@ -36,6 +36,7 @@ function ProtectedRoutes() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/nieuw" element={<NieuweAutomatiseringPage />} />
         <Route path="/alle" element={<AlleAutomatiseringen />} />
+        <Route path="/bewerk/:id" element={<BewerkAutomatisering />} />
         <Route path="/bpmn" element={<BPMNViewer />} />
         <Route path="/mindmap" element={<Mindmap />} />
         <Route path="/analyse" element={<Analyse />} />
