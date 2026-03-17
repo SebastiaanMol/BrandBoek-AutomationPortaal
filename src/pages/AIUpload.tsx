@@ -27,12 +27,25 @@ function detectCategory(row: Record<string, string>): Categorie {
 
 function detectSystemen(row: Record<string, string>): Systeem[] {
   const all = Object.values(row).join(" ").toLowerCase();
+  const keys = Object.keys(row).join(" ").toLowerCase();
   const systemen: Systeem[] = [];
   if (all.includes("hubspot")) systemen.push("HubSpot");
-  if (all.includes("zapier")) systemen.push("Zapier");
+  if (all.includes("zapier") || keys.includes("trigger app") || keys.includes("action app")) systemen.push("Zapier");
+  if (all.includes("typeform")) systemen.push("Typeform");
+  if (all.includes("sharepoint")) systemen.push("SharePoint");
+  if (all.includes("wefact")) systemen.push("WeFact");
+  if (all.includes("docufy")) systemen.push("Docufy");
   if (all.includes("backend") || all.includes("script") || all.includes("python")) systemen.push("Backend");
-  if (all.includes("email") || all.includes("e-mail") || all.includes("mail")) systemen.push("E-mail");
+  if (all.includes("email") || all.includes("e-mail") || all.includes("mail") || all.includes("gmail")) systemen.push("E-mail");
   if (all.includes("api") || all.includes("webhook")) systemen.push("API");
+  // Detect specific apps from Zapier trigger/action app columns
+  const triggerApp = findField(row, ["trigger app", "trigger_app"]).toLowerCase();
+  const actionApp = findField(row, ["action app", "action_app"]).toLowerCase();
+  for (const app of [triggerApp, actionApp]) {
+    if (app.includes("hubspot") && !systemen.includes("HubSpot")) systemen.push("HubSpot");
+    if (app.includes("typeform") && !systemen.includes("Typeform")) systemen.push("Typeform");
+    if (app.includes("sharepoint") && !systemen.includes("SharePoint")) systemen.push("SharePoint");
+  }
   return systemen.length > 0 ? systemen : ["HubSpot"];
 }
 
@@ -104,12 +117,20 @@ function parseCSV(text: string): Record<string, string>[] {
 }
 
 function mapRow(row: Record<string, string>): ParsedAutomation {
-  const naam = findField(row, ["naam", "name", "titel", "title", "workflow", "automation"]) || Object.values(row)[0] || "Onbekend";
-  const doel = findField(row, ["doel", "goal", "beschrijving", "description", "purpose", "omschrijving"]);
-  const trigger = findField(row, ["trigger", "start", "event", "wanneer", "when"]);
-  const owner = findField(row, ["owner", "eigenaar", "verantwoordelijk", "assigned"]);
-  const stappen_raw = findField(row, ["stappen", "steps", "flow", "acties", "actions"]);
-  const stappen = stappen_raw ? stappen_raw.split(/[;\|→]/).map((s) => s.trim()).filter(Boolean) : [];
+  const naam = findField(row, ["naam", "name", "titel", "title", "workflow", "automation", "zap name", "zap"]) || Object.values(row)[0] || "Onbekend";
+  const doel = findField(row, ["doel", "goal", "beschrijving", "description", "purpose", "omschrijving", "notes"]);
+  const trigger = findField(row, ["trigger", "start", "event", "wanneer", "when", "trigger app", "enrollment trigger"]);
+  const owner = findField(row, ["owner", "eigenaar", "verantwoordelijk", "assigned", "created by", "folder"]);
+  const stappen_raw = findField(row, ["stappen", "steps", "flow", "acties", "actions", "action app"]);
+  // For Zapier: combine trigger app + action app as steps if no explicit steps
+  const triggerApp = findField(row, ["trigger app", "trigger_app"]);
+  const actionApp = findField(row, ["action app", "action_app"]);
+  let stappen = stappen_raw ? stappen_raw.split(/[;\|→]/).map((s) => s.trim()).filter(Boolean) : [];
+  if (stappen.length === 0 && (triggerApp || actionApp)) {
+    if (triggerApp) stappen.push(`Trigger: ${triggerApp}`);
+    if (actionApp) stappen.push(`Action: ${actionApp}`);
+  }
+  
   const afhankelijkheden = findField(row, ["afhankelijk", "dependencies", "knelpunt", "blocker"]);
   const verbeterideeën = findField(row, ["verbetering", "improvement", "idee", "todo", "opmerking", "notes"]);
 
@@ -328,7 +349,7 @@ export default function AIUpload() {
           }`}
         >
           <FileSpreadsheet className="h-4 w-4 inline mr-2" />
-          CSV Upload (HubSpot)
+          CSV Upload (HubSpot / Zapier)
         </button>
         <button
           onClick={() => setTab("tekst")}
@@ -345,7 +366,7 @@ export default function AIUpload() {
       {tab === "csv" && !csvResults.length && (
         <div className="max-w-2xl space-y-4">
           <p className="text-sm text-muted-foreground">
-            Upload een CSV-export van je HubSpot workflows of automatiseringen. Het portaal herkent automatisch de kolommen en vult alle velden in.
+            Upload een CSV-export van je HubSpot workflows of Zapier Zaps. Het portaal herkent automatisch de kolommen en vult alle velden in met AI.
           </p>
           <div
             onClick={() => fileInputRef.current?.click()}
@@ -353,7 +374,7 @@ export default function AIUpload() {
           >
             <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-foreground">Klik om een CSV-bestand te uploaden</p>
-            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot workflow exports en andere CSV-formaten</p>
+            <p className="text-xs text-muted-foreground mt-1">Ondersteunt HubSpot workflow exports, Zapier Zap exports en andere CSV-formaten</p>
             <input
               ref={fileInputRef}
               type="file"
@@ -370,7 +391,7 @@ export default function AIUpload() {
           <div className="bg-secondary border border-border rounded-[var(--radius-inner)] p-4 mt-4">
             <p className="label-uppercase mb-2">Verwachte kolommen</p>
             <p className="text-sm text-muted-foreground">
-              Het systeem herkent kolommen zoals: <span className="font-mono text-xs">Naam, Name, Workflow, Beschrijving, Description, Trigger, Owner, Status, Stappen, Steps, Actions</span> enz. Kolommen die niet herkend worden, worden overgeslagen.
+              Het systeem herkent kolommen zoals: <span className="font-mono text-xs">Naam, Name, Workflow, Zap Name, Trigger App, Action App, Beschrijving, Description, Trigger, Owner, Status, Stappen, Steps, Actions, Folder</span> enz.
             </p>
           </div>
         </div>
