@@ -189,6 +189,24 @@ export default function Verificatie() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="verificatie">Verificatie</TabsTrigger>
+          <TabsTrigger value="geverifieerd" className="gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Geverifieerd
+            {geverifieerdItems.length > 0 && (
+              <span className="ml-1 bg-[hsl(var(--status-active))] text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {geverifieerdItems.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="verouderd" className="gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            Verouderd
+            {verouderdItems.length > 0 && (
+              <span className="ml-1 bg-[hsl(var(--status-outdated))] text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {verouderdItems.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="in-review" className="gap-1.5">
             <Eye className="h-3.5 w-3.5" />
             In review
