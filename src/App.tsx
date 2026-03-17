@@ -7,7 +7,7 @@ import { AppLayout } from "@/components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import NieuweAutomatisering from "./pages/NieuweAutomatisering";
 import AlleAutomatiseringen from "./pages/AlleAutomatiseringen";
-import ZoekenFilteren from "./pages/ZoekenFilteren";
+
 import BPMNViewer from "./pages/BPMNViewer";
 import AIUpload from "./pages/AIUpload";
 import Analyse from "./pages/Analyse";
