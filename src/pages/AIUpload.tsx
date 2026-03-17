@@ -176,6 +176,7 @@ export default function AIUpload() {
   const [csvResults, setCsvResults] = useState<ParsedAutomation[]>([]);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+  const [skippedIds, setSkippedIds] = useState<Set<number>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- TEXT TAB ---
