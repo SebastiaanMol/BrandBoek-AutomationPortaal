@@ -4,7 +4,6 @@ import {
   PlusCircle,
   List,
   GitBranch,
-  Upload,
   BarChart3,
   Menu,
   X,
