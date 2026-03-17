@@ -9,6 +9,7 @@ import NieuweAutomatiseringPage from "./pages/NieuweAutomatiseringPage";
 import AlleAutomatiseringen from "./pages/AlleAutomatiseringen";
 import BPMNViewer from "./pages/BPMNViewer";
 import Analyse from "./pages/Analyse";
+import Mindmap from "./pages/Mindmap";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/nieuw" element={<NieuweAutomatiseringPage />} />
             <Route path="/alle" element={<AlleAutomatiseringen />} />
             <Route path="/bpmn" element={<BPMNViewer />} />
+            <Route path="/mindmap" element={<Mindmap />} />
             <Route path="/analyse" element={<Analyse />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
