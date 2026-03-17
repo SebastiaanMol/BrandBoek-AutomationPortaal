@@ -1,0 +1,303 @@
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAutomatiseringen, useVerifieerAutomatisering } from "@/lib/hooks";
+import { useAuth } from "@/lib/AuthContext";
+import { Automatisering, getVerificatieStatus } from "@/lib/types";
+import { CategorieBadge, SystemBadge, StatusBadge } from "@/components/Badges";
+import { VerificatieBadge } from "@/components/VerificatieBadge";
+import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { motion, AnimatePresence } from "framer-motion";
+import { Loader2, Check, AlertTriangle, XCircle, Pencil, SkipForward, Keyboard } from "lucide-react";
+import { toast } from "sonner";
+import confetti from "canvas-confetti";
+
+function sortForVerification(items: Automatisering[]): Automatisering[] {
+  return [...items].sort((a, b) => {
+    const statusA = getVerificatieStatus(a);
+    const statusB = getVerificatieStatus(b);
+    const order = { nooit: 0, verouderd: 1, geverifieerd: 2 };
+    if (order[statusA] !== order[statusB]) return order[statusA] - order[statusB];
+    // Within same group, oldest verification first
+    const dateA = a.laatstGeverifieerd ? new Date(a.laatstGeverifieerd).getTime() : 0;
+    const dateB = b.laatstGeverifieerd ? new Date(b.laatstGeverifieerd).getTime() : 0;
+    return dateA - dateB;
+  });
+}
+
+export default function Verificatie() {
+  const { data, isLoading } = useAutomatiseringen();
+  const verifieer = useVerifieerAutomatisering();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [notitie, setNotitie] = useState("");
+  const [showNotitie, setShowNotitie] = useState<"twijfel" | "verouderd" | null>(null);
+  const [direction, setDirection] = useState(1);
+
+  const all = data || [];
+  const sorted = sortForVerification(all);
+  const verifiedCount = all.filter((a) => getVerificatieStatus(a) === "geverifieerd").length;
+  const totalCount = all.length;
+  const progress = totalCount > 0 ? (verifiedCount / totalCount) * 100 : 0;
+
+  // Filter out skipped for current queue
+  const queue = sorted.filter((a) => !skipped.has(a.id));
+  const current = queue[currentIndex] || null;
+  const allDone = queue.length === 0 || currentIndex >= queue.length;
+
+  const userName = user?.email?.split("@")[0] || "Onbekend";
+
+  const goNext = useCallback(() => {
+    setDirection(1);
+    setCurrentIndex((i) => Math.min(i + 1, queue.length));
+    setShowNotitie(null);
+    setNotitie("");
+  }, [queue.length]);
+
+  const handleVerified = useCallback(async () => {
+    if (!current) return;
+    try {
+      await verifieer.mutateAsync({ id: current.id, door: userName });
+      toast.success(`${current.id} geverifieerd ✅`);
+      goNext();
+    } catch (e: any) {
+      toast.error(e.message || "Fout bij verificatie");
+    }
+  }, [current, verifieer, userName, goNext]);
+
+  const handleTwijfel = useCallback(async () => {
+    if (!current) return;
+    if (!showNotitie) {
+      setShowNotitie("twijfel");
+      return;
+    }
+    try {
+      await verifieer.mutateAsync({ id: current.id, door: userName, status: "In review" });
+      toast("In review gezet 🔍");
+      goNext();
+    } catch (e: any) {
+      toast.error(e.message || "Fout");
+    }
+  }, [current, verifieer, userName, showNotitie, goNext]);
+
+  const handleVerouderd = useCallback(async () => {
+    if (!current) return;
+    if (!showNotitie) {
+      setShowNotitie("verouderd");
+      return;
+    }
+    try {
+      await verifieer.mutateAsync({ id: current.id, door: userName, status: "Verouderd" });
+      toast("Als verouderd gemarkeerd ⚠️");
+      goNext();
+    } catch (e: any) {
+      toast.error(e.message || "Fout");
+    }
+  }, [current, verifieer, userName, showNotitie, goNext]);
+
+  const handleSkip = useCallback(() => {
+    if (!current) return;
+    setSkipped((s) => new Set(s).add(current.id));
+    setShowNotitie(null);
+    setNotitie("");
+  }, [current]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!current || showNotitie) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      if (e.key === "ArrowRight") handleVerified();
+      else if (e.key === "ArrowLeft") handleVerouderd();
+      else if (e.key === "ArrowUp") handleTwijfel();
+      else if (e.key === "ArrowDown") handleSkip();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [current, showNotitie, handleVerified, handleVerouderd, handleTwijfel, handleSkip]);
+
+  // Confetti when all done
+  useEffect(() => {
+    if (allDone && totalCount > 0 && verifiedCount === totalCount) {
+      confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });
+    }
+  }, [allDone, totalCount, verifiedCount]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      {/* Progress bar */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            <strong className="text-foreground">{verifiedCount}</strong> van {totalCount} geverifieerd
+          </span>
+          <span className="text-muted-foreground text-xs flex items-center gap-1.5">
+            <Keyboard className="h-3.5 w-3.5" />
+            → goedkeuren · ← verouderd · ↑ twijfel · ↓ skip
+          </span>
+        </div>
+        <Progress value={progress} className="h-2.5" />
+      </div>
+
+      {/* Card */}
+      <AnimatePresence mode="wait">
+        {allDone ? (
+          <motion.div
+            key="done"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-card border border-border rounded-[var(--radius-outer)] p-12 text-center space-y-4"
+          >
+            {verifiedCount === totalCount ? (
+              <>
+                <p className="text-4xl">🎉</p>
+                <h2 className="text-xl font-semibold">Alles geverifieerd!</h2>
+                <p className="text-muted-foreground text-sm">
+                  Alle {totalCount} automatiseringen zijn up-to-date.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-4xl">✅</p>
+                <h2 className="text-xl font-semibold">Wachtrij doorlopen</h2>
+                <p className="text-muted-foreground text-sm">
+                  {skipped.size > 0 && `${skipped.size} overgeslagen. `}
+                  Ga naar Alle Automatiseringen voor het overzicht.
+                </p>
+              </>
+            )}
+          </motion.div>
+        ) : current ? (
+          <motion.div
+            key={current.id}
+            initial={{ opacity: 0, x: direction * 60 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -direction * 60 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden"
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-border flex items-center gap-3 flex-wrap">
+              <span className="font-mono text-xs text-muted-foreground">{current.id}</span>
+              <h2 className="font-semibold text-lg">{current.naam}</h2>
+              <CategorieBadge categorie={current.categorie} />
+              <StatusBadge status={current.status} />
+              <VerificatieBadge item={current} />
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <Field label="Trigger" value={current.trigger} />
+                <Field label="Owner" value={current.owner} />
+                <Field label="Afhankelijkheden" value={current.afhankelijkheden} />
+                <Field label="Laatst geverifieerd" value={
+                  current.laatstGeverifieerd
+                    ? `${new Date(current.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${current.geverifieerdDoor}`
+                    : "Nooit"
+                } />
+              </div>
+
+              <div>
+                <p className="label-uppercase mb-1">Systemen</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {current.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+                </div>
+              </div>
+
+              <div>
+                <p className="label-uppercase mb-1">Flow stappen</p>
+                <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
+                  {current.stappen.map((s, i) => <li key={i}>{s}</li>)}
+                </ol>
+              </div>
+
+              {/* Optional notitie */}
+              <AnimatePresence>
+                {showNotitie && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                  >
+                    <p className="label-uppercase mb-1">
+                      Notitie ({showNotitie === "twijfel" ? "twijfel" : "verouderd"})
+                    </p>
+                    <Textarea
+                      value={notitie}
+                      onChange={(e) => setNotitie(e.target.value)}
+                      placeholder="Optioneel: beschrijf wat er mis is..."
+                      rows={2}
+                      autoFocus
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Actions */}
+            <div className="p-5 border-t border-border grid grid-cols-2 md:grid-cols-5 gap-2">
+              <Button
+                onClick={handleVerified}
+                disabled={verifieer.isPending}
+                className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white"
+              >
+                <Check className="h-4 w-4 mr-1" /> Geverifieerd
+              </Button>
+              <Button
+                onClick={handleTwijfel}
+                disabled={verifieer.isPending}
+                variant="outline"
+                className="border-[hsl(var(--status-review))] text-[hsl(var(--status-review))] hover:bg-[hsl(var(--status-review)/0.1)]"
+              >
+                <AlertTriangle className="h-4 w-4 mr-1" /> Twijfel
+              </Button>
+              <Button
+                onClick={handleVerouderd}
+                disabled={verifieer.isPending}
+                variant="outline"
+                className="border-[hsl(var(--status-outdated))] text-[hsl(var(--status-outdated))] hover:bg-[hsl(var(--status-outdated)/0.1)]"
+              >
+                <XCircle className="h-4 w-4 mr-1" /> Verouderd
+              </Button>
+              <Button
+                onClick={() => navigate(`/bewerk/${current.id}`)}
+                variant="outline"
+              >
+                <Pencil className="h-4 w-4 mr-1" /> Bewerken
+              </Button>
+              <Button
+                onClick={handleSkip}
+                variant="ghost"
+                className="text-muted-foreground"
+              >
+                <SkipForward className="h-4 w-4 mr-1" /> Skip
+              </Button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="label-uppercase mb-0.5">{label}</p>
+      <p className="text-sm text-foreground">{value || "—"}</p>
+    </div>
+  );
+}
