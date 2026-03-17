@@ -7,7 +7,7 @@ import { AppLayout } from "@/components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import NieuweAutomatisering from "./pages/NieuweAutomatisering";
 import AlleAutomatiseringen from "./pages/AlleAutomatiseringen";
-import ZoekenFilteren from "./pages/ZoekenFilteren";
+
 import BPMNViewer from "./pages/BPMNViewer";
 import AIUpload from "./pages/AIUpload";
 import Analyse from "./pages/Analyse";
@@ -26,7 +26,7 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/nieuw" element={<NieuweAutomatisering />} />
             <Route path="/alle" element={<AlleAutomatiseringen />} />
-            <Route path="/zoeken" element={<ZoekenFilteren />} />
+            
             <Route path="/bpmn" element={<BPMNViewer />} />
             <Route path="/ai-upload" element={<AIUpload />} />
             <Route path="/analyse" element={<Analyse />} />
