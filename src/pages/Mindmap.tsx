@@ -179,8 +179,8 @@ function buildGraph(
           ? `0 0 0 3px ${color}, 0 0 20px ${color}60`
           : `0 1px 4px rgba(0,0,0,0.05)`,
       },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
     };
   });
 
