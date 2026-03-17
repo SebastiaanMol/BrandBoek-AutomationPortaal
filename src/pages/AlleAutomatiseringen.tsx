@@ -112,12 +112,14 @@ export default function AlleAutomatiseringen() {
               className="w-full px-5 py-4 flex items-center gap-3 justify-between text-left hover:bg-secondary/50 transition-colors"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <span className="font-mono text-xs text-muted-foreground shrink-0">{a.id}</span>
-                <span className="font-medium truncate max-w-[260px]" title={a.naam}>{a.naam}</span>
-                <CategorieBadge categorie={a.categorie} />
-                <SystemBadge systeem={a.systemen[0] || "Anders"} />
-                <StatusBadge status={a.status} />
-                <VerificatieBadge item={a} />
+                <span className="font-mono text-xs text-muted-foreground shrink-0 w-[72px]">{a.id}</span>
+                <span className="font-medium truncate w-[280px] shrink-0" title={a.naam}>{a.naam}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <CategorieBadge categorie={a.categorie} />
+                  <SystemBadge systeem={a.systemen[0] || "Anders"} />
+                  <StatusBadge status={a.status} />
+                  <VerificatieBadge item={a} />
+                </div>
               </div>
               <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
             </button>
