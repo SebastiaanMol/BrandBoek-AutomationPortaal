@@ -30,6 +30,8 @@ const SEED_DATA: Automatisering[] = [
     ],
     fasen: ["Sales"],
     createdAt: new Date().toISOString(),
+    laatstGeverifieerd: null,
+    geverifieerdDoor: "",
   },
   {
     id: "AUTO-002",
