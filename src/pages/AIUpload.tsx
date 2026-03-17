@@ -329,6 +329,7 @@ export default function AIUpload() {
       if (allAiResults.length > 0) {
         setCsvResults(allAiResults);
         setSavedIds(new Set());
+        setSkippedIds(new Set());
         setLoading(false);
         toast.success(`AI heeft ${allAiResults.length} automatisering(en) geanalyseerd`);
         return;
