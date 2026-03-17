@@ -15,10 +15,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { getAutomatiseringen } from "@/lib/storage";
-import { Automatisering, Systeem } from "@/lib/types";
+import { Automatisering, Systeem, Categorie } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
-import { X, RotateCcw, Filter } from "lucide-react";
+import { X, RotateCcw } from "lucide-react";
 
 const SYSTEM_COLORS: Record<string, string> = {
   HubSpot: "hsl(12, 100%, 67%)",
@@ -34,6 +34,30 @@ const SYSTEM_BG: Record<string, string> = {
   Backend: "hsl(210, 100%, 40%, 0.08)",
   "E-mail": "hsl(160, 84%, 39%, 0.08)",
   API: "hsl(215, 16%, 47%, 0.08)",
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  "HubSpot Workflow": "hsl(12, 100%, 67%, 0.15)",
+  "Zapier Zap": "hsl(17, 100%, 50%, 0.15)",
+  "Backend Script": "hsl(210, 100%, 40%, 0.15)",
+  "HubSpot + Zapier": "hsl(30, 100%, 55%, 0.15)",
+  "Anders": "hsl(215, 16%, 47%, 0.15)",
+};
+
+const CATEGORY_BORDER: Record<string, string> = {
+  "HubSpot Workflow": "hsl(12, 100%, 67%, 0.35)",
+  "Zapier Zap": "hsl(17, 100%, 50%, 0.35)",
+  "Backend Script": "hsl(210, 100%, 40%, 0.35)",
+  "HubSpot + Zapier": "hsl(30, 100%, 55%, 0.35)",
+  "Anders": "hsl(215, 16%, 47%, 0.35)",
+};
+
+const CATEGORY_ICONS: Record<string, string> = {
+  "HubSpot Workflow": "⚙️",
+  "Zapier Zap": "⚡",
+  "Backend Script": "💻",
+  "HubSpot + Zapier": "🔗",
+  "Anders": "📦",
 };
 
 const STATUS_ICON: Record<string, string> = {
@@ -53,8 +77,8 @@ function getPrimarySystem(auto: Automatisering): string {
 // Hub positions for layout
 const HUB_POSITIONS: Record<string, { x: number; y: number }> = {
   HubSpot: { x: 0, y: 0 },
-  Zapier: { x: 600, y: 0 },
-  Backend: { x: 300, y: 450 },
+  Zapier: { x: 800, y: 0 },
+  Backend: { x: 400, y: 600 },
 };
 
 function buildGraph(
@@ -65,12 +89,13 @@ function buildGraph(
     ? automatiseringen.filter((a) => a.systemen.includes(filter as Systeem))
     : automatiseringen;
 
-  // Group by primary system
-  const groups: Record<string, Automatisering[]> = {};
+  // Group by primary system, then by categorie
+  const groups: Record<string, Record<string, Automatisering[]>> = {};
   filtered.forEach((a) => {
     const sys = getPrimarySystem(a);
-    if (!groups[sys]) groups[sys] = [];
-    groups[sys].push(a);
+    if (!groups[sys]) groups[sys] = {};
+    if (!groups[sys][a.categorie]) groups[sys][a.categorie] = [];
+    groups[sys][a.categorie].push(a);
   });
 
   const nodes: Node[] = [];
@@ -79,7 +104,8 @@ function buildGraph(
   // Create hub nodes
   const activeHubs = new Set(filtered.map(getPrimarySystem));
   activeHubs.forEach((sys) => {
-    const pos = HUB_POSITIONS[sys] || { x: 900, y: 200 };
+    const pos = HUB_POSITIONS[sys] || { x: 1200, y: 300 };
+    const totalInHub = Object.values(groups[sys] || {}).reduce((s, arr) => s + arr.length, 0);
     nodes.push({
       id: `hub-${sys}`,
       type: "default",
@@ -88,9 +114,7 @@ function buildGraph(
         label: (
           <div className="flex items-center gap-2 px-1">
             <span className="text-lg font-bold">{sys}</span>
-            <span className="text-xs text-muted-foreground">
-              ({groups[sys]?.length || 0})
-            </span>
+            <span className="text-xs opacity-70">({totalInHub})</span>
           </div>
         ),
       },
@@ -107,57 +131,114 @@ function buildGraph(
         fontSize: "14px",
         fontWeight: 700,
         boxShadow: `0 4px 24px ${SYSTEM_COLORS[sys]}40`,
+        zIndex: 10,
       },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
     });
   });
 
-  // Place automation nodes as satellites around hubs
-  Object.entries(groups).forEach(([sys, autos]) => {
-    const hub = HUB_POSITIONS[sys] || { x: 900, y: 200 };
-    const radius = 220;
-    autos.forEach((a, i) => {
-      const angle = (2 * Math.PI * i) / autos.length - Math.PI / 2;
-      const x = hub.x + radius * Math.cos(angle) + 70 - 85;
-      const y = hub.y + radius * Math.sin(angle) + 70 - 30;
-      const color = SYSTEM_COLORS[sys] || "#888";
+  // Place subcategory groups as clusters around each hub
+  Object.entries(groups).forEach(([sys, catGroups]) => {
+    const hub = HUB_POSITIONS[sys] || { x: 1200, y: 300 };
+    const categories = Object.keys(catGroups);
+    const clusterRadius = 320;
 
+    categories.forEach((cat, catIdx) => {
+      const autos = catGroups[cat];
+      const catAngle = (2 * Math.PI * catIdx) / categories.length - Math.PI / 2;
+      const clusterCenterX = hub.x + clusterRadius * Math.cos(catAngle) + 70;
+      const clusterCenterY = hub.y + clusterRadius * Math.sin(catAngle) + 70;
+
+      // Subcategory group node (background container)
+      const padding = 30;
+      const nodeWidth = 180;
+      const nodeHeight = 52;
+      const cols = Math.min(autos.length, 2);
+      const rows = Math.ceil(autos.length / cols);
+      const groupW = cols * (nodeWidth + 16) + padding * 2;
+      const groupH = rows * (nodeHeight + 12) + padding * 2 + 32; // 32 for header
+
+      const groupId = `group-${sys}-${cat}`;
       nodes.push({
-        id: a.id,
+        id: groupId,
         type: "default",
-        position: { x, y },
+        position: {
+          x: clusterCenterX - groupW / 2,
+          y: clusterCenterY - groupH / 2,
+        },
         data: {
           label: (
-            <div className="text-left leading-tight">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-mono opacity-70">{a.id}</span>
-                <span>{STATUS_ICON[a.status] || ""}</span>
+            <div style={{ width: groupW - 24, height: groupH - 16 }} className="relative">
+              <div className="absolute top-0 left-0 right-0 flex items-center gap-1.5 pb-1">
+                <span>{CATEGORY_ICONS[cat] || "📦"}</span>
+                <span className="text-xs font-bold opacity-80">{cat}</span>
+                <span className="text-[10px] opacity-50">({autos.length})</span>
               </div>
-              <div className="font-semibold text-xs mt-0.5 truncate max-w-[130px]">{a.naam}</div>
             </div>
           ),
         },
         style: {
-          background: SYSTEM_BG[sys] || "#f5f5f5",
-          border: `2px solid ${color}`,
-          borderRadius: "var(--radius-inner, 8px)",
+          background: CATEGORY_COLORS[cat] || "hsl(0,0%,95%,0.5)",
+          border: `1.5px dashed ${CATEGORY_BORDER[cat] || "hsl(0,0%,70%,0.4)"}`,
+          borderRadius: "12px",
+          width: groupW,
+          height: groupH,
           padding: "8px 12px",
-          minWidth: 170,
-          cursor: "pointer",
-          fontSize: "12px",
+          zIndex: 0,
+          pointerEvents: "none" as const,
         },
+        selectable: false,
+        draggable: true,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       });
 
-      // Edge from hub to node
+      // Edge from hub to subcategory group
       edges.push({
-        id: `hub-${sys}-${a.id}`,
+        id: `hub-${sys}-${groupId}`,
         source: `hub-${sys}`,
-        target: a.id,
+        target: groupId,
         type: "default",
-        style: { stroke: color, strokeWidth: 1, opacity: 0.3 },
+        style: { stroke: SYSTEM_COLORS[sys], strokeWidth: 1.5, opacity: 0.25 },
+      });
+
+      // Place automation nodes inside the group
+      autos.forEach((a, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = clusterCenterX - groupW / 2 + padding + col * (nodeWidth + 16);
+        const y = clusterCenterY - groupH / 2 + padding + 28 + row * (nodeHeight + 12);
+        const color = SYSTEM_COLORS[sys] || "#888";
+
+        nodes.push({
+          id: a.id,
+          type: "default",
+          position: { x, y },
+          data: {
+            label: (
+              <div className="text-left leading-tight">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono opacity-70">{a.id}</span>
+                  <span>{STATUS_ICON[a.status] || ""}</span>
+                </div>
+                <div className="font-semibold text-xs mt-0.5 truncate max-w-[140px]">{a.naam}</div>
+              </div>
+            ),
+          },
+          style: {
+            background: SYSTEM_BG[sys] || "#f5f5f5",
+            border: `2px solid ${color}`,
+            borderRadius: "var(--radius-inner, 8px)",
+            padding: "8px 12px",
+            width: nodeWidth,
+            cursor: "pointer",
+            fontSize: "12px",
+            zIndex: 5,
+          },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+        });
       });
     });
   });
@@ -202,7 +283,6 @@ export default function Mindmap() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
 
-  // Reset when filter changes
   useEffect(() => {
     const { nodes: n, edges: e } = buildGraph(automatiseringen, filter);
     setNodes(n);
@@ -217,7 +297,7 @@ export default function Mindmap() {
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      if (node.id.startsWith("hub-")) return;
+      if (node.id.startsWith("hub-") || node.id.startsWith("group-")) return;
       const auto = automatiseringen.find((a) => a.id === node.id);
       if (auto) setSelectedAuto(auto);
     },
