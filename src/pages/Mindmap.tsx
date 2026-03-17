@@ -286,7 +286,7 @@ function buildGraph(
   const systemHubNodes: Node[] = activeSystems.map((sys) => {
     const hubId = `${SYSTEM_HUB_PREFIX}${sys}`;
     systemHubIds.push(hubId);
-    const count = filtered.filter((a) => a.systemen.includes(sys as Systeem)).length;
+    const count = filtered.filter((a) => getOriginSystems(a).includes(sys)).length;
     const color = SYSTEM_COLORS[sys] || "#64748b";
     return {
       id: hubId,
