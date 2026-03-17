@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAutomatiseringen } from "@/lib/hooks";
 import { exportToCSV } from "@/lib/supabaseStorage";
 import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem } from "@/lib/types";
