@@ -26,7 +26,6 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/nieuw" element={<NieuweAutomatisering />} />
             <Route path="/alle" element={<AlleAutomatiseringen />} />
-            
             <Route path="/bpmn" element={<BPMNViewer />} />
             <Route path="/ai-upload" element={<AIUpload />} />
             <Route path="/analyse" element={<Analyse />} />
