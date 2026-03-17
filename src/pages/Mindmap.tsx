@@ -86,8 +86,8 @@ function applyRadialLayout(
   const hubNodes = nodes.filter((n) => hubSet.has(n.id));
   const autoNodes = nodes.filter((n) => !hubSet.has(n.id));
 
-  // Place system hubs in a circle
-  const HUB_RADIUS = 350;
+  // Place system hubs in a circle with enough spacing
+  const HUB_RADIUS = Math.max(400, hubNodes.length * 80);
   const hubPositions: Record<string, { x: number; y: number }> = {};
   hubNodes.forEach((n, i) => {
     const angle = (2 * Math.PI * i) / hubNodes.length - Math.PI / 2;
@@ -100,8 +100,7 @@ function applyRadialLayout(
   // Group auto nodes by their primary system hub
   const hubToAutos: Record<string, Node[]> = {};
   systemHubIds.forEach((id) => (hubToAutos[id] = []));
-  
-  // Build adjacency: which hub is each auto connected to via edges?
+
   const autoToHubs: Record<string, string[]> = {};
   edges.forEach((e) => {
     if (hubSet.has(e.target) && !hubSet.has(e.source)) {
@@ -124,12 +123,9 @@ function applyRadialLayout(
     }
   });
 
-  // Place auto nodes around their hub
-  const AUTO_RADIUS_BASE = 220;
-  const AUTO_RADIUS_STEP = 100;
   const positions: Record<string, { x: number; y: number }> = {};
 
-  // Hubs
+  // Hub positions
   hubNodes.forEach((n) => {
     const w = (n.style?.width as number) || 100;
     const h = (n.style?.height as number) || 100;
@@ -139,32 +135,82 @@ function applyRadialLayout(
     };
   });
 
-  // Auto nodes per hub
+  // Place auto nodes in a grid-like fan around their hub — no overlap
+  const NODE_W = 210; // max node width + padding
+  const NODE_H = 90;  // max node height + padding
+
   Object.entries(hubToAutos).forEach(([hubId, autos]) => {
     if (autos.length === 0) return;
     const hubPos = hubPositions[hubId] || { x: 0, y: 0 };
-    const PER_RING = 8;
+    const hubAngle = Math.atan2(hubPos.y, hubPos.x);
+
+    // Place nodes in rows radiating outward from the hub
+    const PER_ROW = Math.max(3, Math.ceil(Math.sqrt(autos.length)));
+    const rows = Math.ceil(autos.length / PER_ROW);
+    const RADIUS_START = 250;
+    const ROW_SPACING = NODE_H + 20;
+
     autos.forEach((n, i) => {
-      const ring = Math.floor(i / PER_RING);
-      const idxInRing = i % PER_RING;
-      const countInRing = Math.min(PER_RING, autos.length - ring * PER_RING);
-      const radius = AUTO_RADIUS_BASE + ring * AUTO_RADIUS_STEP;
-      // Spread angle: center around the hub's angle from origin
-      const hubAngle = Math.atan2(hubPos.y, hubPos.x);
-      const spread = Math.min(Math.PI * 0.8, (countInRing * 0.35));
-      const startAngle = hubAngle - spread / 2;
-      const angle = countInRing === 1 
-        ? hubAngle 
-        : startAngle + (spread * idxInRing) / (countInRing - 1);
+      const row = Math.floor(i / PER_ROW);
+      const col = i % PER_ROW;
+      const colsInRow = Math.min(PER_ROW, autos.length - row * PER_ROW);
+
+      // Offset along the tangent direction (perpendicular to hub angle)
+      const tangentX = -Math.sin(hubAngle);
+      const tangentY = Math.cos(hubAngle);
+      const radialX = Math.cos(hubAngle);
+      const radialY = Math.sin(hubAngle);
+
+      const radialDist = RADIUS_START + row * ROW_SPACING;
+      const tangentOffset = (col - (colsInRow - 1) / 2) * (NODE_W + 10);
 
       const w = (n.style?.width as number) || 180;
       const h = (n.style?.height as number) || 60;
       positions[n.id] = {
-        x: hubPos.x + Math.cos(angle) * radius - w / 2,
-        y: hubPos.y + Math.sin(angle) * radius - h / 2,
+        x: hubPos.x + radialX * radialDist + tangentX * tangentOffset - w / 2,
+        y: hubPos.y + radialY * radialDist + tangentY * tangentOffset - h / 2,
       };
     });
   });
+
+  // Collision resolution pass — push apart any overlapping nodes
+  const allIds = Object.keys(positions);
+  for (let iter = 0; iter < 10; iter++) {
+    let moved = false;
+    for (let i = 0; i < allIds.length; i++) {
+      for (let j = i + 1; j < allIds.length; j++) {
+        const a = positions[allIds[i]];
+        const b = positions[allIds[j]];
+        const aW = hubSet.has(allIds[i]) ? 110 : NODE_W;
+        const aH = hubSet.has(allIds[i]) ? 110 : NODE_H;
+        const bW = hubSet.has(allIds[j]) ? 110 : NODE_W;
+        const bH = hubSet.has(allIds[j]) ? 110 : NODE_H;
+
+        const overlapX = (aW / 2 + bW / 2) - Math.abs((a.x + aW / 2) - (b.x + bW / 2));
+        const overlapY = (aH / 2 + bH / 2) - Math.abs((a.y + aH / 2) - (b.y + bH / 2));
+
+        if (overlapX > 0 && overlapY > 0) {
+          // Push apart along the axis with least overlap
+          const pushX = overlapX < overlapY;
+          const dx = (a.x + aW / 2) - (b.x + bW / 2);
+          const dy = (a.y + aH / 2) - (b.y + bH / 2);
+          const push = pushX ? overlapX / 2 + 5 : overlapY / 2 + 5;
+
+          if (pushX) {
+            const dir = dx >= 0 ? 1 : -1;
+            a.x += dir * push;
+            b.x -= dir * push;
+          } else {
+            const dir = dy >= 0 ? 1 : -1;
+            a.y += dir * push;
+            b.y -= dir * push;
+          }
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
 
   return nodes.map((n) => ({
     ...n,
