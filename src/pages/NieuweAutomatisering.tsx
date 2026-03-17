@@ -85,6 +85,7 @@ export default function NieuweAutomatisering({ prefill }: NieuweAutomatiseringPr
       verbeterideeën: form.verbeterideeën || "",
       mermaidDiagram: form.mermaidDiagram || "",
       koppelingen: (form.koppelingen || []).filter((k) => k.doelId),
+      fasen: (form.fasen || []) as KlantFase[],
       createdAt: new Date().toISOString(),
     };
     saveAutomatisering(item);
