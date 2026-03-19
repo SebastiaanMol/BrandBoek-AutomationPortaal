@@ -423,7 +423,6 @@ function AutoListItem({ item: a, navigate, onGoToVerify }: { item: Automatiserin
           <div className="flex items-center gap-2 mb-1">
             <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
             <span className="font-medium truncate">{a.naam}</span>
-            <VerificatieBadge item={a} />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <CategorieBadge categorie={a.categorie} />
@@ -434,7 +433,8 @@ function AutoListItem({ item: a, navigate, onGoToVerify }: { item: Automatiserin
             </span>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <VerificatieBadge item={a} />
           {onGoToVerify && (
             <Button size="sm" className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white" onClick={() => onGoToVerify(a.id)}>
               <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Verifiëren
