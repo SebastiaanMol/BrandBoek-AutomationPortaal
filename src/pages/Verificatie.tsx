@@ -387,7 +387,7 @@ export default function Verificatie() {
           {geverifieerdItems.length === 0 ? (
             <EmptyState emoji="🔍" title="Nog niets geverifieerd" description="Er zijn nog geen recent geverifieerde automatiseringen." />
           ) : (
-            geverifieerdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} />)
+            geverifieerdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onVerify={handleListVerify} />)
           )}
         </TabsContent>
 
