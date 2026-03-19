@@ -413,37 +413,70 @@ export default function Verificatie() {
   );
 }
 
-function AutoListItem({ item: a, navigate, onVerify }: { item: Automatisering; navigate: (path: string) => void; onVerify?: (id: string) => void }) {
+function AutoListItem({ item: a, navigate, onGoToVerify }: { item: Automatisering; navigate: (path: string) => void; onGoToVerify?: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm p-4 flex items-center gap-4">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
-          <span className="font-medium truncate">{a.naam}</span>
-          <VerificatieBadge item={a} />
+    <div className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden">
+      <div className="p-4 flex items-center gap-4 cursor-pointer" onClick={() => setOpen(!open)}>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-0" : "-rotate-90"}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
+            <span className="font-medium truncate">{a.naam}</span>
+            <VerificatieBadge item={a} />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <CategorieBadge categorie={a.categorie} />
+            {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+            <span className="text-xs text-muted-foreground">
+              Owner: {a.owner || "—"}
+              {a.laatstGeverifieerd && ` · ${new Date(a.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${a.geverifieerdDoor}`}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <CategorieBadge categorie={a.categorie} />
-          {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
-          <span className="text-xs text-muted-foreground">
-            Owner: {a.owner || "—"}
-            {a.laatstGeverifieerd && ` · ${new Date(a.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${a.geverifieerdDoor}`}
-          </span>
-        </div>
-      </div>
-      <div className="flex gap-2 shrink-0">
-        {onVerify && (
-          <Button size="sm" className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white" onClick={() => onVerify(a.id)}>
-            <Check className="h-3.5 w-3.5 mr-1" /> Verifiëren
+        <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {onGoToVerify && (
+            <Button size="sm" className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white" onClick={() => onGoToVerify(a.id)}>
+              <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Verifiëren
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={() => navigate(`/bewerk/${a.id}`)}>
+            <Pencil className="h-3.5 w-3.5 mr-1" /> Bewerken
           </Button>
-        )}
-        <Button size="sm" variant="outline" onClick={() => navigate(`/bewerk/${a.id}`)}>
-          <Pencil className="h-3.5 w-3.5 mr-1" /> Bewerken
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => navigate(`/alle?open=${a.id}`)}>
-          <ChevronRight className="h-3.5 w-3.5 mr-1" /> Bekijken
-        </Button>
+        </div>
       </div>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-0 border-t border-border space-y-3">
+              <div className="grid md:grid-cols-2 gap-3 pt-3">
+                <Field label="Trigger" value={a.trigger} />
+                <Field label="Owner" value={a.owner} />
+                <Field label="Afhankelijkheden" value={a.afhankelijkheden} />
+                <Field label="Status" value={a.status} />
+              </div>
+              <div>
+                <p className="label-uppercase mb-1">Systemen</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+                </div>
+              </div>
+              <div>
+                <p className="label-uppercase mb-1">Flow stappen</p>
+                <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
+                  {a.stappen.map((s, i) => <li key={i}>{s}</li>)}
+                </ol>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
