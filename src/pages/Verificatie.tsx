@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, AlertTriangle, XCircle, Pencil, SkipForward, Keyboard, ChevronLeft, ChevronRight, Eye, ShieldCheck, Clock } from "lucide-react";
+import { Loader2, Check, AlertTriangle, XCircle, Pencil, SkipForward, Keyboard, ChevronLeft, ChevronRight, ChevronDown, Eye, ShieldCheck, Clock } from "lucide-react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 
@@ -70,14 +70,12 @@ export default function Verificatie() {
 
   const userName = user?.email?.split("@")[0] || "Onbekend";
 
-  const handleListVerify = useCallback(async (id: string) => {
-    try {
-      await verifieer.mutateAsync({ id, door: userName });
-      toast.success(`${id} geverifieerd ✅`);
-    } catch (e: any) {
-      toast.error(e.message || "Fout bij verificatie");
-    }
-  }, [verifieer, userName]);
+  const handleGoToVerify = useCallback((id: string) => {
+    setCurrentId(id);
+    setTab("verificatie");
+    setShowNotitie(null);
+    setNotitie("");
+  }, []);
 
   const goNext = useCallback(() => {
     setDirection(1);
@@ -387,7 +385,7 @@ export default function Verificatie() {
           {geverifieerdItems.length === 0 ? (
             <EmptyState emoji="🔍" title="Nog niets geverifieerd" description="Er zijn nog geen recent geverifieerde automatiseringen." />
           ) : (
-            geverifieerdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onVerify={handleListVerify} />)
+            geverifieerdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)
           )}
         </TabsContent>
 
@@ -395,7 +393,7 @@ export default function Verificatie() {
           {verouderdItems.length === 0 ? (
             <EmptyState emoji="✅" title="Niets verouderd" description="Alle geverifieerde automatiseringen zijn nog actueel." />
           ) : (
-            verouderdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onVerify={handleListVerify} />)
+            verouderdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)
           )}
         </TabsContent>
 
@@ -403,49 +401,82 @@ export default function Verificatie() {
           {inReviewItems.length === 0 ? (
             <EmptyState emoji="👍" title="Geen openstaande twijfels" description='Er zijn geen automatiseringen met de status "In review".' />
           ) : (
-            inReviewItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onVerify={handleListVerify} />)
+            inReviewItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)
           )}
         </TabsContent>
 
         <TabsContent value="alle" className="mt-4 space-y-3">
-          {sorted.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onVerify={handleListVerify} />)}
+          {sorted.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)}
         </TabsContent>
       </Tabs>
     </div>
   );
 }
 
-function AutoListItem({ item: a, navigate, onVerify }: { item: Automatisering; navigate: (path: string) => void; onVerify?: (id: string) => void }) {
+function AutoListItem({ item: a, navigate, onGoToVerify }: { item: Automatisering; navigate: (path: string) => void; onGoToVerify?: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm p-4 flex items-center gap-4">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
-          <span className="font-medium truncate">{a.naam}</span>
-          <VerificatieBadge item={a} />
+    <div className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden">
+      <div className="p-4 flex items-center gap-4 cursor-pointer" onClick={() => setOpen(!open)}>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-0" : "-rotate-90"}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
+            <span className="font-medium truncate">{a.naam}</span>
+            <VerificatieBadge item={a} />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <CategorieBadge categorie={a.categorie} />
+            {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+            <span className="text-xs text-muted-foreground">
+              Owner: {a.owner || "—"}
+              {a.laatstGeverifieerd && ` · ${new Date(a.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${a.geverifieerdDoor}`}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <CategorieBadge categorie={a.categorie} />
-          {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
-          <span className="text-xs text-muted-foreground">
-            Owner: {a.owner || "—"}
-            {a.laatstGeverifieerd && ` · ${new Date(a.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${a.geverifieerdDoor}`}
-          </span>
-        </div>
-      </div>
-      <div className="flex gap-2 shrink-0">
-        {onVerify && (
-          <Button size="sm" className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white" onClick={() => onVerify(a.id)}>
-            <Check className="h-3.5 w-3.5 mr-1" /> Verifiëren
+        <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {onGoToVerify && (
+            <Button size="sm" className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white" onClick={() => onGoToVerify(a.id)}>
+              <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Verifiëren
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={() => navigate(`/bewerk/${a.id}`)}>
+            <Pencil className="h-3.5 w-3.5 mr-1" /> Bewerken
           </Button>
-        )}
-        <Button size="sm" variant="outline" onClick={() => navigate(`/bewerk/${a.id}`)}>
-          <Pencil className="h-3.5 w-3.5 mr-1" /> Bewerken
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => navigate(`/alle?open=${a.id}`)}>
-          <ChevronRight className="h-3.5 w-3.5 mr-1" /> Bekijken
-        </Button>
+        </div>
       </div>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-0 border-t border-border space-y-3">
+              <div className="grid md:grid-cols-2 gap-3 pt-3">
+                <Field label="Trigger" value={a.trigger} />
+                <Field label="Owner" value={a.owner} />
+                <Field label="Afhankelijkheden" value={a.afhankelijkheden} />
+                <Field label="Status" value={a.status} />
+              </div>
+              <div>
+                <p className="label-uppercase mb-1">Systemen</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+                </div>
+              </div>
+              <div>
+                <p className="label-uppercase mb-1">Flow stappen</p>
+                <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
+                  {a.stappen.map((s, i) => <li key={i}>{s}</li>)}
+                </ol>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
