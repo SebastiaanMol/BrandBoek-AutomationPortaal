@@ -189,6 +189,14 @@ export default function Verificatie() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="verificatie">Verificatie</TabsTrigger>
+          <TabsTrigger value="alle" className="gap-1.5">
+            Alle
+            {totalCount > 0 && (
+              <span className="ml-1 bg-muted-foreground/20 text-foreground text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {totalCount}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="geverifieerd" className="gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5" />
             Geverifieerd
@@ -388,6 +396,10 @@ export default function Verificatie() {
           ) : (
             inReviewItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} />)
           )}
+        </TabsContent>
+
+        <TabsContent value="alle" className="mt-4 space-y-3">
+          {sorted.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} />)}
         </TabsContent>
       </Tabs>
     </div>
