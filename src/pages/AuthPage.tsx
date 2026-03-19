@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export default function AuthPage() {
-  const [isLogin, setIsLogin] = useState(true);
+  const isLogin = true;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -79,15 +79,6 @@ export default function AuthPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground">
-          {isLogin ? "Nog geen account?" : "Al een account?"}{" "}
-          <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-primary font-medium hover:underline"
-          >
-            {isLogin ? "Registreren" : "Inloggen"}
-          </button>
-        </p>
       </div>
     </div>
   );
