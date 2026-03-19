@@ -80,6 +80,12 @@ function getPrimarySystem(auto: Automatisering): string {
     case "Zapier Zap": return "Zapier";
     case "HubSpot + Zapier": return "HubSpot";
     case "Backend Script": return "Backend";
+    case "Typeform": return "Typeform";
+    case "SharePoint": return "SharePoint";
+    case "WeFact": return "WeFact";
+    case "Docufy": return "Docufy";
+    case "E-mail": return "E-mail";
+    case "API": return "API";
     default: return auto.systemen[0] || "Anders";
   }
 }
