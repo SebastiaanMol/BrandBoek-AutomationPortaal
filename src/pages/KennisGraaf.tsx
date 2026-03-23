@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
+const KennisGraaf3D = lazy(() => import("./KennisGraaf3D"))
 import {
   ReactFlow,
   Background,
@@ -347,6 +348,7 @@ function KennisGraafInner() {
   const [showDetail, setShowDetail] = useState(false)
   const [showDomainView, setShowDomainView] = useState(false)
   const [showCriticalPath, setShowCriticalPath] = useState(false)
+  const [show3D, setShow3D] = useState(false)
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -622,6 +624,36 @@ function KennisGraafInner() {
     )
   }
 
+  // ── 3D view ────────────────────────────────────────────────────────────────
+  if (show3D) {
+    return (
+      <div style={{ position: "relative" }}>
+        {/* 3D toggle button */}
+        <div style={{ position: "absolute", top: 16, right: 16, zIndex: 20 }}>
+          <button onClick={() => setShow3D(false)} style={{
+            padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+            background: "#ffffff22", backdropFilter: "blur(8px)",
+            border: "1px solid #ffffff44", color: "#e2e8f0", cursor: "pointer",
+          }}>
+            ← 2D
+          </button>
+        </div>
+        <Suspense fallback={
+          <div style={{ width: "100%", height: "calc(100vh - 48px)", background: "#020817", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
+            3D laden…
+          </div>
+        }>
+          <KennisGraaf3D
+            automations={automations}
+            showSystems={showSystems}
+            showPhases={showPhases}
+            analysisMode={analysisMode}
+          />
+        </Suspense>
+      </div>
+    )
+  }
+
   return (
     <div style={{ width: "100%", height: "calc(100vh - 48px)", background: "#f8fafc", position: "relative", overflow: "hidden" }}>
       <style>{`.react-flow { background: #f8fafc !important; } .react-flow__renderer { background: #f8fafc !important; }`}</style>
@@ -705,6 +737,17 @@ function KennisGraafInner() {
               <span style={{ color: "#94a3b8", fontSize: 12 }}>
                 {stats.total} automations · {stats.connections} koppelingen
               </span>
+            )}
+
+            {/* 3D toggle */}
+            {!showDomainView && (
+              <button onClick={() => setShow3D(true)} style={{
+                padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+                border: "1px solid #6366f1", background: "#eef2ff",
+                color: "#6366f1", cursor: "pointer", marginLeft: 4,
+              }}>
+                🌐 3D
+              </button>
             )}
           </div>
         </Panel>
