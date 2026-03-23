@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import ReactFlow, {
   Background,
   BackgroundVariant,
   Controls,
+  ReactFlowProvider,
   Edge,
   EdgeLabelRenderer,
   MarkerType,
@@ -269,7 +270,7 @@ function applyDagre(
 
 // ─── main component ───────────────────────────────────────────────────────────
 
-export default function KennisGraaf() {
+function KennisGraafInner() {
   const { data: rawData = [], isLoading } = useAutomatiseringen()
   const automations: Automatisering[] = rawData as Automatisering[]
 
@@ -1082,5 +1083,13 @@ export default function KennisGraaf() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function KennisGraaf() {
+  return (
+    <ReactFlowProvider>
+      <KennisGraafInner />
+    </ReactFlowProvider>
   )
 }
