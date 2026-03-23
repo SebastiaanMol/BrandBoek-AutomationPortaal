@@ -21,13 +21,16 @@ export type Database = {
           created_at: string
           created_by: string | null
           doel: string
+          external_id: string | null
           fasen: string[]
           geverifieerd_door: string
           id: string
           laatst_geverifieerd: string | null
+          last_synced_at: string | null
           mermaid_diagram: string
           naam: string
           owner: string
+          source: string | null
           stappen: string[]
           status: string
           systemen: string[]
@@ -40,13 +43,16 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           doel?: string
+          external_id?: string | null
           fasen?: string[]
           geverifieerd_door?: string
           id: string
           laatst_geverifieerd?: string | null
+          last_synced_at?: string | null
           mermaid_diagram?: string
           naam: string
           owner?: string
+          source?: string | null
           stappen?: string[]
           status?: string
           systemen?: string[]
@@ -59,18 +65,54 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           doel?: string
+          external_id?: string | null
           fasen?: string[]
           geverifieerd_door?: string
           id?: string
           laatst_geverifieerd?: string | null
+          last_synced_at?: string | null
           mermaid_diagram?: string
           naam?: string
           owner?: string
+          source?: string | null
           stappen?: string[]
           status?: string
           systemen?: string[]
           trigger_beschrijving?: string
           verbeterideeen?: string
+        }
+        Relationships: []
+      }
+      integrations: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          last_synced_at: string | null
+          status: string
+          token: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          last_synced_at?: string | null
+          status?: string
+          token: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          last_synced_at?: string | null
+          status?: string
+          token?: string
+          type?: string
+          user_id?: string
         }
         Relationships: []
       }
