@@ -40,6 +40,20 @@ export interface Automatisering {
   createdAt: string;
   laatstGeverifieerd: string | null;
   geverifieerdDoor: string;
+  externalId?: string;
+  source?: string;
+  lastSyncedAt?: string | null;
+}
+
+export interface Integration {
+  id: string;
+  userId: string;
+  type: string;
+  token: string;
+  lastSyncedAt: string | null;
+  status: "connected" | "error" | "disconnected";
+  errorMessage: string | null;
+  createdAt: string;
 }
 
 export type VerificatieStatus = "geverifieerd" | "verouderd" | "nooit";

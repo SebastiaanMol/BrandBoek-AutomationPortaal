@@ -11,6 +11,7 @@ import {
   Map,
   LogOut,
   ClipboardCheck,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -22,6 +23,7 @@ const navItems = [
   { title: "Mindmap", url: "/mindmap", icon: Map },
   { title: "BPMN Viewer", url: "/bpmn", icon: GitBranch },
   { title: "Analyse", url: "/analyse", icon: BarChart3 },
+  { title: "Instellingen", url: "/instellingen", icon: Settings },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
