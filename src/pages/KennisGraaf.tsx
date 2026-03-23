@@ -387,59 +387,49 @@ function KennisGraafInner() {
 
   const filteredIds = useMemo(() => new Set(filtered.map(a => a.id)), [filtered])
 
-  // ── build graph ──────────────────────────────────────────────────────────────
-  const buildGraph = useCallback(() => {
-    if (automations.length === 0) return
-
+  // ── layout positions (expensive — only recomputes when structure changes) ────
+  const layoutPositions = useMemo(() => {
+    if (filtered.length === 0) return new Map<string, { x: number; y: number }>()
     const W = 2400, H = 1800
 
-    // Automation nodes
+    const sysIds = showSystems ? [...new Set(filtered.flatMap(a => a.systemen ?? []))] : []
+    const phaseIds = showPhases ? [...new Set(filtered.flatMap(a => a.fasen ?? []))] : []
+
     const forceNodes = seedNodes(filtered.map(a => a.id), W, H)
     const forceEdges = edgeList
       .filter(e => filteredIds.has(e.source) && filteredIds.has(e.target))
       .map(e => ({ source: e.source, target: e.target, strength: 2 }))
 
-    // System linkage edges for force
     if (showSystems) {
-      for (const a of filtered) {
-        for (const s of (a.systemen ?? [])) {
+      for (const a of filtered)
+        for (const s of (a.systemen ?? []))
           forceEdges.push({ source: a.id, target: `sys_${s}`, strength: 0.5 })
-        }
-      }
     }
     if (showPhases) {
-      for (const a of filtered) {
-        for (const f of (a.fasen ?? [])) {
+      for (const a of filtered)
+        for (const f of (a.fasen ?? []))
           forceEdges.push({ source: a.id, target: `phase_${f}`, strength: 0.5 })
-        }
-      }
     }
+    for (const s of sysIds)
+      forceNodes.push({ id: `sys_${s}`, x: (Math.random() - 0.5) * W * 0.6, y: (Math.random() - 0.5) * H * 0.6, vx: 0, vy: 0, mass: 3 })
+    for (const f of phaseIds)
+      forceNodes.push({ id: `phase_${f}`, x: (Math.random() - 0.5) * W * 0.6, y: (Math.random() - 0.5) * H * 0.6, vx: 0, vy: 0, mass: 3 })
 
-    // System / phase meta-nodes
-    const sysIds = showSystems
-      ? [...new Set(filtered.flatMap(a => a.systemen ?? []))]
-      : []
-    const phaseIds = showPhases
-      ? [...new Set(filtered.flatMap(a => a.fasen ?? []))]
-      : []
+    // Adaptive iterations: fewer nodes = more iterations is ok, many nodes = less
+    const iters = filtered.length > 80 ? 80 : filtered.length > 40 ? 120 : 180
 
-    for (const s of sysIds) {
-      forceNodes.push({
-        id: `sys_${s}`, x: (Math.random() - 0.5) * W * 0.6,
-        y: (Math.random() - 0.5) * H * 0.6, vx: 0, vy: 0, mass: 3,
-      })
-    }
-    for (const f of phaseIds) {
-      forceNodes.push({
-        id: `phase_${f}`, x: (Math.random() - 0.5) * W * 0.6,
-        y: (Math.random() - 0.5) * H * 0.6, vx: 0, vy: 0, mass: 3,
-      })
-    }
-
-    // Run force layout
-    const positions = layoutMode === "force" || layoutMode === "cluster-system" || layoutMode === "cluster-fase"
-      ? runForceLayout(forceNodes, forceEdges, W, H, 300)
+    return layoutMode !== "dagre"
+      ? runForceLayout(forceNodes, forceEdges, W, H, iters)
       : new Map(forceNodes.map(n => [n.id, { x: n.x, y: n.y }]))
+  }, [filtered, filteredIds, edgeList, layoutMode, showSystems, showPhases])
+
+  // ── build graph (cheap — only re-styles nodes) ────────────────────────────
+  const buildGraph = useCallback(() => {
+    if (automations.length === 0 || layoutPositions.size === 0) return
+
+    const sysIds = showSystems ? [...new Set(filtered.flatMap(a => a.systemen ?? []))] : []
+    const phaseIds = showPhases ? [...new Set(filtered.flatMap(a => a.fasen ?? []))] : []
+    const positions = layoutPositions
 
     // Build ReactFlow nodes
     const rfNodes: Node[] = filtered.map(a => {
@@ -562,7 +552,7 @@ function KennisGraafInner() {
     setNodes(finalNodes)
     setEdges(rfEdges)
     setTimeout(() => fitView({ padding: 0.15, duration: 600 }), 50)
-  }, [filtered, filteredIds, edgeList, layoutMode, showSystems, showPhases, analysisMode, cascadeSet, pathSet, orphans, centrality, selectedId, automations, setNodes, setEdges, fitView])
+  }, [layoutPositions, filtered, filteredIds, edgeList, layoutMode, showSystems, showPhases, analysisMode, cascadeSet, pathSet, orphans, centrality, selectedId, automations, setNodes, setEdges, fitView])
 
   // Automation view
   useEffect(() => {
