@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import ReactFlow, {
+import {
+  ReactFlow,
   Background,
   BackgroundVariant,
   Controls,
@@ -548,6 +549,7 @@ function KennisGraafInner() {
 
   return (
     <div style={{ width: "100%", height: "calc(100vh - 48px)", background: "#080812", position: "relative", overflow: "hidden" }}>
+      <style>{`.react-flow { background: #080812 !important; } .react-flow__renderer { background: #080812 !important; }`}</style>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -555,11 +557,12 @@ function KennisGraafInner() {
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
         nodeTypes={nodeTypes}
+        colorMode="dark"
         fitView
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.05}
         maxZoom={3}
-        style={{ background: "#080812" }}
+        style={{ background: "#080812", width: "100%", height: "100%" }}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1e293b" />
         <Controls style={{ bottom: 16, left: 16 }} />
