@@ -74,31 +74,33 @@ export default function Dashboard() {
         </div>
       </Link>
 
+      {/* Status lijsten */}
       <div>
         <h2 className="text-lg font-semibold tracking-tight text-foreground mb-4">
-          Recente Automatiseringen
+          Automatiseringen per Status
         </h2>
-        <div className="space-y-3">
-          {all.slice(-10).reverse().map((a) => (
-            <div
-              key={a.id}
-              className="bg-card border border-border rounded-[var(--radius-inner)] p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between shadow-sm"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="font-mono text-xs text-muted-foreground shrink-0">{a.id}</span>
-                <span className="font-medium text-foreground truncate">{a.naam}</span>
-                <CategorieBadge categorie={a.categorie} />
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <StatusBadge status={a.status} />
-                <span className="text-xs text-muted-foreground">{a.owner}</span>
-              </div>
-            </div>
-          ))}
-          {all.length === 0 && (
-            <p className="text-muted-foreground text-sm">Nog geen automatiseringen vastgelegd.</p>
-          )}
-        </div>
+        <Tabs defaultValue="actief">
+          <TabsList>
+            <TabsTrigger value="actief">
+              Actief <span className="ml-1.5 text-xs text-muted-foreground">({actief})</span>
+            </TabsTrigger>
+            <TabsTrigger value="verouderd">
+              Verouderd <span className="ml-1.5 text-xs text-muted-foreground">({verouderd})</span>
+            </TabsTrigger>
+            <TabsTrigger value="uitgeschakeld">
+              Uitgeschakeld <span className="ml-1.5 text-xs text-muted-foreground">({uitgeschakeld})</span>
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="actief">
+            <StatusList items={all.filter((a) => a.status === "Actief")} />
+          </TabsContent>
+          <TabsContent value="verouderd">
+            <StatusList items={all.filter((a) => a.status === "Verouderd")} />
+          </TabsContent>
+          <TabsContent value="uitgeschakeld">
+            <StatusList items={all.filter((a) => a.status === "Uitgeschakeld")} />
+          </TabsContent>
+        </Tabs>
       </div>
 
       <Link
