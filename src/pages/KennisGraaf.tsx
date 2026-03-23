@@ -15,7 +15,7 @@ import ReactFlow, {
   useReactFlow,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import dagre from "@dagrejs/dagre"
+import * as dagre from "@dagrejs/dagre"
 import {
   AlertTriangle,
   BookOpen,
