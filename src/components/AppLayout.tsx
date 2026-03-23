@@ -12,6 +12,7 @@ import {
   LogOut,
   ClipboardCheck,
   Settings,
+  Network,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -21,6 +22,7 @@ const navItems = [
   { title: "Alle Automatiseringen", url: "/alle", icon: List },
   { title: "Verificatie", url: "/verificatie", icon: ClipboardCheck },
   { title: "Mindmap", url: "/mindmap", icon: Map },
+  { title: "Kennisgraaf", url: "/kennisgraaf", icon: Network },
   { title: "BPMN Viewer", url: "/bpmn", icon: GitBranch },
   { title: "Analyse", url: "/analyse", icon: BarChart3 },
   { title: "Instellingen", url: "/instellingen", icon: Settings },
@@ -102,7 +104,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </span>
         </header>
         <main className={`flex-1 w-full ${
-          location.pathname === "/mindmap"
+          location.pathname === "/mindmap" || location.pathname === "/kennisgraaf"
             ? "p-0"
             : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
         }`}>

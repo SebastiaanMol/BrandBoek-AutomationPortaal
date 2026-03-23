@@ -15,6 +15,7 @@ import Mindmap from "./pages/Mindmap";
 import BewerkAutomatisering from "./pages/BewerkAutomatisering";
 import AuthPage from "./pages/AuthPage";
 import Instellingen from "./pages/Instellingen";
+import KennisGraaf from "./pages/KennisGraaf";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ function ProtectedRoutes() {
         <Route path="/verificatie" element={<Verificatie />} />
         <Route path="/analyse" element={<Analyse />} />
         <Route path="/instellingen" element={<Instellingen />} />
+        <Route path="/kennisgraaf" element={<KennisGraaf />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
