@@ -14,7 +14,6 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Verify user JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), {
@@ -34,36 +33,34 @@ serve(async (req) => {
       });
     }
 
-    // Use service role for DB operations
     const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch integration token
     const { data: integration, error: intError } = await db
       .from("integrations")
       .select("*")
       .eq("user_id", user.id)
-      .eq("type", "hubspot")
+      .eq("type", "typeform")
       .maybeSingle();
 
     if (intError || !integration) {
-      return new Response(JSON.stringify({ error: "Geen HubSpot-integratie gevonden" }), {
+      return new Response(JSON.stringify({ error: "Geen Typeform-integratie gevonden" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fetch workflows from HubSpot (server-side — no CORS issue)
-    const hubspotRes = await fetch("https://api.hubapi.com/automation/v3/workflows", {
+    // Fetch forms from Typeform (server-side — no CORS issue)
+    const typeformRes = await fetch("https://api.typeform.com/forms?page_size=200", {
       headers: { Authorization: `Bearer ${integration.token}` },
     });
 
-    if (!hubspotRes.ok) {
-      const errText = await hubspotRes.text();
-      console.error("HubSpot API error:", hubspotRes.status, errText);
+    if (!typeformRes.ok) {
+      const errText = await typeformRes.text();
+      console.error("Typeform API error:", typeformRes.status, errText);
 
-      const errorMessage = hubspotRes.status === 401
-        ? "Ongeldige HubSpot token. Controleer je Private App token."
-        : `HubSpot API fout (${hubspotRes.status})`;
+      const errorMessage = typeformRes.status === 401
+        ? "Ongeldige Typeform token."
+        : `Typeform API fout (${typeformRes.status})`;
 
       await db.from("integrations").update({
         status: "error",
@@ -71,73 +68,69 @@ serve(async (req) => {
       }).eq("id", integration.id);
 
       return new Response(JSON.stringify({ error: errorMessage }), {
-        status: hubspotRes.status,
+        status: typeformRes.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const body = await hubspotRes.json();
-    // HubSpot API v1 returns { workflows: [...] }, v2+ returns { results: [...] }
-    const workflows: any[] = body.workflows ?? body.results ?? [];
+    const body = await typeformRes.json();
+    const forms: any[] = body.items ?? [];
 
-    // Fetch existing automations with source=hubspot to detect deletions
     const { data: existing } = await db
       .from("automatiseringen")
       .select("id, external_id, status")
-      .eq("source", "hubspot");
+      .eq("source", "typeform");
 
     const existingByExternalId: Record<string, { id: string; status: string }> = {};
     for (const row of existing || []) {
       if (row.external_id) existingByExternalId[row.external_id] = { id: row.id, status: row.status };
     }
 
-    const syncedExternalIds = new Set<string>();
+    const syncedIds = new Set<string>();
     let inserted = 0;
     let updated = 0;
 
-    for (const wf of workflows) {
-      const externalId = String(wf.id);
-      syncedExternalIds.add(externalId);
-      const status = wf.enabled ? "Actief" : "Uitgeschakeld";
+    for (const form of forms) {
+      const externalId = String(form.id);
+      syncedIds.add(externalId);
       const now = new Date().toISOString();
 
       if (existingByExternalId[externalId]) {
         await db.from("automatiseringen").update({
-          naam: wf.name,
-          status,
+          naam: form.title,
           last_synced_at: now,
         }).eq("id", existingByExternalId[externalId].id);
         updated++;
       } else {
         const { data: newId } = await db.rpc("generate_auto_id");
-        const id = newId || `AUTO-HS-${externalId}`;
+        const id = newId || `AUTO-TF-${externalId}`;
 
         await db.from("automatiseringen").insert({
           id,
-          naam: wf.name,
-          categorie: "HubSpot Workflow",
+          naam: form.title,
+          categorie: "Typeform",
           doel: "",
-          trigger_beschrijving: wf.enrollmentCriteria?.type || "",
-          systemen: ["HubSpot"],
-          stappen: Array.isArray(wf.actions) ? wf.actions.map((a: any) => a.type || "Stap") : [],
+          trigger_beschrijving: "Typeform submission",
+          systemen: ["Typeform"],
+          stappen: ["Formulier ingevuld", "Data verwerkt"],
           afhankelijkheden: "",
           owner: "",
-          status,
+          status: "Actief",
           verbeterideeen: "",
           mermaid_diagram: "",
           fasen: [],
           external_id: externalId,
-          source: "hubspot",
+          source: "typeform",
           last_synced_at: now,
         });
         inserted++;
       }
     }
 
-    // Mark removed workflows as inactive
+    // Typeform forms don't get "deleted" but we mark them inactive if not in latest sync
     let deactivated = 0;
     for (const [extId, row] of Object.entries(existingByExternalId)) {
-      if (!syncedExternalIds.has(extId) && row.status !== "Uitgeschakeld") {
+      if (!syncedIds.has(extId) && row.status !== "Uitgeschakeld") {
         await db.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", row.id);
         deactivated++;
       }
@@ -150,11 +143,11 @@ serve(async (req) => {
     }).eq("id", integration.id);
 
     return new Response(
-      JSON.stringify({ success: true, inserted, updated, deactivated, total: workflows.length }),
+      JSON.stringify({ success: true, inserted, updated, deactivated, total: forms.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
-    console.error("hubspot-sync error:", e);
+    console.error("typeform-sync error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Onbekende fout" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

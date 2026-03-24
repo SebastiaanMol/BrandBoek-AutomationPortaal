@@ -205,223 +205,34 @@ export async function deleteIntegration(type: string): Promise<void> {
   if (error) throw error;
 }
 
+// ─── Helper: call an Edge Function and throw on error ────────────────────────
+async function invokeEdgeFunction(
+  name: string
+): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
+  const { data, error } = await supabase.functions.invoke(name);
+
+  if (error) {
+    // Supabase wraps non-2xx responses as FunctionsHttpError — extract message
+    const message =
+      (error as any)?.context?.json?.error ??
+      (error as any)?.message ??
+      "Onbekende fout bij Edge Function";
+    throw new Error(message);
+  }
+
+  return data as { inserted: number; updated: number; deactivated: number; total: number };
+}
+
 export async function triggerHubSpotSync(): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
-  const integration = await fetchIntegration("hubspot");
-  if (!integration) throw new Error("Geen HubSpot-integratie gevonden");
-
-  const hubspotRes = await fetch("/hubspot-api/automation/v3/workflows", {
-    headers: { Authorization: `Bearer ${integration.token}` },
-  });
-
-  if (!hubspotRes.ok) {
-    const errorMessage = hubspotRes.status === 401
-      ? "Ongeldige HubSpot token. Controleer je Private App token."
-      : `HubSpot API fout (${hubspotRes.status})`;
-    await supabase.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
-    throw new Error(errorMessage);
-  }
-
-  const body = await hubspotRes.json();
-  const workflows: any[] = body.workflows ?? body.results ?? [];
-
-  const { data: existing } = await supabase
-    .from("automatiseringen")
-    .select("id, external_id, status")
-    .eq("source", "hubspot");
-
-  const existingByExternalId: Record<string, { id: string; status: string }> = {};
-  for (const row of existing || []) {
-    if (row.external_id) existingByExternalId[row.external_id] = { id: row.id, status: row.status };
-  }
-
-  const syncedExternalIds = new Set<string>();
-  let inserted = 0;
-  let updated = 0;
-
-  for (const wf of workflows) {
-    const externalId = String(wf.id);
-    syncedExternalIds.add(externalId);
-    const status = wf.enabled ? "Actief" : "Uitgeschakeld";
-    const now = new Date().toISOString();
-
-    if (existingByExternalId[externalId]) {
-      await supabase.from("automatiseringen").update({ naam: wf.name, status, last_synced_at: now }).eq("id", existingByExternalId[externalId].id);
-      updated++;
-    } else {
-      const { data: newId } = await supabase.rpc("generate_auto_id");
-      await supabase.from("automatiseringen").insert({
-        id: newId || `AUTO-HS-${externalId}`,
-        naam: wf.name,
-        categorie: "HubSpot Workflow",
-        doel: "",
-        trigger_beschrijving: wf.enrollmentCriteria?.type || "",
-        systemen: ["HubSpot"],
-        stappen: Array.isArray(wf.actions) ? wf.actions.map((a: any) => a.type || "Stap") : [],
-        afhankelijkheden: "",
-        owner: "",
-        status,
-        verbeterideeen: "",
-        mermaid_diagram: "",
-        fasen: [],
-        external_id: externalId,
-        source: "hubspot",
-        last_synced_at: now,
-      });
-      inserted++;
-    }
-  }
-
-  let deactivated = 0;
-  for (const [extId, row] of Object.entries(existingByExternalId)) {
-    if (!syncedExternalIds.has(extId) && row.status !== "Uitgeschakeld") {
-      await supabase.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", row.id);
-      deactivated++;
-    }
-  }
-
-  await supabase.from("integrations").update({
-    last_synced_at: new Date().toISOString(),
-    status: "connected",
-    error_message: null,
-  }).eq("id", integration.id);
-
-  return { inserted, updated, deactivated, total: workflows.length };
+  return invokeEdgeFunction("hubspot-sync");
 }
 
 export async function triggerZapierSync(): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
-  const integration = await fetchIntegration("zapier");
-  if (!integration) throw new Error("Geen Zapier-integratie gevonden");
-
-  const res = await fetch("/zapier-api/v1/zaps", {
-    headers: { "X-API-Key": integration.token },
-  });
-
-  if (!res.ok) {
-    const errorMessage = res.status === 401
-      ? "Ongeldige Zapier API key."
-      : `Zapier API fout (${res.status})`;
-    await supabase.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
-    throw new Error(errorMessage);
-  }
-
-  const body = await res.json();
-  const zaps: any[] = body.zaps ?? body.results ?? [];
-
-  const { data: existing } = await supabase
-    .from("automatiseringen").select("id, external_id, status").eq("source", "zapier");
-
-  const existingByExternalId: Record<string, { id: string; status: string }> = {};
-  for (const row of existing || []) {
-    if (row.external_id) existingByExternalId[row.external_id] = { id: row.id, status: row.status };
-  }
-
-  const syncedIds = new Set<string>();
-  let inserted = 0; let updated = 0;
-
-  for (const zap of zaps) {
-    const externalId = String(zap.id);
-    syncedIds.add(externalId);
-    const status = zap.is_enabled ? "Actief" : "Uitgeschakeld";
-    const now = new Date().toISOString();
-    const systemen = [...new Set((zap.steps || []).map((s: any) => s.app?.name).filter(Boolean))] as string[];
-
-    if (existingByExternalId[externalId]) {
-      await supabase.from("automatiseringen").update({ naam: zap.title, status, last_synced_at: now }).eq("id", existingByExternalId[externalId].id);
-      updated++;
-    } else {
-      const { data: newId } = await supabase.rpc("generate_auto_id");
-      await supabase.from("automatiseringen").insert({
-        id: newId || `AUTO-ZP-${externalId}`,
-        naam: zap.title,
-        categorie: "Zapier Zap",
-        doel: "",
-        trigger_beschrijving: zap.steps?.[0]?.app?.name || "",
-        systemen: systemen.length ? systemen : ["Zapier"],
-        stappen: (zap.steps || []).map((s: any) => s.app?.name || "Stap"),
-        afhankelijkheden: "", owner: "", status, verbeterideeen: "", mermaid_diagram: "", fasen: [],
-        external_id: externalId, source: "zapier", last_synced_at: now,
-      });
-      inserted++;
-    }
-  }
-
-  let deactivated = 0;
-  for (const [extId, row] of Object.entries(existingByExternalId)) {
-    if (!syncedIds.has(extId) && row.status !== "Uitgeschakeld") {
-      await supabase.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", row.id);
-      deactivated++;
-    }
-  }
-
-  await supabase.from("integrations").update({ last_synced_at: new Date().toISOString(), status: "connected", error_message: null }).eq("id", integration.id);
-  return { inserted, updated, deactivated, total: zaps.length };
+  return invokeEdgeFunction("zapier-sync");
 }
 
 export async function triggerTypeformSync(): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
-  const integration = await fetchIntegration("typeform");
-  if (!integration) throw new Error("Geen Typeform-integratie gevonden");
-
-  const res = await fetch("/typeform-api/forms?page_size=200", {
-    headers: { Authorization: `Bearer ${integration.token}` },
-  });
-
-  if (!res.ok) {
-    const errorMessage = res.status === 401
-      ? "Ongeldige Typeform token."
-      : `Typeform API fout (${res.status})`;
-    await supabase.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
-    throw new Error(errorMessage);
-  }
-
-  const body = await res.json();
-  const forms: any[] = body.items ?? [];
-
-  const { data: existing } = await supabase
-    .from("automatiseringen").select("id, external_id, status").eq("source", "typeform");
-
-  const existingByExternalId: Record<string, { id: string; status: string }> = {};
-  for (const row of existing || []) {
-    if (row.external_id) existingByExternalId[row.external_id] = { id: row.id, status: row.status };
-  }
-
-  const syncedIds = new Set<string>();
-  let inserted = 0; let updated = 0;
-
-  for (const form of forms) {
-    const externalId = String(form.id);
-    syncedIds.add(externalId);
-    const now = new Date().toISOString();
-
-    if (existingByExternalId[externalId]) {
-      await supabase.from("automatiseringen").update({ naam: form.title, last_synced_at: now }).eq("id", existingByExternalId[externalId].id);
-      updated++;
-    } else {
-      const { data: newId } = await supabase.rpc("generate_auto_id");
-      await supabase.from("automatiseringen").insert({
-        id: newId || `AUTO-TF-${externalId}`,
-        naam: form.title,
-        categorie: "Typeform",
-        doel: "",
-        trigger_beschrijving: "Typeform submission",
-        systemen: ["Typeform"],
-        stappen: ["Formulier ingevuld", "Data verwerkt"],
-        afhankelijkheden: "", owner: "", status: "Actief", verbeterideeen: "", mermaid_diagram: "", fasen: [],
-        external_id: externalId, source: "typeform", last_synced_at: now,
-      });
-      inserted++;
-    }
-  }
-
-  let deactivated = 0;
-  for (const [extId, row] of Object.entries(existingByExternalId)) {
-    if (!syncedIds.has(extId) && row.status !== "Uitgeschakeld") {
-      await supabase.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", row.id);
-      deactivated++;
-    }
-  }
-
-  await supabase.from("integrations").update({ last_synced_at: new Date().toISOString(), status: "connected", error_message: null }).eq("id", integration.id);
-  return { inserted, updated, deactivated, total: forms.length };
+  return invokeEdgeFunction("typeform-sync");
 }
 
 // --- Export CSV ---

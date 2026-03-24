@@ -14,7 +14,6 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Verify user JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), {
@@ -34,36 +33,34 @@ serve(async (req) => {
       });
     }
 
-    // Use service role for DB operations
     const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch integration token
     const { data: integration, error: intError } = await db
       .from("integrations")
       .select("*")
       .eq("user_id", user.id)
-      .eq("type", "hubspot")
+      .eq("type", "zapier")
       .maybeSingle();
 
     if (intError || !integration) {
-      return new Response(JSON.stringify({ error: "Geen HubSpot-integratie gevonden" }), {
+      return new Response(JSON.stringify({ error: "Geen Zapier-integratie gevonden" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fetch workflows from HubSpot (server-side — no CORS issue)
-    const hubspotRes = await fetch("https://api.hubapi.com/automation/v3/workflows", {
-      headers: { Authorization: `Bearer ${integration.token}` },
+    // Fetch Zaps from Zapier (server-side — no CORS issue)
+    const zapierRes = await fetch("https://api.zapier.com/v1/zaps", {
+      headers: { "X-API-Key": integration.token },
     });
 
-    if (!hubspotRes.ok) {
-      const errText = await hubspotRes.text();
-      console.error("HubSpot API error:", hubspotRes.status, errText);
+    if (!zapierRes.ok) {
+      const errText = await zapierRes.text();
+      console.error("Zapier API error:", zapierRes.status, errText);
 
-      const errorMessage = hubspotRes.status === 401
-        ? "Ongeldige HubSpot token. Controleer je Private App token."
-        : `HubSpot API fout (${hubspotRes.status})`;
+      const errorMessage = zapierRes.status === 401
+        ? "Ongeldige Zapier API key."
+        : `Zapier API fout (${zapierRes.status})`;
 
       await db.from("integrations").update({
         status: "error",
@@ -71,55 +68,57 @@ serve(async (req) => {
       }).eq("id", integration.id);
 
       return new Response(JSON.stringify({ error: errorMessage }), {
-        status: hubspotRes.status,
+        status: zapierRes.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const body = await hubspotRes.json();
-    // HubSpot API v1 returns { workflows: [...] }, v2+ returns { results: [...] }
-    const workflows: any[] = body.workflows ?? body.results ?? [];
+    const body = await zapierRes.json();
+    const zaps: any[] = body.zaps ?? body.results ?? [];
 
-    // Fetch existing automations with source=hubspot to detect deletions
     const { data: existing } = await db
       .from("automatiseringen")
       .select("id, external_id, status")
-      .eq("source", "hubspot");
+      .eq("source", "zapier");
 
     const existingByExternalId: Record<string, { id: string; status: string }> = {};
     for (const row of existing || []) {
       if (row.external_id) existingByExternalId[row.external_id] = { id: row.id, status: row.status };
     }
 
-    const syncedExternalIds = new Set<string>();
+    const syncedIds = new Set<string>();
     let inserted = 0;
     let updated = 0;
 
-    for (const wf of workflows) {
-      const externalId = String(wf.id);
-      syncedExternalIds.add(externalId);
-      const status = wf.enabled ? "Actief" : "Uitgeschakeld";
+    for (const zap of zaps) {
+      const externalId = String(zap.id);
+      syncedIds.add(externalId);
+      const status = zap.is_enabled ? "Actief" : "Uitgeschakeld";
       const now = new Date().toISOString();
+      // Extract unique system names from Zap steps
+      const systemen = [...new Set(
+        (zap.steps || []).map((s: any) => s.app?.name).filter(Boolean)
+      )] as string[];
 
       if (existingByExternalId[externalId]) {
         await db.from("automatiseringen").update({
-          naam: wf.name,
+          naam: zap.title,
           status,
           last_synced_at: now,
         }).eq("id", existingByExternalId[externalId].id);
         updated++;
       } else {
         const { data: newId } = await db.rpc("generate_auto_id");
-        const id = newId || `AUTO-HS-${externalId}`;
+        const id = newId || `AUTO-ZP-${externalId}`;
 
         await db.from("automatiseringen").insert({
           id,
-          naam: wf.name,
-          categorie: "HubSpot Workflow",
+          naam: zap.title,
+          categorie: "Zapier Zap",
           doel: "",
-          trigger_beschrijving: wf.enrollmentCriteria?.type || "",
-          systemen: ["HubSpot"],
-          stappen: Array.isArray(wf.actions) ? wf.actions.map((a: any) => a.type || "Stap") : [],
+          trigger_beschrijving: zap.steps?.[0]?.app?.name || "",
+          systemen: systemen.length ? systemen : ["Zapier"],
+          stappen: (zap.steps || []).map((s: any) => s.app?.name || "Stap"),
           afhankelijkheden: "",
           owner: "",
           status,
@@ -127,17 +126,16 @@ serve(async (req) => {
           mermaid_diagram: "",
           fasen: [],
           external_id: externalId,
-          source: "hubspot",
+          source: "zapier",
           last_synced_at: now,
         });
         inserted++;
       }
     }
 
-    // Mark removed workflows as inactive
     let deactivated = 0;
     for (const [extId, row] of Object.entries(existingByExternalId)) {
-      if (!syncedExternalIds.has(extId) && row.status !== "Uitgeschakeld") {
+      if (!syncedIds.has(extId) && row.status !== "Uitgeschakeld") {
         await db.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", row.id);
         deactivated++;
       }
@@ -150,11 +148,11 @@ serve(async (req) => {
     }).eq("id", integration.id);
 
     return new Response(
-      JSON.stringify({ success: true, inserted, updated, deactivated, total: workflows.length }),
+      JSON.stringify({ success: true, inserted, updated, deactivated, total: zaps.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
-    console.error("hubspot-sync error:", e);
+    console.error("zapier-sync error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Onbekende fout" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
