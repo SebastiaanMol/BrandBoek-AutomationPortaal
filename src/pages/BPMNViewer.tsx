@@ -1,126 +1,164 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  Node,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { useAutomatiseringen } from "@/lib/hooks";
-import { MermaidDiagram } from "@/components/MermaidDiagram";
 import { StatusBadge, SystemBadge } from "@/components/Badges";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, LayoutGrid, FileText } from "lucide-react";
+import { Loader2, LayoutGrid, FileText, X } from "lucide-react";
 import { Automatisering } from "@/lib/types";
+import { MermaidDiagram } from "@/components/MermaidDiagram";
+import { ActivityNode, EventNode, GatewayNode, LaneHeaderNode } from "@/components/bpmn/BPMNNodes";
+import { buildBPMNGraph, LaneGrouping } from "@/components/bpmn/buildBPMNGraph";
+
+const nodeTypes = {
+  activity: ActivityNode,
+  event: EventNode,
+  gateway: GatewayNode,
+  laneHeader: LaneHeaderNode,
+};
 
 type ViewMode = "overzicht" | "individueel";
 
-/** Build a combined Mermaid diagram with swimming lanes per categorie */
-function buildSwimmingLanesDiagram(data: Automatisering[]): string {
-  const withDiagram = data.filter((a) => a.stappen.length > 0 || a.mermaidDiagram);
-  if (withDiagram.length === 0) return "";
+function BPMNOverview({ data, laneType }: { data: Automatisering[]; laneType: LaneGrouping }) {
+  const { nodes: initialNodes, edges: initialEdges, width, height } = useMemo(
+    () => buildBPMNGraph(data, laneType),
+    [data, laneType]
+  );
 
-  // Group by categorie
-  const groups: Record<string, Automatisering[]> = {};
-  for (const a of withDiagram) {
-    const cat = a.categorie || "Anders";
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(a);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [selected, setSelected] = useState<Automatisering | null>(null);
+
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      if (node.type !== "activity") return;
+      const auto = data.find((a) => a.id === node.id);
+      if (auto) setSelected(auto);
+    },
+    [data]
+  );
+
+  if (initialNodes.length === 0) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        {laneType === "fase"
+          ? "Geen automatiseringen met klantfasen gevonden."
+          : "Geen automatiseringen beschikbaar."}
+      </p>
+    );
   }
 
-  const lines: string[] = [];
-  // Use block-beta or a simple flowchart with subgraphs as lanes
-  lines.push("graph LR");
+  return (
+    <div className="relative">
+      <div
+        className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden"
+        style={{ height: "calc(100vh - 200px)", minHeight: 500 }}
+      >
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.15 }}
+          minZoom={0.2}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background color="hsl(var(--border))" gap={20} size={1} />
+          <Controls
+            showInteractive={false}
+            style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+          />
+          <MiniMap
+            nodeColor={(n) => {
+              if (n.type === "activity") return "#fef9c3";
+              if (n.type === "laneHeader") return "#e2e8f0";
+              return "#f1f5f9";
+            }}
+            style={{ border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+          />
+        </ReactFlow>
+      </div>
 
-  for (const [categorie, items] of Object.entries(groups)) {
-    const safeCategory = categorie.replace(/[^a-zA-Z0-9]/g, "_");
-    lines.push(`  subgraph ${safeCategory}["${categorie}"]`);
-    lines.push(`    direction TB`);
+      {/* Detail panel */}
+      {selected && (
+        <div className="absolute top-4 right-4 w-80 bg-card border border-border rounded-lg shadow-lg p-4 space-y-3 z-50">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs text-muted-foreground">{selected.id}</span>
+            <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <h3 className="font-semibold text-sm">{selected.naam}</h3>
+          <StatusBadge status={selected.status} />
+          <div className="grid gap-2 text-xs">
+            <div>
+              <span className="text-muted-foreground">Trigger:</span>{" "}
+              <span>{selected.trigger}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Owner:</span>{" "}
+              <span>{selected.owner}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Systemen:</span>
+              <div className="flex gap-1 flex-wrap mt-1">
+                {selected.systemen.map((s) => (
+                  <SystemBadge key={s} systeem={s} />
+                ))}
+              </div>
+            </div>
+            {selected.koppelingen.length > 0 && (
+              <div>
+                <span className="text-muted-foreground">Koppelingen:</span>
+                <ul className="mt-1 space-y-0.5">
+                  {selected.koppelingen.map((k) => (
+                    <li key={k.doelId} className="text-muted-foreground">
+                      → {k.doelId} {k.label && `(${k.label})`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-    for (const a of items) {
-      const safeId = a.id.replace(/-/g, "_");
-      const shortName = a.naam.length > 40 ? a.naam.slice(0, 37) + "..." : a.naam;
-      // Escape special chars for Mermaid
-      const escapedName = shortName.replace(/\(/g, "#40;").replace(/\)/g, "#41;").replace(/"/g, "#quot;");
-      const statusIcon = a.status === "Actief" ? "✅" : a.status === "Verouderd" ? "⚠️" : a.status === "In review" ? "🔍" : "❌";
-
-      lines.push(`    ${safeId}["${a.id}: ${escapedName}"]`);
-    }
-
-    lines.push(`  end`);
-  }
-
-  // Add koppelingen as edges between automations
-  for (const a of withDiagram) {
-    const safeFrom = a.id.replace(/-/g, "_");
-    for (const k of a.koppelingen) {
-      const safeTo = k.doelId.replace(/-/g, "_");
-      // Only draw if target exists in our set
-      if (withDiagram.some((t) => t.id === k.doelId)) {
-        const label = k.label ? k.label.replace(/"/g, "'").slice(0, 30) : "";
-        if (label) {
-          lines.push(`  ${safeFrom} -->|"${label}"| ${safeTo}`);
-        } else {
-          lines.push(`  ${safeFrom} --> ${safeTo}`);
-        }
-      }
-    }
-  }
-
-  // Style subgraphs with category colors would be nice but Mermaid classDef on subgraphs is limited
-  return lines.join("\n");
-}
-
-/** Build a detailed swimming lanes diagram grouped by Klantfase */
-function buildFaseDiagram(data: Automatisering[]): string {
-  const FASEN = ["Marketing", "Sales", "Onboarding", "Boekhouding", "Offboarding"];
-  const withFasen = data.filter((a) => a.fasen && a.fasen.length > 0);
-  if (withFasen.length === 0) return "";
-
-  const lines: string[] = [];
-  lines.push("graph LR");
-
-  for (const fase of FASEN) {
-    const items = withFasen.filter((a) => a.fasen.includes(fase as any));
-    if (items.length === 0) continue;
-
-    lines.push(`  subgraph ${fase}["${fase}"]`);
-    lines.push(`    direction TB`);
-
-    for (const a of items) {
-      const safeId = `${fase}_${a.id.replace(/-/g, "_")}`;
-      const shortName = a.naam.length > 35 ? a.naam.slice(0, 32) + "..." : a.naam;
-      const escapedName = shortName.replace(/\(/g, "#40;").replace(/\)/g, "#41;").replace(/"/g, "#quot;");
-      lines.push(`    ${safeId}["${a.id}: ${escapedName}"]`);
-    }
-
-    lines.push(`  end`);
-  }
-
-  // Add koppelingen
-  for (const a of withFasen) {
-    for (const k of a.koppelingen) {
-      const target = withFasen.find((t) => t.id === k.doelId);
-      if (!target) continue;
-      // Find phase combos for edges
-      for (const fromFase of a.fasen) {
-        for (const toFase of target.fasen) {
-          const safeFrom = `${fromFase}_${a.id.replace(/-/g, "_")}`;
-          const safeTo = `${toFase}_${k.doelId.replace(/-/g, "_")}`;
-          lines.push(`  ${safeFrom} --> ${safeTo}`);
-        }
-      }
-    }
-  }
-
-  return lines.join("\n");
+      {/* Legend */}
+      <div className="mt-4 border-t border-border pt-4">
+        <p className="label-uppercase mb-2">Legenda</p>
+        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span style={{ width: 16, height: 12, borderRadius: 3, background: "#fffde7", border: "2px solid #64748b", display: "inline-block" }} />
+            Automatisering
+          </span>
+          <span className="flex items-center gap-1.5">→ Pijlen = directe koppelingen</span>
+          <span>Lanes = {laneType === "categorie" ? "categorieën" : "klantfasen"}</span>
+          <span>Klik op een node voor details</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function BPMNViewer() {
   const { data: allData, isLoading } = useAutomatiseringen();
   const [viewMode, setViewMode] = useState<ViewMode>("overzicht");
   const [selectedId, setSelectedId] = useState<string>("alle");
-  const [laneType, setLaneType] = useState<"categorie" | "fase">("categorie");
+  const [laneType, setLaneType] = useState<LaneGrouping>("categorie");
 
   const data = allData || [];
-
-  const overviewDiagram = useMemo(() => {
-    if (laneType === "fase") return buildFaseDiagram(data);
-    return buildSwimmingLanesDiagram(data);
-  }, [data, laneType]);
 
   if (isLoading) {
     return (
@@ -149,7 +187,7 @@ export default function BPMNViewer() {
             }`}
           >
             <LayoutGrid className="h-4 w-4" />
-            Totaaloverzicht
+            BPMN Overzicht
           </button>
           <button
             onClick={() => setViewMode("individueel")}
@@ -165,7 +203,7 @@ export default function BPMNViewer() {
         </div>
 
         {viewMode === "overzicht" && (
-          <Select value={laneType} onValueChange={(v) => setLaneType(v as any)}>
+          <Select value={laneType} onValueChange={(v) => setLaneType(v as LaneGrouping)}>
             <SelectTrigger className="w-56">
               <SelectValue />
             </SelectTrigger>
@@ -195,48 +233,15 @@ export default function BPMNViewer() {
         )}
       </div>
 
-      {/* Overview mode */}
-      {viewMode === "overzicht" && (
-        <div className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground">
-              {laneType === "categorie" ? "Alle automatiseringen per categorie" : "Alle automatiseringen per klantfase"}
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              {data.length} automatisering{data.length !== 1 ? "en" : ""}
-            </span>
-          </div>
+      {/* Overview mode — React Flow BPMN */}
+      {viewMode === "overzicht" && <BPMNOverview data={data} laneType={laneType} />}
 
-          {overviewDiagram ? (
-            <div className="overflow-x-auto">
-              <MermaidDiagram chart={overviewDiagram} />
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              {laneType === "fase"
-                ? "Geen automatiseringen met klantfasen gevonden. Wijs eerst fasen toe aan je automatiseringen."
-                : "Geen automatiseringen beschikbaar."}
-            </p>
-          )}
-
-          {/* Legend */}
-          <div className="border-t border-border pt-4">
-            <p className="label-uppercase mb-2">Legenda</p>
-            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-              <span>→ Pijlen = directe koppelingen tussen automatiseringen</span>
-              <span>Groepen = {laneType === "categorie" ? "categorieën (HubSpot Workflow, Zapier Zap, etc.)" : "klantfasen (Marketing, Sales, etc.)"}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Individual mode */}
+      {/* Individual mode — Mermaid diagrams */}
       {viewMode === "individueel" && (
         <>
           {individualItems.length === 0 && (
             <p className="text-muted-foreground text-sm">Geen diagrammen beschikbaar.</p>
           )}
-
           {individualItems.map((a) => (
             <div
               key={a.id}
