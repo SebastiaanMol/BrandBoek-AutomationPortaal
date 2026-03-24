@@ -13,40 +13,20 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    // Verify user JWT
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: userError } = await userClient.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Niet geautoriseerd" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Use service role for DB operations
     const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch integration token
+    // Find connected HubSpot integration (first one — internal single-team tool)
     const { data: integration, error: intError } = await db
       .from("integrations")
       .select("*")
-      .eq("user_id", user.id)
       .eq("type", "hubspot")
+      .eq("status", "connected")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (intError || !integration) {
-      return new Response(JSON.stringify({ error: "Geen HubSpot-integratie gevonden" }), {
+      return new Response(JSON.stringify({ error: "Geen HubSpot-integratie gevonden. Sla eerst een token op via Instellingen → Integraties." }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -63,7 +43,7 @@ serve(async (req) => {
 
       const errorMessage = hubspotRes.status === 401
         ? "Ongeldige HubSpot token. Controleer je Private App token."
-        : `HubSpot API fout (${hubspotRes.status})`;
+        : `HubSpot API fout (${hubspotRes.status}): ${errText.slice(0, 200)}`;
 
       await db.from("integrations").update({
         status: "error",
@@ -77,10 +57,9 @@ serve(async (req) => {
     }
 
     const body = await hubspotRes.json();
-    // HubSpot API v1 returns { workflows: [...] }, v2+ returns { results: [...] }
+    // HubSpot v1 returns { workflows: [...] }, v2+ returns { results: [...] }
     const workflows: any[] = body.workflows ?? body.results ?? [];
 
-    // Fetch existing automations with source=hubspot to detect deletions
     const { data: existing } = await db
       .from("automatiseringen")
       .select("id, external_id, status")
@@ -110,10 +89,8 @@ serve(async (req) => {
         updated++;
       } else {
         const { data: newId } = await db.rpc("generate_auto_id");
-        const id = newId || `AUTO-HS-${externalId}`;
-
         await db.from("automatiseringen").insert({
-          id,
+          id: newId || `AUTO-HS-${externalId}`,
           naam: wf.name,
           categorie: "HubSpot Workflow",
           doel: "",
@@ -134,7 +111,6 @@ serve(async (req) => {
       }
     }
 
-    // Mark removed workflows as inactive
     let deactivated = 0;
     for (const [extId, row] of Object.entries(existingByExternalId)) {
       if (!syncedExternalIds.has(extId) && row.status !== "Uitgeschakeld") {

@@ -212,12 +212,18 @@ async function invokeEdgeFunction(
   const { data, error } = await supabase.functions.invoke(name);
 
   if (error) {
-    // Supabase wraps non-2xx responses as FunctionsHttpError — extract message
-    const message =
-      (error as any)?.context?.json?.error ??
-      (error as any)?.message ??
-      "Onbekende fout bij Edge Function";
-    throw new Error(message);
+    // FunctionsHttpError.context is a Response — must await .json() to read the body
+    const context = (error as any)?.context;
+    if (context && typeof context.json === "function") {
+      try {
+        const body = await context.json();
+        if (body?.error) throw new Error(body.error);
+      } catch (e: any) {
+        // rethrow only if it's our own error with a real message
+        if (e.message && e.message !== error.message) throw e;
+      }
+    }
+    throw new Error(error.message);
   }
 
   return data as { inserted: number; updated: number; deactivated: number; total: number };
