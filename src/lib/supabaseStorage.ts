@@ -241,6 +241,53 @@ export async function triggerTypeformSync(): Promise<{ inserted: number; updated
   return invokeEdgeFunction("typeform-sync");
 }
 
+// ─── Process state (canvas) ───────────────────────────────────────────────────
+
+export interface SavedProcessState {
+  steps:       unknown[];   // ProcessStep[]
+  connections: unknown[];   // Connection[]
+  autoLinks:   Record<string, { fromStepId: string; toStepId: string }>;
+}
+
+const PROCESS_STATE_ID = "main";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = supabase as any;
+
+export async function fetchProcessState(): Promise<SavedProcessState | null> {
+  const { data, error } = await db
+    .from("process_state")
+    .select("steps, connections, auto_links")
+    .eq("id", PROCESS_STATE_ID)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data)  return null;
+
+  return {
+    steps:       (data.steps       ?? []) as unknown[],
+    connections: (data.connections ?? []) as unknown[],
+    autoLinks:   (data.auto_links  ?? {}) as Record<string, { fromStepId: string; toStepId: string }>,
+  };
+}
+
+export async function saveProcessState(state: SavedProcessState): Promise<void> {
+  const { error } = await db
+    .from("process_state")
+    .upsert(
+      {
+        id:          PROCESS_STATE_ID,
+        steps:       state.steps,
+        connections: state.connections,
+        auto_links:  state.autoLinks,
+        updated_at:  new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+
+  if (error) throw error;
+}
+
 // --- Export CSV ---
 export function exportToCSV(data: Automatisering[]): string {
   const headers = ["ID", "Naam", "Categorie", "Doel", "Trigger", "Systemen", "Owner", "Status", "Fasen"];

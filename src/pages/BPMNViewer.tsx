@@ -1,282 +1,545 @@
-import { useState, useMemo, useCallback } from "react";
+/**
+ * BPMNViewer v2
+ *
+ * Canvas loads /public/bpmn-graph.json (v2 format: startEvent, endEvent,
+ * exclusiveGateway, task nodes).  Review panel stays Supabase-backed.
+ */
+
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
-  useNodesState,
-  useEdgesState,
-  Node,
+  MarkerType,
+  type NodeTypes,
+  type Node,
+  type Edge,
+  type NodeProps,
+  Position,
+  Handle,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useAutomatiseringen } from "@/lib/hooks";
-import { StatusBadge, SystemBadge } from "@/components/Badges";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, LayoutGrid, FileText, X } from "lucide-react";
-import { Automatisering } from "@/lib/types";
-import { MermaidDiagram } from "@/components/MermaidDiagram";
-import { ActivityNode, EventNode, GatewayNode, LaneHeaderNode } from "@/components/bpmn/BPMNNodes";
-import { buildBPMNGraph, LaneGrouping } from "@/components/bpmn/buildBPMNGraph";
+import { useBpmnGraph, useReviewAiFlow } from "@/hooks/useBpmnGraph";
+import type { GraphFlow } from "@/types/bpmn";
+import { Loader2, Check, X, ChevronRight } from "lucide-react";
 
-const nodeTypes = {
-  activity: ActivityNode,
-  event: EventNode,
-  gateway: GatewayNode,
-  laneHeader: LaneHeaderNode,
+// ── v2 JSON types ─────────────────────────────────────────────────────────────
+
+interface V2Node {
+  id: string;
+  label: string;
+  bpmn_type: "startEvent" | "endEvent" | "task" | "exclusiveGateway";
+  lane: string;
+  laneIndex: number;
+  column: number;
+  row: number;
+  processGroup: string;
+  automationId: string | null;
+  importance: "primary" | "support" | "background";
+}
+interface V2Flow { id: string; from: string; to: string; confidence: number; reasoning: string; }
+interface V2Graph {
+  meta: { pool: string; laneOrder: string[]; phaseOrder: string[] };
+  nodes: V2Node[];
+  flows: V2Flow[];
+}
+
+// ── Colours ───────────────────────────────────────────────────────────────────
+
+const LANE_BG: Record<string, string> = {
+  Sales: "#dbeafe", Marketing: "#fce7f3", Onboarding: "#d1fae5",
+  Boekhouding: "#fef9c3", Management: "#f3e8ff",
+};
+const LANE_BD: Record<string, string> = {
+  Sales: "#93c5fd", Marketing: "#f9a8d4", Onboarding: "#6ee7b7",
+  Boekhouding: "#fde047", Management: "#d8b4fe",
+};
+const LANE_TX: Record<string, string> = {
+  Sales: "#1d4ed8", Marketing: "#9d174d", Onboarding: "#065f46",
+  Boekhouding: "#78350f", Management: "#581c87",
 };
 
-type ViewMode = "overzicht" | "individueel";
+// ── Sizes ──────────────────────────────────────────────────────────────────────
 
-function BPMNOverview({ data, laneType }: { data: Automatisering[]; laneType: LaneGrouping }) {
-  const { nodes: initialNodes, edges: initialEdges, width, height } = useMemo(
-    () => buildBPMNGraph(data, laneType),
-    [data, laneType]
-  );
+const TASK_W    = 160;
+const TASK_H    = 48;
+const EVT_D     = 34;    // event circle diameter
+const GW_D      = 44;    // gateway diamond bounding box
+const COL_W     = 220;   // width per phase column
+const ROW_H     = 72;    // height per row slot
+const LANE_PT   = 52;    // lane padding top
+const LANE_PB   = 20;    // lane padding bottom
+const HDR_H     = 32;    // phase column header height
+const LBAR_W    = 44;    // lane-label bar width
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
-  const [selected, setSelected] = useState<Automatisering | null>(null);
+// ── No-handle background node ─────────────────────────────────────────────────
 
-  const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      if (node.type !== "activity") return;
-      const auto = data.find((a) => a.id === node.id);
-      if (auto) setSelected(auto);
-    },
-    [data]
-  );
-
-  if (initialNodes.length === 0) {
-    return (
-      <p className="text-muted-foreground text-sm">
-        {laneType === "fase"
-          ? "Geen automatiseringen met klantfasen gevonden."
-          : "Geen automatiseringen beschikbaar."}
-      </p>
-    );
-  }
-
+function BpmnBgNode({ data }: NodeProps) {
+  const d = data as any;
   return (
-    <div className="relative">
-      <div
-        className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden"
-        style={{ height: "calc(100vh - 200px)", minHeight: 500 }}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.15 }}
-          minZoom={0.2}
-          maxZoom={2}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background color="hsl(var(--border))" gap={20} size={1} />
-          <Controls
-            showInteractive={false}
-            style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
-          />
-          <MiniMap
-            nodeColor={(n) => {
-              if (n.type === "activity") return "#fef9c3";
-              if (n.type === "laneHeader") return "#e2e8f0";
-              return "#f1f5f9";
-            }}
-            style={{ border: "1px solid hsl(var(--border))", borderRadius: 8 }}
-          />
-        </ReactFlow>
-      </div>
-
-      {/* Detail panel */}
-      {selected && (
-        <div className="absolute top-4 right-4 w-80 bg-card border border-border rounded-lg shadow-lg p-4 space-y-3 z-50">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-xs text-muted-foreground">{selected.id}</span>
-            <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <h3 className="font-semibold text-sm">{selected.naam}</h3>
-          <StatusBadge status={selected.status} />
-          <div className="grid gap-2 text-xs">
-            <div>
-              <span className="text-muted-foreground">Trigger:</span>{" "}
-              <span>{selected.trigger}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Owner:</span>{" "}
-              <span>{selected.owner}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Systemen:</span>
-              <div className="flex gap-1 flex-wrap mt-1">
-                {selected.systemen.map((s) => (
-                  <SystemBadge key={s} systeem={s} />
-                ))}
-              </div>
-            </div>
-            {selected.koppelingen.length > 0 && (
-              <div>
-                <span className="text-muted-foreground">Koppelingen:</span>
-                <ul className="mt-1 space-y-0.5">
-                  {selected.koppelingen.map((k) => (
-                    <li key={k.doelId} className="text-muted-foreground">
-                      → {k.doelId} {k.label && `(${k.label})`}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
+    <div
+      style={{
+        width: "100%", height: "100%",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        pointerEvents: "none",
+      }}
+    >
+      {d.label && (
+        <span style={{
+          fontSize: 9, fontWeight: 700, color: "#64748b",
+          textAlign: "center", padding: "0 6px", lineHeight: 1.2,
+        }}>
+          {d.label}
+        </span>
       )}
+    </div>
+  );
+}
 
-      {/* Legend */}
-      <div className="mt-4 border-t border-border pt-4">
-        <p className="label-uppercase mb-2">Legenda</p>
-        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <span style={{ width: 16, height: 12, borderRadius: 3, background: "#fffde7", border: "2px solid #64748b", display: "inline-block" }} />
-            Automatisering
-          </span>
-          <span className="flex items-center gap-1.5">→ Pijlen = directe koppelingen</span>
-          <span>Lanes = {laneType === "categorie" ? "categorieën" : "klantfasen"}</span>
-          <span>Klik op een node voor details</span>
-        </div>
+function BpmnLaneLabelNode({ data }: NodeProps) {
+  const d = data as any;
+  return (
+    <div style={{
+      width: "100%", height: "100%",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      writingMode: "vertical-rl",
+      transform: "rotate(180deg)",
+      fontSize: 11, fontWeight: 700, letterSpacing: "0.06em",
+      color: d.color,
+      userSelect: "none",
+      pointerEvents: "none",
+    }}>
+      {d.label}
+    </div>
+  );
+}
+
+// ── BPMN shape nodes ──────────────────────────────────────────────────────────
+
+const hSrc = { width: 8, height: 8, border: "none" };
+const hTgt = { width: 8, height: 8, border: "none" };
+
+function BpmnStartNode() {
+  return (
+    <div style={{ width: EVT_D, height: EVT_D }}>
+      <Handle type="source" position={Position.Right}
+        style={{ ...hSrc, background: "#16a34a", right: -4 }} />
+      <svg width={EVT_D} height={EVT_D}>
+        <circle cx={EVT_D / 2} cy={EVT_D / 2} r={EVT_D / 2 - 2}
+          fill="#dcfce7" stroke="#16a34a" strokeWidth="2.5" />
+      </svg>
+    </div>
+  );
+}
+
+function BpmnEndNode() {
+  return (
+    <div style={{ width: EVT_D, height: EVT_D }}>
+      <Handle type="target" position={Position.Left}
+        style={{ ...hTgt, background: "#dc2626", left: -4 }} />
+      <svg width={EVT_D} height={EVT_D}>
+        <circle cx={EVT_D / 2} cy={EVT_D / 2} r={EVT_D / 2 - 2}
+          fill="#fee2e2" stroke="#dc2626" strokeWidth="4" />
+        <circle cx={EVT_D / 2} cy={EVT_D / 2} r={EVT_D / 2 - 8}
+          fill="#dc2626" />
+      </svg>
+    </div>
+  );
+}
+
+function BpmnTaskNode({ data }: NodeProps) {
+  const d = data as V2Node;
+  const opacity = d.importance === "background" ? 0.45 : d.importance === "support" ? 0.78 : 1;
+  return (
+    <div style={{ width: TASK_W, height: TASK_H, opacity }}>
+      <Handle type="target" position={Position.Left}
+        style={{ ...hTgt, background: "#94a3b8", left: -4 }} />
+      <Handle type="source" position={Position.Right}
+        style={{ ...hSrc, background: "#94a3b8", right: -4 }} />
+      <div style={{
+        width: TASK_W, height: TASK_H, borderRadius: 7,
+        border: "1.5px solid #b0bec5",
+        background: "white",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "4px 10px",
+        fontSize: 10, fontWeight: 500, textAlign: "center", lineHeight: 1.3,
+        color: "#1e293b",
+        boxShadow: "0 1px 3px rgba(0,0,0,.09)",
+      }}>
+        {d.label}
       </div>
     </div>
   );
 }
 
-export default function BPMNViewer() {
-  const { data: allData, isLoading } = useAutomatiseringen();
-  const [viewMode, setViewMode] = useState<ViewMode>("overzicht");
-  const [selectedId, setSelectedId] = useState<string>("alle");
-  const [laneType, setLaneType] = useState<LaneGrouping>("categorie");
+function BpmnGatewayNode() {
+  return (
+    <div style={{ width: GW_D, height: GW_D, position: "relative" }}>
+      <Handle type="target" position={Position.Left}
+        style={{ ...hTgt, background: "#92400e", left: -4, top: "50%" }} />
+      <Handle type="source" position={Position.Right}
+        style={{ ...hSrc, background: "#92400e", right: -4, top: "50%" }} />
+      <Handle id="b" type="source" position={Position.Bottom}
+        style={{ ...hSrc, background: "#92400e", bottom: -4, left: "50%" }} />
+      <svg width={GW_D} height={GW_D} style={{ display: "block" }}>
+        <polygon
+          points={`${GW_D / 2},2 ${GW_D - 2},${GW_D / 2} ${GW_D / 2},${GW_D - 2} 2,${GW_D / 2}`}
+          fill="#fef3c7" stroke="#92400e" strokeWidth="1.5"
+        />
+        <text x={GW_D / 2} y={GW_D / 2 + 5}
+          textAnchor="middle" fontSize="14" fill="#92400e" fontWeight="bold">
+          ×
+        </text>
+      </svg>
+    </div>
+  );
+}
 
-  const data = allData || [];
+const nodeTypes: NodeTypes = {
+  bpmnBg:        BpmnBgNode as any,
+  bpmnLaneLabel: BpmnLaneLabelNode as any,
+  bpmnStart:     BpmnStartNode as any,
+  bpmnEnd:       BpmnEndNode as any,
+  bpmnTask:      BpmnTaskNode as any,
+  bpmnGateway:   BpmnGatewayNode as any,
+};
 
-  if (isLoading) {
+// ── Layout builder ────────────────────────────────────────────────────────────
+
+function buildLayout(v2: V2Graph, minConf: number): { nodes: Node[]; edges: Edge[] } {
+  const { nodes: v2n, flows, meta } = v2;
+
+  // Max row per lane
+  const laneMaxRow = new Map<string, number>();
+  for (const lane of meta.laneOrder) laneMaxRow.set(lane, 0);
+  for (const n of v2n) {
+    if (n.row >= 0)
+      laneMaxRow.set(n.lane, Math.max(laneMaxRow.get(n.lane) ?? 0, n.row + 1));
+  }
+
+  // Lane Y positions
+  const laneY = new Map<string, number>();
+  let yOff = HDR_H + 6;
+  for (const lane of meta.laneOrder) {
+    laneY.set(lane, yOff);
+    const rows = Math.max(laneMaxRow.get(lane) ?? 1, 1);
+    yOff += LANE_PT + rows * ROW_H + LANE_PB;
+  }
+
+  const maxCol = Math.max(...v2n.map(n => n.column), 0);
+  const contentW = LBAR_W + (maxCol + 1) * COL_W + 60;
+
+  const rfNodes: Node[] = [];
+
+  // Phase column headers
+  meta.phaseOrder.forEach((phase, pi) => {
+    rfNodes.push({
+      id: `ph-${pi}`,
+      type: "bpmnBg",
+      position: { x: LBAR_W + pi * COL_W, y: 0 },
+      data: { label: phase },
+      style: {
+        width: COL_W - 4, height: HDR_H - 4,
+        background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 4,
+      },
+      selectable: false, draggable: false, zIndex: 0,
+    });
+  });
+
+  // Lane backgrounds + lane label bars
+  for (const lane of meta.laneOrder) {
+    const ly = laneY.get(lane)!;
+    const rows = Math.max(laneMaxRow.get(lane) ?? 1, 1);
+    const h = LANE_PT + rows * ROW_H + LANE_PB;
+
+    // Content background
+    rfNodes.push({
+      id: `lane-bg-${lane}`,
+      type: "bpmnBg",
+      position: { x: LBAR_W, y: ly },
+      data: {},
+      style: {
+        width: contentW - LBAR_W, height: h,
+        background: LANE_BG[lane] ?? "#f1f5f9",
+        border: `1px solid ${LANE_BD[lane] ?? "#e2e8f0"}`,
+        borderRadius: 0,
+      },
+      selectable: false, draggable: false, zIndex: 0,
+    });
+
+    // Lane label bar
+    rfNodes.push({
+      id: `lane-label-${lane}`,
+      type: "bpmnLaneLabel",
+      position: { x: 0, y: ly },
+      data: { label: lane, color: LANE_TX[lane] ?? "#374151" },
+      style: {
+        width: LBAR_W, height: h,
+        background: LANE_BG[lane] ?? "#f1f5f9",
+        border: `1px solid ${LANE_BD[lane] ?? "#e2e8f0"}`,
+        borderRight: `2px solid ${LANE_BD[lane] ?? "#cbd5e1"}`,
+        borderRadius: 0,
+      },
+      selectable: false, draggable: false, zIndex: 0,
+    });
+  }
+
+  // BPMN element nodes
+  for (const n of v2n) {
+    const ly = laneY.get(n.lane) ?? 0;
+    const colX = LBAR_W + n.column * COL_W;
+    let x: number, y: number, type: string;
+
+    if (n.bpmn_type === "startEvent" || n.bpmn_type === "endEvent") {
+      x = colX + (COL_W - EVT_D) / 2;
+      y = n.row < 0
+        ? ly + 10
+        : ly + LANE_PT + n.row * ROW_H + (ROW_H - EVT_D) / 2;
+      type = n.bpmn_type === "startEvent" ? "bpmnStart" : "bpmnEnd";
+    } else if (n.bpmn_type === "exclusiveGateway") {
+      x = colX + (COL_W - GW_D) / 2;
+      y = n.row < 0
+        ? ly + 10
+        : ly + LANE_PT + n.row * ROW_H + (ROW_H - GW_D) / 2;
+      type = "bpmnGateway";
+    } else {
+      x = colX + (COL_W - TASK_W) / 2;
+      y = n.row < 0
+        ? ly + 8
+        : ly + LANE_PT + n.row * ROW_H + (ROW_H - TASK_H) / 2;
+      type = "bpmnTask";
+    }
+
+    rfNodes.push({
+      id: n.id,
+      type,
+      position: { x, y },
+      data: { ...n },
+      zIndex: 2,
+    });
+  }
+
+  // Edges
+  const nodeSet = new Set(v2n.map(n => n.id));
+  const edges: Edge[] = flows
+    .filter(f => f.confidence >= minConf && nodeSet.has(f.from) && nodeSet.has(f.to))
+    .map(f => {
+      const color =
+        f.confidence >= 0.85 ? "#16a34a" :
+        f.confidence >= 0.7  ? "#d97706" : "#94a3b8";
+      return {
+        id: f.id,
+        source: f.from,
+        target: f.to,
+        type: "smoothstep",
+        style: { stroke: color, strokeWidth: 1.5 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color,
+          width: 16,
+          height: 16,
+        },
+      } satisfies Edge;
+    });
+
+  return { nodes: rfNodes, edges };
+}
+
+// ── Review Panel ──────────────────────────────────────────────────────────────
+
+function ReviewPanel({
+  flows,
+  onReview,
+}: {
+  flows: GraphFlow[];
+  onReview: (id: string, action: "confirm" | "reject") => void;
+}) {
+  const pending   = flows.filter(f => !f.confirmed && !f.rejected);
+  const confirmed = flows.filter(f => f.confirmed);
+  const rejected  = flows.filter(f => f.rejected);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
+        <h2 className="text-sm font-semibold">AI Flows Reviewen</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {pending.length} openstaand · {confirmed.length} bevestigd · {rejected.length} afgewezen
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto divide-y divide-border">
+        {pending.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-6">Alle flows zijn beoordeeld.</p>
+        )}
+        {pending.map(f => (
+          <div key={f.id} className="px-4 py-3 space-y-2">
+            <p className="text-xs text-muted-foreground leading-snug">{f.reasoning_flow}</p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{
+                background: f.confidence >= 0.75 ? "#dcfce7" : f.confidence >= 0.6 ? "#fef3c7" : "#fee2e2",
+                color:      f.confidence >= 0.75 ? "#15803d" : f.confidence >= 0.6 ? "#b45309" : "#b91c1c",
+              }}>
+                {Math.round(f.confidence * 100)}%
+              </span>
+              <button onClick={() => onReview(f.db_id!, "confirm")}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+                <Check className="h-3 w-3" /> Bevestig
+              </button>
+              <button onClick={() => onReview(f.db_id!, "reject")}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 transition-colors">
+                <X className="h-3 w-3" /> Afwijzen
+              </button>
+            </div>
+          </div>
+        ))}
+        {confirmed.length > 0 && (
+          <details className="group">
+            <summary className="px-4 py-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1">
+              <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+              {confirmed.length} bevestigd
+            </summary>
+            {confirmed.map(f => (
+              <div key={f.id} className="px-4 py-2 flex items-center justify-between">
+                <p className="text-xs text-muted-foreground leading-snug line-clamp-2 flex-1">{f.reasoning_flow}</p>
+                <span className="text-xs text-green-600 ml-2 shrink-0">✓</span>
+              </div>
+            ))}
+          </details>
+        )}
+        {rejected.length > 0 && (
+          <details className="group">
+            <summary className="px-4 py-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1">
+              <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+              {rejected.length} afgewezen
+            </summary>
+            {rejected.map(f => (
+              <div key={f.id} className="px-4 py-2 flex items-center justify-between">
+                <p className="text-xs text-muted-foreground leading-snug line-clamp-2 flex-1">{f.reasoning_flow}</p>
+                <span className="text-xs text-red-500 ml-2 shrink-0">✗</span>
+              </div>
+            ))}
+          </details>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main canvas ───────────────────────────────────────────────────────────────
+
+const CONF_FILTERS = [
+  { label: "Alle",  value: 0 },
+  { label: "≥70%", value: 0.7 },
+  { label: "≥80%", value: 0.8 },
+  { label: "≥90%", value: 0.9 },
+];
+
+function BpmnCanvas() {
+  const { graph, isLoading: reviewLoading } = useBpmnGraph();
+  const reviewMutation = useReviewAiFlow();
+
+  const [v2, setV2]       = useState<V2Graph | null>(null);
+  const [jsonErr, setJsonErr] = useState<string | null>(null);
+  const [minConf, setMinConf] = useState(0);
+  const [panelOpen, setPanelOpen] = useState(true);
+
+  useEffect(() => {
+    fetch("/bpmn-graph.json")
+      .then(r => r.json())
+      .then(setV2)
+      .catch(e => setJsonErr(String(e)));
+  }, []);
+
+  const { nodes, edges } = useMemo(() => {
+    if (!v2) return { nodes: [], edges: [] };
+    return buildLayout(v2, minConf);
+  }, [v2, minConf]);
+
+  const handleReview = useCallback(
+    (id: string, action: "confirm" | "reject") => reviewMutation.mutate({ id, action }),
+    [reviewMutation],
+  );
+
+  if (!v2 && !jsonErr) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div className="flex items-center justify-center h-full">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
-
-  const individualItems =
-    selectedId === "alle"
-      ? data.filter((a) => a.mermaidDiagram)
-      : data.filter((a) => a.id === selectedId && a.mermaidDiagram);
+  if (jsonErr) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-sm text-destructive">Kon bpmn-graph.json niet laden: {jsonErr}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* View mode tabs */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex gap-1 bg-secondary p-1 rounded-lg">
-          <button
-            onClick={() => setViewMode("overzicht")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              viewMode === "overzicht"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <LayoutGrid className="h-4 w-4" />
-            BPMN Overzicht
-          </button>
-          <button
-            onClick={() => setViewMode("individueel")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              viewMode === "individueel"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <FileText className="h-4 w-4" />
-            Per automatisering
-          </button>
+    <div className="flex h-full">
+      <div className="flex-1 relative">
+        {/* Confidence filter */}
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-background/90 border border-border rounded-lg shadow-sm px-2 py-1.5">
+          <span className="text-xs text-muted-foreground mr-1">Betrouwbaarheid:</span>
+          {CONF_FILTERS.map(f => (
+            <button
+              key={f.value}
+              onClick={() => setMinConf(f.value)}
+              className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+                minConf === f.value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-secondary"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
 
-        {viewMode === "overzicht" && (
-          <Select value={laneType} onValueChange={(v) => setLaneType(v as LaneGrouping)}>
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="categorie">Groeperen op categorie</SelectItem>
-              <SelectItem value="fase">Groeperen op klantfase</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
+        {/* Panel toggle */}
+        <button
+          onClick={() => setPanelOpen(p => !p)}
+          className="absolute top-3 right-3 z-10 text-xs px-2.5 py-1.5 bg-background/90 border border-border rounded-lg shadow-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {panelOpen ? "Verberg review" : "Toon review"}
+        </button>
 
-        {viewMode === "individueel" && (
-          <Select value={selectedId} onValueChange={setSelectedId}>
-            <SelectTrigger className="w-80">
-              <SelectValue placeholder="Selecteer automatisering" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="alle">Alle diagrammen</SelectItem>
-              {data
-                .filter((a) => a.mermaidDiagram)
-                .map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.id} — {a.naam}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        )}
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.06 }}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={24} color="#e2e8f0" />
+          <Controls />
+          <MiniMap zoomable pannable nodeColor={n => {
+            const lane = (n.data as any)?.lane as string;
+            return LANE_BG[lane] ?? "#e2e8f0";
+          }} />
+        </ReactFlow>
       </div>
 
-      {/* Overview mode — React Flow BPMN */}
-      {viewMode === "overzicht" && <BPMNOverview data={data} laneType={laneType} />}
-
-      {/* Individual mode — Mermaid diagrams */}
-      {viewMode === "individueel" && (
-        <>
-          {individualItems.length === 0 && (
-            <p className="text-muted-foreground text-sm">Geen diagrammen beschikbaar.</p>
-          )}
-          {individualItems.map((a) => (
-            <div
-              key={a.id}
-              className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm p-6 space-y-4"
-            >
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
-                <h3 className="font-semibold text-foreground">{a.naam}</h3>
-                <StatusBadge status={a.status} />
-              </div>
-              <div className="overflow-x-auto">
-                <MermaidDiagram chart={a.mermaidDiagram} />
-              </div>
-              <div className="grid md:grid-cols-3 gap-4 pt-2 border-t border-border">
-                <div>
-                  <p className="label-uppercase mb-0.5">Trigger</p>
-                  <p className="text-sm">{a.trigger}</p>
-                </div>
-                <div>
-                  <p className="label-uppercase mb-0.5">Owner</p>
-                  <p className="text-sm">{a.owner}</p>
-                </div>
-                <div>
-                  <p className="label-uppercase mb-0.5">Systemen</p>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {a.systemen.map((s) => (
-                      <SystemBadge key={s} systeem={s} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </>
+      {panelOpen && graph && (
+        <div className="w-80 border-l border-border bg-card flex-shrink-0">
+          <ReviewPanel flows={graph.flows} onReview={handleReview} />
+        </div>
       )}
+    </div>
+  );
+}
+
+export default function BPMNViewer() {
+  return (
+    <div style={{ height: "calc(100vh - 48px)" }}>
+      <ReactFlowProvider>
+        <BpmnCanvas />
+      </ReactFlowProvider>
     </div>
   );
 }
