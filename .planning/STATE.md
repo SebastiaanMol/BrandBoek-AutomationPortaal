@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-PLAN.md (autoLinks race condition fix)
+stopped_at: Completed Wave 1 (01-01, 01-02, 01-03)
 last_updated: "2026-03-30T15:15:57.227Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-30)
 ## Current Position
 
 Phase: 01 (process-canvas) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-03-30
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01-process-canvas P03 | 525658 | 1 tasks | 1 files |
 | Phase 01 P02 | 3 | 1 tasks | 2 files |
+| Phase 01 P01 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,7 @@ Recent decisions affecting current work:
 - Phase 1 is the primary graduation deliverable. Everything else gates on it.
 - [Phase 01-process-canvas]: Use .label-uppercase utility class as single canonical pattern for all Section component headers in detail panels
 - [Phase 01]: Use useRef to bridge two async load effects (savedLinksRef pattern) rather than combining them, preserving independent fetch and React Query lifecycles for PROC-03 autoLinks restoration
+- [Phase 01]: Pure logic (toCanvasAutomation) duplicated in test file for testability; import from Processen.tsx avoided due to React component side effects
 
 ### Pending Todos
 
@@ -78,5 +80,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-30T15:15:57.223Z
-Stopped at: Completed 01-02-PLAN.md (autoLinks race condition fix)
+Stopped at: Completed Wave 1 (01-01, 01-02, 01-03)
 Resume file: None

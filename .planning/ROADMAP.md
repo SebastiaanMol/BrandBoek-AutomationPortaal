@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Canvas renders without errors and matches the expected swimlane layout for all five customer phases
 **Plans**: 4 plans
 Plans:
-- [ ] 01-01-PLAN.md — Wave 0: Unit test scaffold for PROC-01 through PROC-04 logic paths
+- [x] 01-01-PLAN.md — Wave 0: Unit test scaffold for PROC-01 through PROC-04 logic paths
 - [x] 01-02-PLAN.md — Wave 1: Fix autoLinks race condition (PROC-03 persistence bug)
 - [x] 01-03-PLAN.md — Wave 1: Fix Section label typography in AutomationDetailPanel (PROC-04 polish)
 - [ ] 01-04-PLAN.md — Wave 2: Human verification of all four PROC success criteria
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Process Canvas | 2/4 | In Progress|  |
+| 1. Process Canvas | 3/4 | In Progress|  |
 | 2. Data Completeness | 0/? | Not started | - |
 | 3. Export | 0/? | Not started | - |
 | 4. Portal Quality | 0/? | Not started | - |
