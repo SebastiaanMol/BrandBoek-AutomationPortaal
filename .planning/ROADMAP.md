@@ -12,7 +12,7 @@ The portal infrastructure is built. What remains is making it complete, correct,
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Process Canvas** - Swimlane canvas is fully functional as the primary demo deliverable
+- [x] **Phase 1: Process Canvas** - Swimlane canvas is fully functional as the primary demo deliverable
 - [ ] **Phase 2: Data Completeness** - All Brand Boekhouders automations entered, import flow validated end-to-end
 - [ ] **Phase 3: Export** - Process map can be exported as PNG or PDF for handover documentation
 - [ ] **Phase 4: Portal Quality** - All pages stable, dead code removed, critical logic has test coverage
@@ -34,7 +34,7 @@ Plans:
 - [x] 01-01-PLAN.md — Wave 0: Unit test scaffold for PROC-01 through PROC-04 logic paths
 - [x] 01-02-PLAN.md — Wave 1: Fix autoLinks race condition (PROC-03 persistence bug)
 - [x] 01-03-PLAN.md — Wave 1: Fix Section label typography in AutomationDetailPanel (PROC-04 polish)
-- [ ] 01-04-PLAN.md — Wave 2: Human verification of all four PROC success criteria
+- [x] 01-04-PLAN.md — Wave 2: Human verification of all four PROC success criteria
 **UI hint**: yes
 
 ### Phase 2: Data Completeness
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Process Canvas | 3/4 | In Progress|  |
+| 1. Process Canvas | 4/4 | Complete | 2026-03-30 |
 | 2. Data Completeness | 0/? | Not started | - |
 | 3. Export | 0/? | Not started | - |
 | 4. Portal Quality | 0/? | Not started | - |
