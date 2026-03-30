@@ -31,7 +31,7 @@ One interactive process overview where every automation Brand Boekhouders uses i
 ### Active
 
 - [ ] All Brand Boekhouders automations are entered and accurately mapped in the portal
-- [ ] Process canvas is fully polished as the primary demo deliverable
+- [x] Process canvas is fully polished as the primary demo deliverable *(Validated in Phase 1: Process Canvas)*
 - [ ] Export of process map / BPMN (PDF or image) for handover documentation
 - [ ] Portal is stable with no broken pages, clean navigation
 - [ ] Python backend is documented and deployable
@@ -91,4 +91,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after pulling latest commits (7c443e0)*
+*Last updated: 2026-03-30 — Phase 1 (Process Canvas) complete*
