@@ -7,10 +7,10 @@
 
 ### Process Canvas
 
-- [ ] **PROC-01**: User can view all automations loaded into the swimlane canvas, organized by customer phase
-- [ ] **PROC-02**: User can drag automations between swimlanes and reposition them on the canvas
-- [ ] **PROC-03**: Automation placement and connections persist across sessions (saved to Supabase)
-- [ ] **PROC-04**: User can click an automation to see full details in the side panel (trigger, steps, systems, owner)
+- [x] **PROC-01**: User can view all automations loaded into the swimlane canvas, organized by customer phase
+- [x] **PROC-02**: User can drag automations between swimlanes and reposition them on the canvas
+- [x] **PROC-03**: Automation placement and connections persist across sessions (saved to Supabase)
+- [x] **PROC-04**: User can click an automation to see full details in the side panel (trigger, steps, systems, owner)
 - [ ] **PROC-05**: Process map can be exported as PNG or PDF
 
 ### Data & Imports
@@ -59,10 +59,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROC-01 | Phase 1 | Pending |
-| PROC-02 | Phase 1 | Pending |
-| PROC-03 | Phase 1 | Pending |
-| PROC-04 | Phase 1 | Pending |
+| PROC-01 | Phase 1 | Complete |
+| PROC-02 | Phase 1 | Complete |
+| PROC-03 | Phase 1 | Complete |
+| PROC-04 | Phase 1 | Complete |
 | DATA-01 | Phase 2 | Pending |
 | DATA-02 | Phase 2 | Pending |
 | DATA-03 | Phase 2 | Pending |

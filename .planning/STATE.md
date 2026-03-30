@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 UI-SPEC approved
-last_updated: "2026-03-30T12:19:24.375Z"
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-03-30T15:15:13.701Z"
 last_activity: 2026-03-30 — Roadmap created, phases derived from v1 requirements
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 4
+  completed_plans: 1
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 01 P01 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,7 @@ Recent decisions affecting current work:
 
 - Brownfield start: Most infrastructure already built. Phases focus on what is LEFT to do (canvas polish, data entry, export, quality, handover).
 - Phase 1 is the primary graduation deliverable. Everything else gates on it.
+- [Phase 01]: Pure logic (toCanvasAutomation) duplicated in test file for testability; import from Processen.tsx avoided due to React component side effects
 
 ### Pending Todos
 
@@ -73,6 +75,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T12:19:24.368Z
-Stopped at: Phase 1 UI-SPEC approved
-Resume file: .planning/phases/01-process-canvas/01-UI-SPEC.md
+Last session: 2026-03-30T15:15:13.695Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
