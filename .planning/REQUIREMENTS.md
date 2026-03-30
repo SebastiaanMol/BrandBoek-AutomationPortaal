@@ -63,17 +63,17 @@
 | PROC-02 | Phase 1 | Pending |
 | PROC-03 | Phase 1 | Pending |
 | PROC-04 | Phase 1 | Pending |
-| PROC-05 | Phase 2 | Pending |
 | DATA-01 | Phase 2 | Pending |
 | DATA-02 | Phase 2 | Pending |
 | DATA-03 | Phase 2 | Pending |
-| QUAL-01 | Phase 3 | Pending |
-| QUAL-02 | Phase 3 | Pending |
-| QUAL-03 | Phase 3 | Pending |
-| BACK-01 | Phase 3 | Pending |
-| BACK-02 | Phase 3 | Pending |
-| HAND-01 | Phase 4 | Pending |
-| HAND-02 | Phase 4 | Pending |
+| PROC-05 | Phase 3 | Pending |
+| QUAL-01 | Phase 4 | Pending |
+| QUAL-02 | Phase 4 | Pending |
+| QUAL-03 | Phase 4 | Pending |
+| BACK-01 | Phase 5 | Pending |
+| BACK-02 | Phase 5 | Pending |
+| HAND-01 | Phase 5 | Pending |
+| HAND-02 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 15 total
@@ -82,4 +82,4 @@
 
 ---
 *Requirements defined: 2026-03-30*
-*Last updated: 2026-03-30 after initial definition*
+*Last updated: 2026-03-30 — phase assignments updated to match ROADMAP.md*
