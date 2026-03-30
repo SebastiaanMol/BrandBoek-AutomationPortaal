@@ -5,6 +5,7 @@ status: draft
 shadcn_initialized: true
 preset: "style=default, baseColor=slate, cssVariables=true"
 created: 2026-03-30
+revised: 2026-03-30
 ---
 
 # Phase 1 — UI Design Contract: Process Canvas
@@ -27,25 +28,32 @@ created: 2026-03-30
 
 ---
 
+## Visual Hierarchy
+
+The swimlane canvas (`ProcessCanvas.tsx`) is the primary focal point — it occupies the majority of the viewport and is where all user interaction takes place. `AutomationDetailPanel` is the secondary focal point: when open, it draws attention to the selected automation while the canvas recedes to a secondary role. `UnassignedPanel` is tertiary — it is always visible but never competes with the canvas.
+
+---
+
 ## Spacing Scale
 
-Declared values (multiples of 4):
+Declared values (multiples of 4 only):
 
 | Token | Value | Usage |
 |-------|-------|-------|
 | xs | 4px | Icon gaps, badge padding, inline spacing (`gap-1`, `px-1`) |
-| sm | 8px | Compact element spacing, panel item padding (`px-2`, `gap-2`) |
+| sm | 8px | Compact element spacing, panel item padding, section label margin-bottom (`px-2`, `gap-2`, `mb-2`) |
 | md | 16px | Default panel padding, form field spacing (`px-4`) |
 | lg | 24px | Panel section separation, card padding |
 | xl | 32px | Canvas toolbar vertical rhythm |
 | 2xl | 48px | Major section breaks (swimlane header height) |
 | 3xl | 64px | Page-level spacing (not used in canvas view) |
 
-Exceptions:
-- Automation dot diameter: 20px (not on 4px grid — existing SVG contract, do not change)
+Exceptions (not spacing tokens — fixed layout values):
+- Automation dot diameter: 20px (existing SVG contract, do not change)
 - Detail panel width: 320px (`w-80`) — fixed, not a spacing token
 - Unassigned panel width: 288px (`w-72`) — fixed, not a spacing token
-- Panel section label margin-bottom: 6px (`mb-1.5`) — existing pattern, acceptable
+
+> **Existing codebase pattern for future remediation:** `AutomationDetailPanel` currently applies `mb-1.5` (6px) to panel section label margin-bottom. This is a non-4px-grid value. It is NOT part of the spacing contract and MUST NOT be introduced in new code. It will be remediated to `mb-2` (8px) in a future polish phase.
 
 ---
 
@@ -55,13 +63,13 @@ Exceptions:
 |------|------|--------|-------------|------|--------|
 | Body | 14px | 400 (regular) | 1.5 | IBM Plex Sans | `text-sm` — established in panel prose |
 | Label / metadata | 12px | 400 (regular) | 1.4 | IBM Plex Sans | `text-xs` — tool name, step labels |
-| Section header (panel) | 10px | 600 (semibold) | 1.0 | IBM Plex Sans | `text-[10px] font-semibold uppercase tracking-wider` — `Section` component in `AutomationDetailPanel` |
+| Section header (panel) | 11px | 600 (semibold) | 1.0 | IBM Plex Sans | `.label-uppercase` utility class — canonical section label pattern |
 | Name / heading | 14px | 600 (semibold) | snug (1.375) | IBM Plex Sans | `text-sm font-semibold` — automation name in panel header |
 
 Notes:
 - Maximum 4 type roles in this phase. No display-size headings needed (canvas is a tool, not a marketing page).
-- Badge text: 10px font-bold uppercase — existing `.badge-*` pattern, retained as-is.
-- `.label-uppercase` utility class (11px, font-bold, uppercase, tracking-widest, muted-foreground) is the canonical section label pattern — use it everywhere a category label appears.
+- Badge text: 11px font-bold uppercase — use `.label-uppercase` for all category labels and section headers without exception. This eliminates the former 10px/11px ambiguity: 11px is the single canonical size for all label-scale text.
+- The `Section` component in `AutomationDetailPanel` must use `.label-uppercase` (11px). Any existing `text-[10px]` usages in section headers are non-conforming and should be updated to `.label-uppercase` during Phase 1 polish.
 
 ---
 
@@ -146,6 +154,8 @@ Lane colors are set via `--lane-*` CSS custom properties. Do not inline hex; alw
 | Supabase error on load | `fetchProcessState()` rejects | Console error only (existing pattern); canvas falls back to `initialState` |
 | Supabase error on save | `saveProcessState()` rejects | `toast.error(...)` — see Copywriting Contract |
 
+> **Existing codebase pattern noted:** `mb-1.5` (6px) is currently applied to panel section label margin-bottom inside `AutomationDetailPanel`. This deviates from the 4px spacing grid. New code must not replicate this pattern. Remediation to `mb-2` (8px) is deferred to a future polish phase.
+
 ---
 
 ## Component Inventory
@@ -157,7 +167,6 @@ Components used or likely needed in this phase (all from `src/components/ui/`):
 | `Button` | Save, Reset, Add Step, close panel |
 | `Badge` | Status badge in detail panel, tool badge, assigned count |
 | `AlertDialog` | Reset confirmation dialog, save confirmation dialog |
-| `DropdownMenu` | Export options (PNG / PDF) in toolbar |
 | `Skeleton` | Loading state placeholder for canvas area |
 | `Sonner` (toast) | Save success/fail, reset feedback |
 | `Tooltip` | Icon-only toolbar buttons (Save, Reset) |
@@ -165,6 +174,8 @@ Components used or likely needed in this phase (all from `src/components/ui/`):
 | `Separator` | Section dividers in detail panel |
 
 Canvas itself (`ProcessCanvas.tsx`) is custom SVG — not a shadcn component.
+
+Note: `DropdownMenu` is NOT included in Phase 1. Export capability (PNG / PDF) is scoped to Phase 3 per CONTEXT.md Phase Boundary.
 
 ---
 
@@ -201,7 +212,7 @@ All UI copy follows the project convention: **Dutch labels, English code identif
 
 | Registry | Blocks Used | Safety Gate |
 |----------|-------------|-------------|
-| shadcn official | Button, Badge, AlertDialog, DropdownMenu, Skeleton, Sonner, Tooltip, ScrollArea, Separator, Card, Sheet | not required |
+| shadcn official | Button, Badge, AlertDialog, Skeleton, Sonner, Tooltip, ScrollArea, Separator, Card, Sheet | not required |
 | Third-party | none | not applicable |
 
 No third-party registries declared for this phase.
@@ -223,4 +234,5 @@ No third-party registries declared for this phase.
 
 *Phase: 01-process-canvas*
 *UI-SPEC created: 2026-03-30*
+*UI-SPEC revised: 2026-03-30 (blocking issues resolved)*
 *Design system source: existing codebase (components.json, tailwind.config.ts, src/index.css)*
