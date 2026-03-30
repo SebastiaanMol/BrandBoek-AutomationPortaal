@@ -16,6 +16,9 @@ import BewerkAutomatisering from "./pages/BewerkAutomatisering";
 import AuthPage from "./pages/AuthPage";
 import Instellingen from "./pages/Instellingen";
 import KennisGraaf from "./pages/KennisGraaf";
+import Proceskaart from "./pages/Proceskaart";
+import Processen from "./pages/Processen";
+import Imports from "./pages/Imports";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +49,9 @@ function ProtectedRoutes() {
         <Route path="/analyse" element={<Analyse />} />
         <Route path="/instellingen" element={<Instellingen />} />
         <Route path="/kennisgraaf" element={<KennisGraaf />} />
+        <Route path="/proceskaart" element={<Proceskaart />} />
+        <Route path="/processen" element={<Processen />} />
+        <Route path="/imports" element={<Imports />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

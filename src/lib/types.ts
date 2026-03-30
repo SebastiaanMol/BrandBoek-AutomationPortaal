@@ -22,6 +22,17 @@ export interface Koppeling {
   label: string;
 }
 
+// ── Branch / Gateway types ───────────────────────────────────────────────────
+
+export interface AutomationBranch {
+  id: string;
+  label: string;       // bijv. "Heeft bankkoppeling"
+  toStepId: string;    // doelstap
+  description?: string; // optionele toelichting (plain text)
+}
+
+// ── Automatisering ───────────────────────────────────────────────────────────
+
 export interface Automatisering {
   id: string;
   naam: string;
@@ -43,6 +54,7 @@ export interface Automatisering {
   externalId?: string;
   source?: string;
   lastSyncedAt?: string | null;
+  branches?: AutomationBranch[];
 }
 
 export interface Integration {

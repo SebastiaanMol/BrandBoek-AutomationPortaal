@@ -49,6 +49,16 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        lane: {
+          marketing:   "hsl(var(--lane-marketing))",
+          sales:       "hsl(var(--lane-sales))",
+          onboarding:  "hsl(var(--lane-onboarding))",
+          boekhouding: "hsl(var(--lane-boekhouding))",
+          management:  "hsl(var(--lane-management))",
+        },
+        dot: {
+          automation: "hsl(var(--dot-automation))",
+        },
         hubspot: "hsl(var(--hubspot))",
         zapier: "hsl(var(--zapier))",
         backend: "hsl(var(--backend))",

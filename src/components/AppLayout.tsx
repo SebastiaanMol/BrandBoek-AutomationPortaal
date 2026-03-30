@@ -13,6 +13,8 @@ import {
   ClipboardCheck,
   Settings,
   Network,
+  LayoutTemplate,
+  Download,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -21,10 +23,16 @@ const navItems = [
   { title: "Nieuwe Automatisering", url: "/nieuw", icon: PlusCircle },
   { title: "Alle Automatiseringen", url: "/alle", icon: List },
   { title: "Verificatie", url: "/verificatie", icon: ClipboardCheck },
-  { title: "Mindmap", url: "/mindmap", icon: Map },
-  { title: "Kennisgraaf", url: "/kennisgraaf", icon: Network },
-  { title: "BPMN Viewer", url: "/bpmn", icon: GitBranch },
+  // { title: "Mindmap", url: "/mindmap", icon: Map },
+  // { title: "Kennisgraaf", url: "/kennisgraaf", icon: Network },
+  // { title: "BPMN Viewer", url: "/bpmn", icon: GitBranch },
+  // { title: "Proceskaart", url: "/proceskaart", icon: LayoutTemplate },
+  { title: "Processen", url: "/processen", icon: GitBranch },
   { title: "Analyse", url: "/analyse", icon: BarChart3 },
+  { title: "Imports", url: "/imports", icon: Download },
+];
+
+const bottomNavItems = [
   { title: "Instellingen", url: "/instellingen", icon: Settings },
 ];
 
@@ -78,15 +86,38 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="border-t border-sidebar-border p-4">
-          <p className="text-[10px] text-sidebar-foreground/40 truncate mb-2">{user?.email}</p>
-          <button
-            onClick={signOut}
-            className="flex items-center gap-2 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            Uitloggen
-          </button>
+        <div className="border-t border-sidebar-border">
+          {bottomNavItems.map((item) => {
+            const active = location.pathname === item.url;
+            return (
+              <Link
+                key={item.url}
+                to={item.url}
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-3 px-5 py-2.5 text-sm transition-colors duration-150 relative ${
+                  active
+                    ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                }`}
+              >
+                {active && (
+                  <span className="absolute left-0 top-1 bottom-1 w-1 rounded-r bg-sidebar-primary" />
+                )}
+                <item.icon className="h-4 w-4 shrink-0" />
+                <span>{item.title}</span>
+              </Link>
+            );
+          })}
+          <div className="p-4">
+            <p className="text-[10px] text-sidebar-foreground/40 truncate mb-2">{user?.email}</p>
+            <button
+              onClick={signOut}
+              className="flex items-center gap-2 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Uitloggen
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -100,11 +131,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
           <span className="label-uppercase ml-3 lg:ml-0">
-            {navItems.find((n) => n.url === location.pathname)?.title || "Portaal"}
+            {[...navItems, ...bottomNavItems].find((n) => n.url === location.pathname)?.title || "Portaal"}
           </span>
         </header>
         <main className={`flex-1 w-full ${
-          location.pathname === "/mindmap" || location.pathname === "/kennisgraaf"
+          location.pathname === "/mindmap" || location.pathname === "/kennisgraaf" || location.pathname === "/bpmn" || location.pathname === "/processen"
             ? "p-0"
             : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
         }`}>
