@@ -2,58 +2,66 @@
 
 ## What This Is
 
-An internal web portal for Brand Boekhouders (a Dutch accounting firm) that documents all their automations and presents them through an interactive BPMN model. Staff can see exactly what each automation does — what triggers it, which systems are involved, what steps it takes, and how automations connect to each other. Built as the ICT artefact for a 20-week HBO-ICT graduation internship.
+An internal web portal for Brand Boekhouders (a Dutch accounting firm) that documents all their automations and presents them as an interactive swimlane process map. Staff can see exactly what each automation does — what triggers it, which systems are involved, what steps it takes, and how automations connect across customer lifecycle phases. Built as the ICT artefact for a 20-week HBO-ICT graduation internship.
 
 ## Core Value
 
-One interactive BPMN overview where every automation Brand Boekhouders uses is visible, explorable, and maintainable — so anyone on the team can understand what runs, what triggers what, and where data flows.
+One interactive process overview where every automation Brand Boekhouders uses is visible, explorable, and maintainable — organized by customer phase (Marketing → Sales → Onboarding → Boekhouding → Offboarding).
 
 ## Requirements
 
 ### Validated
 
-- ✓ Automation registration (CRUD: naam, trigger, stappen, systemen, owner, status, etc.) — existing
-- ✓ Dashboard with status overview (Actief / Verouderd / Uitgeschakeld) — existing
-- ✓ Interactive BPMN viewer with drag and edit — existing (may not be in latest commit)
-- ✓ Knowledge graph (2D force-directed, React Flow) — existing
-- ✓ Verification workflow (flag automations as reviewed) — existing
-- ✓ Supabase auth (single-user, protected routes) — existing
-- ✓ Analysis page with charts — existing
-- ✓ Mermaid diagram per automation — existing
+- ✓ Automation registration CRUD (naam, trigger, stappen, systemen, owner, status, fasen, etc.)
+- ✓ Dashboard with status overview (Actief / Verouderd / Uitgeschakeld)
+- ✓ Interactive swimlane process canvas with drag/edit (Processen page, ProcessCanvas.tsx)
+- ✓ Automation detail panel with full info + step viewer
+- ✓ BPMN viewer v2 (BPMNViewer.tsx, 739 lines)
+- ✓ Knowledge graph (2D force-directed, React Flow) with clustering + problem detection
+- ✓ Verification workflow (flag automations as reviewed, with date + person)
+- ✓ Analysis page with charts
+- ✓ Mermaid diagram per automation
+- ✓ Supabase auth (protected routes)
+- ✓ Imports page — HubSpot sync + AI confidence review flow
+- ✓ Python FastAPI backend (HubSpot connector + plain-language mapper)
+- ✓ AI evaluation edge function (evaluate-automation)
+- ✓ Process state persistence (Supabase process_state table)
+- ✓ Proceskaart page (process map overview)
 
 ### Active
 
-- [ ] Interactive BPMN model is complete and production-ready as the portal centerpiece
-- [ ] All Brand Boekhouders automations are mapped and placed in the BPMN
-- [ ] Each automation shows exactly what it does (trigger, steps, systems, data flow)
-- [ ] Automation data stays up to date (manual entry + optional HubSpot/Zapier sync)
-- [ ] BPMN model clearly shows how automations connect and interact
-- [ ] Portal is clean, stable, and handover-ready for Brand Boekhouders staff
+- [ ] All Brand Boekhouders automations are entered and accurately mapped in the portal
+- [ ] Process canvas is fully polished as the primary demo deliverable
+- [ ] Export of process map / BPMN (PDF or image) for handover documentation
+- [ ] Portal is stable with no broken pages, clean navigation
+- [ ] Python backend is documented and deployable
+- [ ] Basic test coverage for critical domain logic
+- [ ] Handover documentation for Brand Boekhouders staff
 
 ### Out of Scope
 
-- Real-time live monitoring of automation execution — complexity exceeds internship scope
-- Multi-user / team collaboration features — single maintainer assumed
+- Real-time live monitoring of automation execution — exceeds internship scope
+- Multi-user collaboration — single maintainer assumed
 - Mobile app — web portal only
-- Full automated sync with all external systems — manual entry is acceptable fallback
-- KennisGraaf3D — already built but not prioritized for final delivery
+- KennisGraaf3D — built but not prioritized for final delivery
+- Full sync for all external systems (Zapier, Typeform) — HubSpot is primary
 
 ## Context
 
-- **Codebase:** React 18 + TypeScript + Vite + Supabase + Tailwind + shadcn/ui
-- **Backend:** Supabase (Postgres DB + Edge Functions for optional sync)
-- **External systems:** HubSpot, Zapier, Typeform (sync stubs exist, not fully implemented)
-- **Timeline:** 20-week internship, week 4 of 20 (started ~2026-03-10, ends ~2026-07-28)
-- **Note:** The committed codebase may be behind the actual current state — the interactive BPMN with drag/edit has been built but may not be fully committed
+- **Codebase:** React 18 + TypeScript + Vite + Supabase + Tailwind + shadcn/ui (frontend)
+- **Backend:** Python FastAPI + Supabase (for HubSpot mapping and AI evaluation)
+- **External systems:** HubSpot (primary sync), Zapier, Typeform (stubs)
+- **Timeline:** 20-week internship, week 4 of 20 (~2026-03-10 → ~2026-07-28)
 - **Language:** UI labels in Dutch, code identifiers in English
+- **GDPR/AVG:** Use anonymized data during development; no real client data in version control
 
 ## Constraints
 
 - **Timeline:** ~16 weeks remaining — scope must be achievable solo
-- **Tech stack:** React + Supabase is fixed (already in production)
-- **GDPR/AVG:** Use anonymized data during development and testing; no real client data in version control
-- **Graduation requirement:** Must be a working, demonstrable ICT artefact — functional portal, not just documentation
+- **Tech stack:** React + Supabase + Python FastAPI is fixed
+- **Graduation requirement:** Must be a working, demonstrable ICT artefact
 - **Handover:** Must be maintainable by Brand Boekhouders staff after internship ends
+- **GDPR:** Anonymized test data only; real client names/data must stay out of git
 
 ## Key Decisions
 
@@ -61,8 +69,9 @@ One interactive BPMN overview where every automation Brand Boekhouders uses is v
 |----------|-----------|---------|
 | React + Supabase as tech stack | Already chosen and in use | ✓ Good |
 | Portal as main ICT artefact | Addresses school feedback that project was too business-focused | ✓ Good |
-| BPMN as primary visualization | Supervisor-approved deliverable, industry standard for process modeling | — Pending |
-| Manual data entry as primary input | Sync integrations are complex stubs; manual entry is reliable fallback | — Pending |
+| Swimlane canvas as primary visualization | Organizes automations by KlantFase — matches Brand Boekhouders workflow | ✓ Good |
+| Python FastAPI backend for HubSpot | Complex mapping logic (836-line mapper) better suited to Python than Edge Functions | — Pending |
+| Manual entry + HubSpot import as data strategy | Reliable; Zapier/Typeform sync is lower priority | — Pending |
 
 ## Evolution
 
@@ -82,4 +91,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after initialization*
+*Last updated: 2026-03-30 after pulling latest commits (7c443e0)*

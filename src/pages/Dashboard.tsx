@@ -131,8 +131,8 @@ function StatusList({ items }: { items: Automatisering[] }) {
             <CategorieBadge categorie={a.categorie} />
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            <StatusBadge status={a.status} />
             <span className="text-xs text-muted-foreground">{a.owner}</span>
+            <StatusBadge status={a.status} />
           </div>
         </Link>
       ))}
