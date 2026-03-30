@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [ ] 01-01-PLAN.md — Wave 0: Unit test scaffold for PROC-01 through PROC-04 logic paths
 - [ ] 01-02-PLAN.md — Wave 1: Fix autoLinks race condition (PROC-03 persistence bug)
-- [ ] 01-03-PLAN.md — Wave 1: Fix Section label typography in AutomationDetailPanel (PROC-04 polish)
+- [x] 01-03-PLAN.md — Wave 1: Fix Section label typography in AutomationDetailPanel (PROC-04 polish)
 - [ ] 01-04-PLAN.md — Wave 2: Human verification of all four PROC success criteria
 **UI hint**: yes
 
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Process Canvas | 0/4 | Planned | - |
+| 1. Process Canvas | 1/4 | In Progress|  |
 | 2. Data Completeness | 0/? | Not started | - |
 | 3. Export | 0/? | Not started | - |
 | 4. Portal Quality | 0/? | Not started | - |
