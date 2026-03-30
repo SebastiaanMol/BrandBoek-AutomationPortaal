@@ -24,7 +24,7 @@ const STATUS_STYLES: Record<string, string> = {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+      <p className="label-uppercase mb-2">
         {label}
       </p>
       {children}
