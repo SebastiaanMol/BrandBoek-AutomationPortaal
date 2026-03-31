@@ -8,6 +8,18 @@ An internal web portal for Brand Boekhouders (a Dutch accounting firm) that docu
 
 One interactive process overview where every automation Brand Boekhouders uses is visible, explorable, and maintainable — organized by customer phase (Marketing → Sales → Onboarding → Boekhouding → Offboarding).
 
+## Current Milestone: v1.1 Unified Portal Structure
+
+**Goal:** Transform the portal from a collection of loosely related pages into one cohesive, hierarchically organized system where everything has a fixed place, consistent naming, and explicit cross-links.
+
+**Target features:**
+- Grouped sidebar navigation with named sections (Overview / Automations / Systems & People / Analysis)
+- Systems page: dedicated entity page listing all systems with linked automations count and drill-in view
+- Owners page: dedicated entity page listing all owners with their automations
+- Cross-links in automation detail: linked process, system(s), owner, and related automations — all clickable
+- Naming consistency: all labels in English, page h1 matches nav label, form fields consistent, status labels consistent
+- Remove dead pages: Mindmap, Kennisgraaf, BPMN Viewer, Proceskaart
+
 ## Requirements
 
 ### Validated
@@ -32,10 +44,11 @@ One interactive process overview where every automation Brand Boekhouders uses i
 
 - [ ] All Brand Boekhouders automations are entered and accurately mapped in the portal
 - [x] Process canvas is fully polished as the primary demo deliverable *(Validated in Phase 1: Process Canvas)*
-- [ ] Export of process map / BPMN (PDF or image) for handover documentation
-- [ ] Portal is stable with no broken pages, clean navigation
+- [x] Export of process map as PNG or PDF *(Validated in Phase 3: Export)*
+- [x] Portal is stable with no broken pages, clean navigation *(Validated in Phase 4: Portal Quality)*
+- [x] Basic test coverage for critical domain logic *(Validated in Phase 4: Portal Quality)*
+- [ ] Portal is one cohesive system with consistent naming, grouped navigation, and entity pages for Systems and Owners
 - [ ] Python backend is documented and deployable
-- [ ] Basic test coverage for critical domain logic
 - [ ] Handover documentation for Brand Boekhouders staff
 
 ### Out of Scope
@@ -91,4 +104,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 — Phase 1 (Process Canvas) complete*
+*Last updated: 2026-03-31 — Milestone v1.1 (Unified Portal Structure) started*
