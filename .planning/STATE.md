@@ -7,7 +7,7 @@ stopped_at: —
 last_updated: "2026-03-31T00:00:00.000Z"
 last_activity: 2026-03-31
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,16 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** One interactive process overview where every automation Brand Boekhouders uses is visible, organized by customer phase, and explorable by any team member.
-**Current focus:** Milestone v1.1 — Unified Portal Structure
+**Current focus:** Milestone v1.1 — Unified Portal Structure (Phases 6–8)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started (roadmap defined, planning pending)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-31 — Milestone v1.1 started
+Status: Roadmap created, ready to plan Phase 6
+Last activity: 2026-03-31 — v1.1 roadmap created (Phases 6, 7, 8)
 
 Progress: [##░░░░░░░░] 20%
+
+## Milestone v1.1 Phases
+
+| Phase | Goal | Requirements | Status |
+|-------|------|--------------|--------|
+| 6. Navigation & Naming | Grouped sidebar, dead pages removed, English labels | NAV-01..03, NAME-01..03 | Not started |
+| 7. Entity Pages | Systems and Owners pages with drill-in | SYS-01..02, OWN-01..02 | Not started |
+| 8. Cross-Linking | Automation detail panel fully wired | LINK-01..04 | Not started |
 
 ## Performance Metrics
 
@@ -82,6 +90,7 @@ Recent decisions affecting current work:
 - [Phase 03-export]: jspdf 4.x installed from npm, replacing CDN 2.5.1 — bundled, typed, offline-safe
 - [Phase 04-portal-quality]: Used it.todo stubs (not failing assertions) for Wave 0 scaffold so parallel Wave 1 agents are not blocked by red test output
 - [Phase 04-portal-quality]: Renamed AutomatiseringForm export from NieuweAutomatisering for naming clarity; safe as callers use default import alias
+- [v1.1 roadmap]: Phase 6 depends on Phase 4 (portal must be stable before structural nav changes); Phase 7 depends on Phase 6 (sidebar nav must name the new pages before they are built); Phase 8 depends on Phase 7 (cross-links need Systems and Owners pages to exist as link targets)
 
 ### Pending Todos
 
@@ -94,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-31T12:27:17.293Z
-Stopped at: Completed 04-03-PLAN.md
+Stopped at: v1.1 roadmap created
 Resume file: None
