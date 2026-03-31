@@ -197,7 +197,7 @@ Full audit of Dutch strings requiring replacement, by file.
 | "Verwijderen" (inline action) | "Delete" |
 | "Automatisering verwijderen?" (dialog title) | "Delete automation?" |
 | "Weet je zeker dat je ... wilt verwijderen? Dit verwijdert ook alle koppelingen. Deze actie kan niet ongedaan worden gemaakt." (dialog body) | "Are you sure you want to delete {id} — {name}? This also removes all links. This action cannot be undone." |
-| "Annuleren" (dialog cancel) | "Cancel" |
+| "Annuleren" (dialog cancel) | "Keep Automation" |
 | "Bronsysteem" (detail label) | "Source System" |
 | "Doel" (detail label) | "Goal" |
 | "Afhankelijkheden" (detail label) | "Dependencies" |
@@ -344,7 +344,7 @@ const VERIFICATIE_LABELS: Record<string, string> = {
 |---------|------|
 | Primary CTA (create) | "+ New Automation" |
 | Primary CTA (save form) | "Save Automation" |
-| Primary CTA (verify card) | "Verified" |
+| Primary CTA (verify card) | "Mark Verified" |
 | Empty state heading (no automations in list) | "No automations found" |
 | Empty state body (filtered list) | "No results match your filters. Try clearing a filter." |
 | Empty state body (status tab) | "No automations in this category." |
@@ -354,7 +354,7 @@ const VERIFICATIE_LABELS: Record<string, string> = {
 | Error state (save failed) | "Save failed" + check network and retry |
 | Error state (delete failed) | "Delete failed — {message}" |
 | Error state (verification failed) | "Verification failed — {message}" |
-| Destructive: delete automation | Dialog title: "Delete automation?" / Body: "Are you sure you want to delete {id} — {name}? This also removes all links. This action cannot be undone." / Cancel: "Cancel" / Confirm: "Delete" |
+| Destructive: delete automation | Dialog title: "Delete automation?" / Body: "Are you sure you want to delete {id} — {name}? This also removes all links. This action cannot be undone." / Cancel: "Keep Automation" / Confirm: "Delete" |
 | Destructive: mark outdated | No confirmation dialog — status change is reversible via Edit |
 | Queue complete (all verified) | "All verified!" + "All {n} automations are up-to-date." |
 | Queue complete (skipped items) | "Queue complete" + "{n} skipped. Check the 'In Review' tab for items needing attention." |
