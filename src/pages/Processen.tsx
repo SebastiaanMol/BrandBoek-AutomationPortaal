@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -58,21 +58,19 @@ export default function Processen() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
   const [loading, setLoading] = useState(true);
+  const savedLinksRef = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
 
   // ── Load canvas from Supabase on mount ─────────────────────────────────────
   useEffect(() => {
     fetchProcessState()
       .then(saved => {
         if (saved) {
+          savedLinksRef.current = saved.autoLinks;
           setState(prev => ({
             ...prev,
             steps:       saved.steps       as ProcessState["steps"],
             connections: saved.connections as ProcessState["connections"],
-            // autoLinks merged later when dbAutomations arrive
-            automations: prev.automations.map(a => ({
-              ...a,
-              ...(saved.autoLinks[a.id] ?? {}),
-            })),
+            // autoLinks applied in dbAutomations effect once automations are loaded
           }));
           setSaved(s => ({
             ...s,
@@ -92,8 +90,9 @@ export default function Processen() {
     setState(prev => ({
       ...prev,
       automations: dbAutomations.map(a => {
-        const existing = prev.automations.find(x => x.id === a.id);
-        return toCanvasAutomation(a, existing);
+        const existing  = prev.automations.find(x => x.id === a.id);
+        const savedLink = savedLinksRef.current[a.id];
+        return toCanvasAutomation(a, existing ?? (savedLink ? { ...savedLink } as Automation : undefined));
       }),
     }));
   }, [dbAutomations]);
