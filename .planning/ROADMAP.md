@@ -45,7 +45,11 @@ Plans:
   1. All known Brand Boekhouders automations appear on the canvas with no placeholder or missing entries
   2. User can trigger a HubSpot import, review AI confidence scores, and approve or reject automations — all within the portal
   3. Every approved automation has a non-empty trigger, at least one step, at least one system, a phase assignment, and an owner
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 02-01-PLAN.md — Wave 1: inferFasen() in edge function + test scaffold (DATA-01, DATA-02)
+- [ ] 02-02-PLAN.md — Wave 1: ProposalCard fasen/owner fields and completeness gate (DATA-03)
+- [ ] 02-03-PLAN.md — Wave 2: Human verification of full import-review-approve flow (DATA-01, DATA-02, DATA-03)
 
 ### Phase 3: Export
 **Goal**: The process map can be exported as a file for use in handover documentation
@@ -85,7 +89,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Process Canvas | 4/4 | Complete | 2026-03-30 |
-| 2. Data Completeness | 0/? | Not started | - |
+| 2. Data Completeness | 0/3 | Not started | - |
 | 3. Export | 0/? | Not started | - |
 | 4. Portal Quality | 0/? | Not started | - |
 | 5. Backend & Handover | 0/? | Not started | - |
