@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -225,19 +226,6 @@ export default function Processen() {
       const imgData = canvas.toDataURL("image/png");
       const w = canvas.width / 2;
       const h = canvas.height / 2;
-
-      // Load jsPDF from CDN if not already loaded
-      if (!(window as any).jspdf) {
-        await new Promise<void>((res, rej) => {
-          const s = document.createElement("script");
-          s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-          s.onload = () => res();
-          s.onerror = () => rej(new Error("jsPDF laden mislukt"));
-          document.head.appendChild(s);
-        });
-      }
-
-      const { jsPDF } = (window as any).jspdf;
       const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [w, h] });
       pdf.addImage(imgData, "PNG", 0, 0, w, h);
       pdf.save("proceskaart.pdf");
