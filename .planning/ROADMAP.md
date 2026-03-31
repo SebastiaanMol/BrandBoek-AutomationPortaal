@@ -106,7 +106,7 @@ Plans:
   4. All visible labels, form fields, and status values across the portal use English (no Dutch text in the UI)
 **Plans**: 3 plans
 Plans:
-- [ ] 06-01-PLAN.md — Wave 1: Sidebar grouped nav (NAV-01) + dead page removal (NAV-03)
+- [x] 06-01-PLAN.md — Wave 1: Sidebar grouped nav (NAV-01) + dead page removal (NAV-03)
 - [ ] 06-02-PLAN.md — Wave 1: English labels across all pages (NAME-01, NAME-02, NAME-03) — parallel
 - [ ] 06-03-PLAN.md — Wave 2: Page h1 compliance (NAV-02) + human verification
 **UI hint**: yes
@@ -147,6 +147,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. Export | 2/3 | In Progress | - |
 | 4. Portal Quality | 3/4 | In Progress | - |
 | 5. Backend & Handover | 0/? | Not started | - |
-| 6. Navigation & Naming | 0/? | Not started | - |
+| 6. Navigation & Naming | 1/3 | In Progress|  |
 | 7. Entity Pages | 0/? | Not started | - |
 | 8. Cross-Linking | 0/? | Not started | - |

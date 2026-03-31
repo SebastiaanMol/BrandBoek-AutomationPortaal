@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Unified Portal Structure
-status: planning
-stopped_at: —
-last_updated: "2026-03-31T00:00:00.000Z"
+milestone_name: milestone
+status: executing
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-03-31T21:37:19.433Z"
 last_activity: 2026-03-31
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 8
+  completed_phases: 3
+  total_plans: 17
+  completed_plans: 14
+  percent: 20
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** One interactive process overview where every automation Brand Boekhouders uses is visible, organized by customer phase, and explorable by any team member.
-**Current focus:** Milestone v1.1 — Unified Portal Structure (Phases 6–8)
+**Current focus:** Phase 06 — Navigation & Naming
 
 ## Current Position
 
-Phase: Not started (roadmap defined, planning pending)
-Plan: —
-Status: Roadmap created, ready to plan Phase 6
-Last activity: 2026-03-31 — v1.1 roadmap created (Phases 6, 7, 8)
+Phase: 06 (Navigation & Naming) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-03-31
 
 Progress: [##░░░░░░░░] 20%
 
@@ -70,6 +70,7 @@ Progress: [##░░░░░░░░] 20%
 | Phase 04-portal-quality P01 | 1 | 1 tasks | 1 files |
 | Phase 04-portal-quality P02 | 151 | 2 tasks | 5 files |
 | Phase 04-portal-quality P03 | 8 | 2 tasks | 1 files |
+| Phase 06-navigation-naming P01 | 8 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Recent decisions affecting current work:
 - [Phase 04-portal-quality]: Used it.todo stubs (not failing assertions) for Wave 0 scaffold so parallel Wave 1 agents are not blocked by red test output
 - [Phase 04-portal-quality]: Renamed AutomatiseringForm export from NieuweAutomatisering for naming clarity; safe as callers use default import alias
 - [v1.1 roadmap]: Phase 6 depends on Phase 4 (portal must be stable before structural nav changes); Phase 7 depends on Phase 6 (sidebar nav must name the new pages before they are built); Phase 8 depends on Phase 7 (cross-links need Systems and Owners pages to exist as link targets)
+- [Phase 06-navigation-naming]: navGroups flatMap pattern used in top bar span to search across all grouped items
+- [Phase 06-navigation-naming]: Systems & People group intentionally has empty items array; Pages are Phase 7 scope
 
 ### Pending Todos
 
@@ -102,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-31T12:27:17.293Z
-Stopped at: v1.1 roadmap created
+Last session: 2026-03-31T21:37:19.429Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
