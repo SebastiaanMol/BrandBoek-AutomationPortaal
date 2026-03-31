@@ -22,7 +22,7 @@
 ### Portal Quality
 
 - [ ] **QUAL-01**: All routed pages are stable and accessible from the sidebar nav
-- [ ] **QUAL-02**: Legacy/dead code removed (NieuweAutomatisering.tsx, dual storage layer reconciled)
+- [x] **QUAL-02**: Legacy/dead code removed (NieuweAutomatisering.tsx, dual storage layer reconciled)
 - [x] **QUAL-03**: Core domain logic (berekenComplexiteit, berekenImpact, graphProblems) has basic test coverage
 
 ### Backend
@@ -68,7 +68,7 @@
 | DATA-03 | Phase 2 | Complete |
 | PROC-05 | Phase 3 | Complete |
 | QUAL-01 | Phase 4 | Pending |
-| QUAL-02 | Phase 4 | Pending |
+| QUAL-02 | Phase 4 | Complete |
 | QUAL-03 | Phase 4 | Complete |
 | BACK-01 | Phase 5 | Pending |
 | BACK-02 | Phase 5 | Pending |

@@ -76,8 +76,8 @@ Plans:
 **Plans**: 4 plans
 Plans:
 - [x] 04-01-PLAN.md — Wave 0: Failing test scaffold for domain logic (domainLogic.test.ts)
-- [ ] 04-02-PLAN.md — Wave 1: Delete storage.ts + move NieuweAutomatisering to components/AutomatiseringForm
-- [ ] 04-03-PLAN.md — Wave 1: Implement passing tests for berekenComplexiteit, berekenImpact, detectProblems
+- [x] 04-02-PLAN.md — Wave 1: Delete storage.ts + move NieuweAutomatisering to components/AutomatiseringForm
+- [x] 04-03-PLAN.md — Wave 1: Implement passing tests for berekenComplexiteit, berekenImpact, detectProblems
 - [ ] 04-04-PLAN.md — Wave 2: Human verification of all 8 sidebar nav pages
 
 ### Phase 5: Backend & Handover
@@ -100,5 +100,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Process Canvas | 4/4 | Complete | 2026-03-30 |
 | 2. Data Completeness | 0/3 | Not started | - |
 | 3. Export | 2/3 | In Progress|  |
-| 4. Portal Quality | 1/4 | In Progress|  |
+| 4. Portal Quality | 3/4 | In Progress|  |
 | 5. Backend & Handover | 0/? | Not started | - |
