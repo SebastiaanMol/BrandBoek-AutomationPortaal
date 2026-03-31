@@ -60,8 +60,8 @@ Plans:
   2. The exported file shows the swimlane layout with automation names legible at normal zoom
 **Plans**: 3 plans
 Plans:
-- [ ] 03-01-PLAN.md — Wave 0: Test scaffold for export pipeline logic (exportFlow.test.ts)
-- [ ] 03-02-PLAN.md — Wave 1: Install jspdf npm package + replace CDN injection in Processen.tsx
+- [x] 03-01-PLAN.md — Wave 0: Test scaffold for export pipeline logic (exportFlow.test.ts)
+- [x] 03-02-PLAN.md — Wave 1: Install jspdf npm package + replace CDN injection in Processen.tsx
 - [ ] 03-03-PLAN.md — Wave 2: Human visual verification of PNG and PDF export quality
 **UI hint**: yes
 
@@ -94,6 +94,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Process Canvas | 4/4 | Complete | 2026-03-30 |
 | 2. Data Completeness | 0/3 | Not started | - |
-| 3. Export | 0/3 | Not started | - |
+| 3. Export | 2/3 | In Progress|  |
 | 4. Portal Quality | 0/? | Not started | - |
 | 5. Backend & Handover | 0/? | Not started | - |

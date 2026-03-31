@@ -11,7 +11,7 @@
 - [x] **PROC-02**: User can drag automations between swimlanes and reposition them on the canvas
 - [x] **PROC-03**: Automation placement and connections persist across sessions (saved to Supabase)
 - [x] **PROC-04**: User can click an automation to see full details in the side panel (trigger, steps, systems, owner)
-- [ ] **PROC-05**: Process map can be exported as PNG or PDF
+- [x] **PROC-05**: Process map can be exported as PNG or PDF
 
 ### Data & Imports
 
@@ -66,7 +66,7 @@
 | DATA-01 | Phase 2 | Complete |
 | DATA-02 | Phase 2 | Complete |
 | DATA-03 | Phase 2 | Complete |
-| PROC-05 | Phase 3 | Pending |
+| PROC-05 | Phase 3 | Complete |
 | QUAL-01 | Phase 4 | Pending |
 | QUAL-02 | Phase 4 | Pending |
 | QUAL-03 | Phase 4 | Pending |
