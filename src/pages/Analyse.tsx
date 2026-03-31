@@ -40,9 +40,9 @@ function getScoreColor(score: number): string {
 }
 
 function getScoreLabel(score: number): string {
-  if (score >= 70) return "Hoog";
-  if (score >= 40) return "Gemiddeld";
-  return "Laag";
+  if (score >= 70) return "High";
+  if (score >= 40) return "Medium";
+  return "Low";
 }
 
 // --- Dependency graph: find cascading failures ---
@@ -133,7 +133,7 @@ export default function Analyse() {
       <section>
         <div className="flex items-center gap-2 mb-6">
           <Activity className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold tracking-tight">Klantproces Tijdlijn</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Customer Process Timeline</h2>
         </div>
 
         {/* Timeline connector line */}
@@ -163,7 +163,7 @@ export default function Analyse() {
                       {fase}
                     </span>
                     <span className="text-[10px] text-muted-foreground">
-                      {autos.length} auto · {activeCount} actief
+                      {autos.length} auto · {activeCount} active
                     </span>
                   </div>
 
@@ -176,7 +176,7 @@ export default function Analyse() {
                   <div className="space-y-1.5">
                     {autos.length === 0 ? (
                       <div className="text-[10px] text-muted-foreground text-center italic py-3">
-                        Geen automatiseringen
+                        No automations
                       </div>
                     ) : (
                       autos.map((a) => (
@@ -212,26 +212,26 @@ export default function Analyse() {
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold tracking-tight">Impact & Complexiteit Scores</h2>
+            <h2 className="text-lg font-semibold tracking-tight">Impact & Complexity Scores</h2>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-4 w-4 text-muted-foreground cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-xs text-sm">
-                  <p className="font-semibold mb-1">Complexiteit (0-100)</p>
+                  <p className="font-semibold mb-1">Complexity (0-100)</p>
                   <ul className="list-disc pl-4 mb-2 space-y-0.5">
-                    <li>Stappen × 10 (max 40)</li>
-                    <li>Systemen × 12 (max 36)</li>
-                    <li>Afhankelijkheden: +15</li>
-                    <li>Koppelingen × 5 (max 15)</li>
+                    <li>Steps × 10 (max 40)</li>
+                    <li>Systems × 12 (max 36)</li>
+                    <li>Dependencies: +15</li>
+                    <li>Links × 5 (max 15)</li>
                   </ul>
                   <p className="font-semibold mb-1">Impact (0-100)</p>
                   <ul className="list-disc pl-4 space-y-0.5">
-                    <li>Klantfasen × 12</li>
-                    <li>Systemen × 8</li>
-                    <li>Directe afhankelijkheden × 20</li>
-                    <li>Status Actief: +10</li>
+                    <li>Customer phases × 12</li>
+                    <li>Systems × 8</li>
+                    <li>Direct dependencies × 20</li>
+                    <li>Status Active: +10</li>
                   </ul>
                 </TooltipContent>
               </Tooltip>
@@ -245,10 +245,10 @@ export default function Analyse() {
                   <SelectValue placeholder="Impact" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="alle">Alle impact</SelectItem>
-                  <SelectItem value="hoog">Hoog (≥70)</SelectItem>
-                  <SelectItem value="gemiddeld">Gemiddeld (40-69)</SelectItem>
-                  <SelectItem value="laag">Laag (&lt;40)</SelectItem>
+                  <SelectItem value="alle">All impact</SelectItem>
+                  <SelectItem value="hoog">High (≥70)</SelectItem>
+                  <SelectItem value="gemiddeld">Medium (40-69)</SelectItem>
+                  <SelectItem value="laag">Low (&lt;40)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -257,10 +257,10 @@ export default function Analyse() {
                 <SelectValue placeholder="Complexiteit" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="alle">Alle complexiteit</SelectItem>
-                <SelectItem value="hoog">Hoog (≥70)</SelectItem>
-                <SelectItem value="gemiddeld">Gemiddeld (40-69)</SelectItem>
-                <SelectItem value="laag">Laag (&lt;40)</SelectItem>
+                <SelectItem value="alle">All complexity</SelectItem>
+                <SelectItem value="hoog">High (≥70)</SelectItem>
+                <SelectItem value="gemiddeld">Medium (40-69)</SelectItem>
+                <SelectItem value="laag">Low (&lt;40)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -325,10 +325,10 @@ export default function Analyse() {
                 {a.cascadeCount > 0 ? (
                   <span className="inline-flex items-center gap-1 text-xs font-bold" style={{ color: "#ef4444" }}>
                     <AlertTriangle className="h-3 w-3" />
-                    {a.cascadeCount} geraakt
+                    {a.cascadeCount} affected
                   </span>
                 ) : (
-                  <span className="text-[10px] text-muted-foreground">Geen</span>
+                  <span className="text-[10px] text-muted-foreground">None</span>
                 )}
               </div>
 
@@ -352,7 +352,7 @@ export default function Analyse() {
       <section>
         <div className="flex items-center gap-2 mb-6">
           <Layers className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold tracking-tight">Afhankelijkheidsgraph – Wat breekt als X uitvalt?</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Dependency Graph – What breaks if X fails?</h2>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -384,17 +384,17 @@ export default function Analyse() {
 
                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground mb-2">
                   <span>Impact: <strong style={{ color: getScoreColor(a.impact) }}>{a.impact}</strong></span>
-                  <span>Complexiteit: <strong style={{ color: getScoreColor(a.complexiteit) }}>{a.complexiteit}</strong></span>
+                  <span>Complexity: <strong style={{ color: getScoreColor(a.complexiteit) }}>{a.complexiteit}</strong></span>
                 </div>
 
                 {failures.length === 0 ? (
                   <p className="text-[10px] text-muted-foreground italic">
-                    ✅ Geen cascade-effect bij uitval
+                    ✅ No cascade effect on failure
                   </p>
                 ) : (
                   <div>
                     <p className="text-[10px] font-bold text-red-600 mb-1">
-                      ⚠️ {failures.length} automatisering{failures.length > 1 ? "en" : ""} geraakt bij uitval:
+                      ⚠️ {failures.length} automation{failures.length > 1 ? "s" : ""} affected on failure:
                     </p>
                     {isExpanded && (
                       <div className="space-y-1 mt-2">
@@ -403,7 +403,7 @@ export default function Analyse() {
                           return (
                             <div key={fId} className="flex items-center gap-2 bg-red-50 dark:bg-red-950/20 rounded p-1.5">
                               <span className="font-mono text-[9px] text-red-600">{fId}</span>
-                              <span className="text-[10px] truncate">{dep?.naam || "Onbekend"}</span>
+                              <span className="text-[10px] truncate">{dep?.naam || "Unknown"}</span>
                             </div>
                           );
                         })}
@@ -419,20 +419,20 @@ export default function Analyse() {
 
       {/* ═══════════════ BESTAANDE CHARTS ═══════════════ */}
       <section>
-        <h2 className="text-lg font-semibold tracking-tight mb-6">Overzicht Grafieken</h2>
+        <h2 className="text-lg font-semibold tracking-tight mb-6">Overview Charts</h2>
         <div className="grid lg:grid-cols-2 gap-8">
-          <ChartCard title="Per Categorie" data={categorieData} colors={COLORS} />
-          <ChartCard title="Per Systeem" data={systeemData} colors={COLORS} />
-          <ChartCard title="Per Owner" data={ownerData} colors={COLORS} />
-          <ChartCard title="Per Status" data={statusData} colors={COLORS} />
+          <ChartCard title="By Category" data={categorieData} colors={COLORS} />
+          <ChartCard title="By System" data={systeemData} colors={COLORS} />
+          <ChartCard title="By Owner" data={ownerData} colors={COLORS} />
+          <ChartCard title="By Status" data={statusData} colors={COLORS} />
         </div>
       </section>
 
       {/* ═══════════════ KNELPUNTEN ═══════════════ */}
       <section>
-        <h2 className="text-lg font-semibold tracking-tight mb-4">Knelpunten Overzicht</h2>
+        <h2 className="text-lg font-semibold tracking-tight mb-4">Bottlenecks Overview</h2>
         {data.filter((a) => a.afhankelijkheden?.trim()).length === 0 ? (
-          <p className="text-muted-foreground text-sm">Geen knelpunten geregistreerd.</p>
+          <p className="text-muted-foreground text-sm">No bottlenecks registered.</p>
         ) : (
           <div className="space-y-3">
             {data.filter((a) => a.afhankelijkheden?.trim()).map((a) => (

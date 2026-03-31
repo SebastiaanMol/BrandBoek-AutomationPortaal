@@ -6,18 +6,18 @@ import AIUpload from "./AIUpload";
 export default function NieuweAutomatiseringPage() {
   return (
     <div className="space-y-6">
-      <Tabs defaultValue="handmatig">
+      <Tabs defaultValue="manual">
         <TabsList>
-          <TabsTrigger value="handmatig" className="gap-2">
+          <TabsTrigger value="manual" className="gap-2">
             <PlusCircle className="h-4 w-4" />
-            Handmatig
+            Manual
           </TabsTrigger>
           <TabsTrigger value="ai-upload" className="gap-2">
             <Upload className="h-4 w-4" />
             AI Upload
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="handmatig">
+        <TabsContent value="manual">
           <AutomatiseringForm />
         </TabsContent>
         <TabsContent value="ai-upload">

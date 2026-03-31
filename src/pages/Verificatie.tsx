@@ -38,7 +38,7 @@ export default function Verificatie() {
   const [showNotitie, setShowNotitie] = useState<"twijfel" | "verouderd" | null>(null);
   const [direction, setDirection] = useState(1);
   const [history, setHistory] = useState<string[]>([]);
-  const [tab, setTab] = useState<string>("verificatie");
+  const [tab, setTab] = useState<string>("verification");
 
   const all = data || [];
   const sorted = sortForVerification(all);
@@ -72,7 +72,7 @@ export default function Verificatie() {
 
   const handleGoToVerify = useCallback((id: string) => {
     setCurrentId(id);
-    setTab("verificatie");
+    setTab("verification");
     setShowNotitie(null);
     setNotitie("");
   }, []);
@@ -103,10 +103,10 @@ export default function Verificatie() {
     if (!current) return;
     try {
       await verifieer.mutateAsync({ id: current.id, door: userName });
-      toast.success(`${current.id} geverifieerd ✅`);
+      toast.success(`${current.id} verified ✅`);
       goNext();
     } catch (e: any) {
-      toast.error(e.message || "Fout bij verificatie");
+      toast.error(e.message || "Verification failed");
     }
   }, [current, verifieer, userName, goNext]);
 
@@ -118,7 +118,7 @@ export default function Verificatie() {
     }
     try {
       await verifieer.mutateAsync({ id: current.id, door: userName, status: "In review" });
-      toast("In review gezet 🔍");
+      toast("Marked as In Review 🔍");
       goNext();
     } catch (e: any) {
       toast.error(e.message || "Fout");
@@ -133,7 +133,7 @@ export default function Verificatie() {
     }
     try {
       await verifieer.mutateAsync({ id: current.id, door: userName, status: "Verouderd" });
-      toast("Als verouderd gemarkeerd ⚠️");
+      toast("Marked as outdated ⚠️");
       goNext();
     } catch (e: any) {
       toast.error(e.message || "Fout");
@@ -149,7 +149,7 @@ export default function Verificatie() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    if (tab !== "verificatie" || !current || showNotitie) return;
+    if (tab !== "verification" || !current || showNotitie) return;
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
       if (e.key === "ArrowRight") handleVerified();
@@ -182,11 +182,11 @@ export default function Verificatie() {
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            <strong className="text-foreground">{verifiedCount}</strong> van {totalCount} geverifieerd
+            <strong className="text-foreground">{verifiedCount}</strong> of {totalCount} verified
           </span>
           <span className="text-muted-foreground text-xs flex items-center gap-1.5">
             <Keyboard className="h-3.5 w-3.5" />
-            → goedkeuren · ← verouderd · ↑ twijfel · ↓ skip
+            → approve · ← outdated · ↑ doubt · ↓ skip
           </span>
         </div>
         <Progress value={progress} className="h-2.5" />
@@ -195,27 +195,27 @@ export default function Verificatie() {
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="verificatie">Verificatie</TabsTrigger>
-          <TabsTrigger value="alle" className="gap-1.5">
-            Alle
+          <TabsTrigger value="verification">Verification</TabsTrigger>
+          <TabsTrigger value="all" className="gap-1.5">
+            All
             {totalCount > 0 && (
               <span className="ml-1 bg-muted-foreground/20 text-foreground text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
                 {totalCount}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="geverifieerd" className="gap-1.5">
+          <TabsTrigger value="verified" className="gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5" />
-            Geverifieerd
+            Verified
             {geverifieerdItems.length > 0 && (
               <span className="ml-1 bg-[hsl(var(--status-active))] text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
                 {geverifieerdItems.length}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="verouderd" className="gap-1.5">
+          <TabsTrigger value="outdated" className="gap-1.5">
             <Clock className="h-3.5 w-3.5" />
-            Verouderd
+            Outdated
             {verouderdItems.length > 0 && (
               <span className="ml-1 bg-[hsl(var(--status-outdated))] text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
                 {verouderdItems.length}
@@ -224,7 +224,7 @@ export default function Verificatie() {
           </TabsTrigger>
           <TabsTrigger value="in-review" className="gap-1.5">
             <Eye className="h-3.5 w-3.5" />
-            In review
+            In Review
             {inReviewItems.length > 0 && (
               <span className="ml-1 bg-[hsl(var(--status-review))] text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
                 {inReviewItems.length}
@@ -233,11 +233,11 @@ export default function Verificatie() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="verificatie" className="space-y-4 mt-4">
+        <TabsContent value="verification" className="space-y-4 mt-4">
           {/* Back button */}
           {history.length > 0 && !allDone && (
             <Button variant="ghost" size="sm" onClick={goPrev} className="text-muted-foreground">
-              <ChevronLeft className="h-4 w-4 mr-1" /> Vorige
+              <ChevronLeft className="h-4 w-4 mr-1" /> Previous
             </Button>
           )}
 
@@ -253,18 +253,18 @@ export default function Verificatie() {
                 {verifiedCount === totalCount ? (
                   <>
                     <p className="text-4xl">🎉</p>
-                    <h2 className="text-xl font-semibold">Alles geverifieerd!</h2>
+                    <h2 className="text-xl font-semibold">All verified!</h2>
                     <p className="text-muted-foreground text-sm">
-                      Alle {totalCount} automatiseringen zijn up-to-date.
+                      All {totalCount} automations are up-to-date.
                     </p>
                   </>
                 ) : (
                   <>
                     <p className="text-4xl">✅</p>
-                    <h2 className="text-xl font-semibold">Wachtrij doorlopen</h2>
+                    <h2 className="text-xl font-semibold">Queue complete</h2>
                     <p className="text-muted-foreground text-sm">
-                      {skipped.size > 0 && `${skipped.size} overgeslagen. `}
-                      Bekijk het "In review" tabblad voor items die aandacht nodig hebben.
+                      {skipped.size > 0 && `${skipped.size} skipped. `}
+                      Check the 'In Review' tab for items needing attention.
                     </p>
                   </>
                 )}
@@ -292,23 +292,23 @@ export default function Verificatie() {
                   <div className="grid md:grid-cols-2 gap-4">
                     <Field label="Trigger" value={current.trigger} />
                     <Field label="Owner" value={current.owner} />
-                    <Field label="Afhankelijkheden" value={current.afhankelijkheden} />
-                    <Field label="Laatst geverifieerd" value={
+                    <Field label="Dependencies" value={current.afhankelijkheden} />
+                    <Field label="Last verified" value={
                       current.laatstGeverifieerd
-                        ? `${new Date(current.laatstGeverifieerd).toLocaleDateString("nl-NL")} door ${current.geverifieerdDoor}`
-                        : "Nooit"
+                        ? `${new Date(current.laatstGeverifieerd).toLocaleDateString("nl-NL")} by ${current.geverifieerdDoor}`
+                        : "Never"
                     } />
                   </div>
 
                   <div>
-                    <p className="label-uppercase mb-1">Systemen</p>
+                    <p className="label-uppercase mb-1">Systems</p>
                     <div className="flex gap-1.5 flex-wrap">
                       {current.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
                     </div>
                   </div>
 
                   <div>
-                    <p className="label-uppercase mb-1">Flow stappen</p>
+                    <p className="label-uppercase mb-1">Flow Steps</p>
                     <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
                       {current.stappen.map((s, i) => <li key={i}>{s}</li>)}
                     </ol>
@@ -323,12 +323,12 @@ export default function Verificatie() {
                         exit={{ height: 0, opacity: 0 }}
                       >
                         <p className="label-uppercase mb-1">
-                          Notitie ({showNotitie === "twijfel" ? "twijfel" : "verouderd"})
+                          Note ({showNotitie === "twijfel" ? "uncertain" : "outdated"})
                         </p>
                         <Textarea
                           value={notitie}
                           onChange={(e) => setNotitie(e.target.value)}
-                          placeholder="Optioneel: beschrijf wat er mis is..."
+                          placeholder="Optional: describe what is wrong..."
                           rows={2}
                           autoFocus
                         />
@@ -344,7 +344,7 @@ export default function Verificatie() {
                     disabled={verifieer.isPending}
                     className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white"
                   >
-                    <Check className="h-4 w-4 mr-1" /> Geverifieerd
+                    <Check className="h-4 w-4 mr-1" /> Verified
                   </Button>
                   <Button
                     onClick={handleTwijfel}
@@ -352,7 +352,7 @@ export default function Verificatie() {
                     variant="outline"
                     className="border-[hsl(var(--status-review))] text-[hsl(var(--status-review))] hover:bg-[hsl(var(--status-review)/0.1)]"
                   >
-                    <AlertTriangle className="h-4 w-4 mr-1" /> Twijfel
+                    <AlertTriangle className="h-4 w-4 mr-1" /> Uncertain
                   </Button>
                   <Button
                     onClick={handleVerouderd}
@@ -360,13 +360,13 @@ export default function Verificatie() {
                     variant="outline"
                     className="border-[hsl(var(--status-outdated))] text-[hsl(var(--status-outdated))] hover:bg-[hsl(var(--status-outdated)/0.1)]"
                   >
-                    <XCircle className="h-4 w-4 mr-1" /> Verouderd
+                    <XCircle className="h-4 w-4 mr-1" /> Outdated
                   </Button>
                   <Button
                     onClick={() => navigate(`/bewerk/${current.id}`)}
                     variant="outline"
                   >
-                    <Pencil className="h-4 w-4 mr-1" /> Bewerken
+                    <Pencil className="h-4 w-4 mr-1" /> Edit
                   </Button>
                   <Button
                     onClick={handleSkip}
@@ -381,17 +381,17 @@ export default function Verificatie() {
           </AnimatePresence>
         </TabsContent>
 
-        <TabsContent value="geverifieerd" className="mt-4 space-y-3">
+        <TabsContent value="verified" className="mt-4 space-y-3">
           {geverifieerdItems.length === 0 ? (
-            <EmptyState emoji="🔍" title="Nog niets geverifieerd" description="Er zijn nog geen recent geverifieerde automatiseringen." />
+            <EmptyState emoji="🔍" title="Nothing verified yet" description="No recently verified automations." />
           ) : (
             geverifieerdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)
           )}
         </TabsContent>
 
-        <TabsContent value="verouderd" className="mt-4 space-y-3">
+        <TabsContent value="outdated" className="mt-4 space-y-3">
           {verouderdItems.length === 0 ? (
-            <EmptyState emoji="✅" title="Niets verouderd" description="Alle geverifieerde automatiseringen zijn nog actueel." />
+            <EmptyState emoji="✅" title="Nothing outdated" description="All verified automations are still current." />
           ) : (
             verouderdItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)
           )}
@@ -399,13 +399,13 @@ export default function Verificatie() {
 
         <TabsContent value="in-review" className="mt-4 space-y-3">
           {inReviewItems.length === 0 ? (
-            <EmptyState emoji="👍" title="Geen openstaande twijfels" description='Er zijn geen automatiseringen met de status "In review".' />
+            <EmptyState emoji="👍" title="No pending doubts" description='No automations with "In Review" status.' />
           ) : (
             inReviewItems.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)
           )}
         </TabsContent>
 
-        <TabsContent value="alle" className="mt-4 space-y-3">
+        <TabsContent value="all" className="mt-4 space-y-3">
           {sorted.map((a) => <AutoListItem key={a.id} item={a} navigate={navigate} onGoToVerify={handleGoToVerify} />)}
         </TabsContent>
       </Tabs>
@@ -437,11 +437,11 @@ function AutoListItem({ item: a, navigate, onGoToVerify }: { item: Automatiserin
           <VerificatieBadge item={a} />
           {onGoToVerify && (
             <Button size="sm" className="bg-[hsl(var(--status-active))] hover:bg-[hsl(var(--status-active)/0.85)] text-white" onClick={() => onGoToVerify(a.id)}>
-              <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Verifiëren
+              <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Verify
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={() => navigate(`/bewerk/${a.id}`)}>
-            <Pencil className="h-3.5 w-3.5 mr-1" /> Bewerken
+            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
           </Button>
         </div>
       </div>
@@ -458,7 +458,7 @@ function AutoListItem({ item: a, navigate, onGoToVerify }: { item: Automatiserin
               <div className="grid md:grid-cols-2 gap-3 pt-3">
                 <Field label="Trigger" value={a.trigger} />
                 <Field label="Owner" value={a.owner} />
-                <Field label="Afhankelijkheden" value={a.afhankelijkheden} />
+                <Field label="Dependencies" value={a.afhankelijkheden} />
                 <Field label="Status" value={a.status} />
               </div>
               <div>
@@ -468,7 +468,7 @@ function AutoListItem({ item: a, navigate, onGoToVerify }: { item: Automatiserin
                 </div>
               </div>
               <div>
-                <p className="label-uppercase mb-1">Flow stappen</p>
+                <p className="label-uppercase mb-1">Flow Steps</p>
                 <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
                   {a.stappen.map((s, i) => <li key={i}>{s}</li>)}
                 </ol>

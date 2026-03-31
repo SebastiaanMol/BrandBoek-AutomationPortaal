@@ -74,13 +74,13 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
 
   const submit = async () => {
     if (!form.naam?.trim()) {
-      toast.error("Naam is verplicht");
+      toast.error("Name is required");
       return;
     }
 
     const id = editMode ? editId! : nextId;
     if (!id) {
-      toast.error("Kan geen ID genereren");
+      toast.error("Cannot generate ID");
       return;
     }
 
@@ -107,14 +107,14 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
     try {
       if (editMode) {
         await updateMutation.mutateAsync(item);
-        toast.success(`${item.id} bijgewerkt`);
+        toast.success(`${item.id} updated`);
       } else {
         await saveMutation.mutateAsync(item);
-        toast.success(`${item.id} opgeslagen`);
+        toast.success(`${item.id} saved`);
       }
       navigate(`/alle?open=${item.id}`);
     } catch (err: any) {
-      toast.error(err.message || "Opslaan mislukt");
+      toast.error(err.message || "Save failed");
     }
   };
 
@@ -133,11 +133,11 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         </p>
       </div>
 
-      <Field label="Naam">
-        <Input value={form.naam} onChange={(e) => set("naam", e.target.value)} placeholder="Naam van de automatisering" />
+      <Field label="Name">
+        <Input value={form.naam} onChange={(e) => set("naam", e.target.value)} placeholder="Automation name" />
       </Field>
 
-      <Field label="Categorie">
+      <Field label="Category">
         <Select value={form.categorie} onValueChange={(v) => set("categorie", v)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -146,16 +146,16 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         </Select>
       </Field>
 
-      <Field label="Doel">
-        <Textarea value={form.doel} onChange={(e) => set("doel", e.target.value)} placeholder="Wat doet deze automatisering?" />
+      <Field label="Goal">
+        <Textarea value={form.doel} onChange={(e) => set("doel", e.target.value)} placeholder="What does this automation do?" />
       </Field>
 
       <Field label="Trigger">
-        <Input value={form.trigger} onChange={(e) => set("trigger", e.target.value)} placeholder="Waardoor start het?" />
+        <Input value={form.trigger} onChange={(e) => set("trigger", e.target.value)} placeholder="What starts it?" />
       </Field>
 
-      <Field label="Primaire Systemen">
-        <p className="text-[10px] text-muted-foreground mb-2">Selecteer alle systemen die deze automatisering gebruikt</p>
+      <Field label="Primary Systems">
+        <p className="text-[10px] text-muted-foreground mb-2">Select all systems used by this automation</p>
         <div className="flex flex-wrap gap-3">
           {SYSTEMEN.map((s) => (
             <label key={s} className="flex items-center gap-2 text-sm">
@@ -166,8 +166,8 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         </div>
       </Field>
 
-      <Field label="Klantproces Fase">
-        <p className="text-[10px] text-muted-foreground mb-2">In welke fase(n) van het klanttraject is deze automatisering actief?</p>
+      <Field label="Customer Process Phase">
+        <p className="text-[10px] text-muted-foreground mb-2">In which phase(s) of the customer journey is this automation active?</p>
         <div className="flex flex-wrap gap-3">
           {KLANT_FASEN.map((f) => (
             <label key={f} className="flex items-center gap-2 text-sm">
@@ -184,7 +184,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         </div>
       </Field>
 
-      <Field label="Flow / Stappen">
+      <Field label="Flow / Steps">
         <div className="space-y-2">
           {(form.stappen || []).map((stap, i) => (
             <div key={i} className="flex gap-2 items-center">
@@ -195,11 +195,11 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
               )}
             </div>
           ))}
-          <button onClick={addStap} className="text-sm text-ring hover:underline">+ Stap toevoegen</button>
+          <button onClick={addStap} className="text-sm text-ring hover:underline">+ Add step</button>
         </div>
       </Field>
 
-      <Field label="Directe Koppelingen">
+      <Field label="Links">
         <p className="text-[10px] text-muted-foreground mb-2">
           Leg alleen een koppeling als de output van deze automatisering direct de input/trigger is van een andere.
         </p>
@@ -210,7 +210,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
               <div key={idx} className="bg-secondary rounded-[var(--radius-inner)] p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-mono font-semibold text-foreground shrink-0">{k.doelId}</span>
-                  <span className="text-xs text-muted-foreground truncate">{target?.naam || "Onbekend"}</span>
+                  <span className="text-xs text-muted-foreground truncate">{target?.naam || "Unknown"}</span>
                   <button onClick={() => removeKoppeling(idx)} className="ml-auto text-destructive shrink-0 hover:opacity-70">
                     <X className="h-4 w-4" />
                   </button>
@@ -241,11 +241,11 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         </div>
       </Field>
 
-      <Field label="Afhankelijkheden & Knelpunten">
+      <Field label="Dependencies">
         <Textarea value={form.afhankelijkheden} onChange={(e) => set("afhankelijkheden", e.target.value)} />
       </Field>
 
-      <Field label="Owner / Verantwoordelijke">
+      <Field label="Owner">
         <Input value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Naam" />
       </Field>
 
@@ -258,11 +258,11 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         </Select>
       </Field>
 
-      <Field label="Verbeterideeën">
+      <Field label="Improvement Ideas">
         <Textarea value={form.verbeterideeën} onChange={(e) => set("verbeterideeën", e.target.value)} />
       </Field>
 
-      <Field label="BPMN Diagram (Mermaid)">
+      <Field label="Flow Diagram (Mermaid)">
         <Textarea
           className="font-mono text-xs"
           rows={6}
@@ -277,7 +277,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         disabled={isPending}
         className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
       >
-        {isPending ? "Opslaan..." : editMode ? "Wijzigingen opslaan" : "Opslaan"}
+        {isPending ? "Saving..." : editMode ? "Save Changes" : "Save Automation"}
       </button>
     </div>
   );
