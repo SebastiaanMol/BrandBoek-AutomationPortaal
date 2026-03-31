@@ -240,6 +240,18 @@ function extractTrigger(wf: any): string {
   return WORKFLOW_TYPE_TRIGGER_MAP[wf.type ?? ""] ?? "Onbekend";
 }
 
+/** Infer KlantFase values from workflow name keywords */
+function inferFasen(wf: any): string[] {
+  const naam = (wf?.name ?? "").toLowerCase();
+  const fasen: string[] = [];
+  if (/onboarding|welkom|welcome|intake|aanmeld/.test(naam)) fasen.push("Onboarding");
+  if (/marketing|nieuwsbrief|newsletter|lead|campagne|campaign/.test(naam)) fasen.push("Marketing");
+  if (/sales|offerte|quote|deal|pipeline/.test(naam)) fasen.push("Sales");
+  if (/boekhoud|factuur|invoice|betaling|payment|wefact/.test(naam)) fasen.push("Boekhouding");
+  if (/offboard|opzegg|churn|verloop|exit/.test(naam)) fasen.push("Offboarding");
+  return fasen;
+}
+
 function inferCategorie(actions: any[]): string {
   const types = new Set(actions.map((a) => a.type ?? a.actionType ?? ""));
   if (types.has("EMAIL") || types.has("SEND_EMAIL")) return "E-mail marketing";
@@ -403,6 +415,7 @@ function mapWorkflow(wf: any) {
   };
 
   const beschrijvingInSimpeleTaal = generateSimpeleTaal(wf, actions, trigger, enrollment, branches);
+  const inferredFasen = inferFasen(wf);
 
   const confidence = {
     naam:                         "high",
@@ -415,6 +428,7 @@ function mapWorkflow(wf: any) {
     categorie:                    "medium",
     doel:                         "low",
     beschrijving_in_simpele_taal: beschrijvingInSimpeleTaal.length > 1 ? "high" : "low",
+    fasen:                        inferredFasen.length > 0 ? "medium" : "low",
   };
 
   return {
@@ -427,6 +441,7 @@ function mapWorkflow(wf: any) {
     stappen,
     branches,
     categorie,
+    fasen:                        inferredFasen,
     enrollment,
     beschrijving_in_simpele_taal: beschrijvingInSimpeleTaal,
     confidence,
@@ -547,6 +562,7 @@ serve(async (req) => {
         const existingRow = existingMap[externalId];
         // Always re-apply full mapping so fields like stappen/systemen get filled in.
         // Only skip doel if it was already manually filled in.
+        // NOTE: fasen intentionally excluded from update — preserves reviewer edits (per D-09)
         await db.from("automatiseringen").update({
           naam:                 wf.name,
           status:               wf.enabled ? "Actief" : "Uitgeschakeld",
@@ -579,7 +595,7 @@ serve(async (req) => {
           owner:           "",
           verbeterideeen:  "",
           mermaid_diagram: "",
-          fasen:           [],
+          fasen:           mapped.fasen,
           external_id:     externalId,
           source:          "hubspot",
           import_source:   "hubspot",
