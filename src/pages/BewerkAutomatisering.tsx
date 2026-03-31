@@ -1,6 +1,6 @@
 import { useParams, Navigate } from "react-router-dom";
 import { useAutomatiseringen } from "@/lib/hooks";
-import NieuweAutomatisering from "./NieuweAutomatisering";
+import AutomatiseringForm from "@/components/AutomatiseringForm";
 import { Loader2 } from "lucide-react";
 
 export default function BewerkAutomatisering() {
@@ -21,7 +21,7 @@ export default function BewerkAutomatisering() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-6">Bewerk {item.id} — {item.naam}</h1>
-      <NieuweAutomatisering
+      <AutomatiseringForm
         editMode
         editId={item.id}
         prefill={item}

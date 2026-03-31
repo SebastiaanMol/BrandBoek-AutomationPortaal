@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import NieuweAutomatisering from "./NieuweAutomatisering";
+import AutomatiseringForm from "@/components/AutomatiseringForm";
 import { Automatisering, Categorie, Systeem, Status } from "@/lib/types";
 import { insertAutomatisering, generateNextId } from "@/lib/supabaseStorage";
 import { Upload, FileText, Loader2, FileSpreadsheet, ChevronDown, Check } from "lucide-react";
@@ -750,7 +750,7 @@ export default function AIUpload() {
               Opnieuw beginnen
             </button>
           </div>
-          <NieuweAutomatisering prefill={prefill} />
+          <AutomatiseringForm prefill={prefill} />
         </div>
       )}
     </div>

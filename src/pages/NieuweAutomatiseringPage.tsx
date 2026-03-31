@@ -1,6 +1,6 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PlusCircle, Upload } from "lucide-react";
-import NieuweAutomatisering from "./NieuweAutomatisering";
+import AutomatiseringForm from "@/components/AutomatiseringForm";
 import AIUpload from "./AIUpload";
 
 export default function NieuweAutomatiseringPage() {
@@ -18,7 +18,7 @@ export default function NieuweAutomatiseringPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="handmatig">
-          <NieuweAutomatisering />
+          <AutomatiseringForm />
         </TabsContent>
         <TabsContent value="ai-upload">
           <AIUpload />

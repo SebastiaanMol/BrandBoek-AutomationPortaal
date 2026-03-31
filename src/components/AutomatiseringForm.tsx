@@ -10,13 +10,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { X, Loader2 } from "lucide-react";
 
-interface NieuweAutomatiseringProps {
+interface AutomatiseringFormProps {
   prefill?: Partial<Automatisering>;
   editMode?: boolean;
   editId?: string;
 }
 
-export default function NieuweAutomatisering({ prefill, editMode, editId }: NieuweAutomatiseringProps) {
+export default function AutomatiseringForm({ prefill, editMode, editId }: AutomatiseringFormProps) {
   const navigate = useNavigate();
   const { data: allAutomatiseringen = [] } = useAutomatiseringen();
   const { data: nextId, isLoading: idLoading } = useNextId();
