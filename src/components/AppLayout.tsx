@@ -7,33 +7,47 @@ import {
   GitBranch,
   BarChart3,
   Menu,
-  X,
-  Map,
   LogOut,
   ClipboardCheck,
   Settings,
-  Network,
-  LayoutTemplate,
   Download,
 } from "lucide-react";
 import { useState } from "react";
 
-const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Nieuwe Automatisering", url: "/nieuw", icon: PlusCircle },
-  { title: "Alle Automatiseringen", url: "/alle", icon: List },
-  { title: "Verificatie", url: "/verificatie", icon: ClipboardCheck },
-  // { title: "Mindmap", url: "/mindmap", icon: Map },
-  // { title: "Kennisgraaf", url: "/kennisgraaf", icon: Network },
-  // { title: "BPMN Viewer", url: "/bpmn", icon: GitBranch },
-  // { title: "Proceskaart", url: "/proceskaart", icon: LayoutTemplate },
-  { title: "Processen", url: "/processen", icon: GitBranch },
-  { title: "Analyse", url: "/analyse", icon: BarChart3 },
-  { title: "Imports", url: "/imports", icon: Download },
+type NavItem = { title: string; url: string; icon: React.ElementType };
+type NavGroup = { title: string; items: NavItem[] };
+
+const navGroups: NavGroup[] = [
+  {
+    title: "Overview",
+    items: [
+      { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    ],
+  },
+  {
+    title: "Automations",
+    items: [
+      { title: "All Automations", url: "/alle", icon: List },
+      { title: "New Automation", url: "/nieuw", icon: PlusCircle },
+      { title: "Verification", url: "/verificatie", icon: ClipboardCheck },
+      { title: "Imports", url: "/imports", icon: Download },
+    ],
+  },
+  {
+    title: "Systems & People",
+    items: [],
+  },
+  {
+    title: "Analysis",
+    items: [
+      { title: "Processes", url: "/processen", icon: GitBranch },
+      { title: "Analysis", url: "/analyse", icon: BarChart3 },
+    ],
+  },
 ];
 
 const bottomNavItems = [
-  { title: "Instellingen", url: "/instellingen", icon: Settings },
+  { title: "Settings", url: "/instellingen", icon: Settings },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -59,32 +73,39 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="p-5 border-b border-sidebar-border">
           <h1 className="text-base font-bold tracking-tight text-sidebar-foreground">
-            Automatisering Portaal
+            Automation Portal
           </h1>
           <p className="text-[11px] text-sidebar-foreground/50 mt-0.5">Brand Boekhouders</p>
         </div>
         <nav className="flex-1 py-3 overflow-y-auto">
-          {navItems.map((item) => {
-            const active = location.pathname === item.url;
-            return (
-              <Link
-                key={item.url}
-                to={item.url}
-                onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 px-5 py-2.5 text-sm transition-colors duration-150 relative ${
-                  active
-                    ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                }`}
-              >
-                {active && (
-                  <span className="absolute left-0 top-1 bottom-1 w-1 rounded-r bg-sidebar-primary" />
-                )}
-                <item.icon className="h-4 w-4 shrink-0" />
-                <span>{item.title}</span>
-              </Link>
-            );
-          })}
+          {navGroups.map((group, gi) => (
+            <div key={group.title}>
+              <div className={`text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 pb-1 ${gi === 0 ? "pt-0" : "pt-4"}`}>
+                {group.title}
+              </div>
+              {group.items.map((item) => {
+                const active = location.pathname === item.url;
+                return (
+                  <Link
+                    key={item.url}
+                    to={item.url}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors duration-150 relative ${
+                      active
+                        ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                        : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1 bottom-1 w-1 rounded-r bg-sidebar-primary" />
+                    )}
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    <span>{item.title}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
         <div className="border-t border-sidebar-border">
           {bottomNavItems.map((item) => {
@@ -94,7 +115,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 key={item.url}
                 to={item.url}
                 onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 px-5 py-2.5 text-sm transition-colors duration-150 relative ${
+                className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors duration-150 relative ${
                   active
                     ? "bg-sidebar-accent text-sidebar-foreground font-medium"
                     : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
@@ -115,7 +136,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               className="flex items-center gap-2 text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
             >
               <LogOut className="h-3.5 w-3.5" />
-              Uitloggen
+              Sign out
             </button>
           </div>
         </div>
@@ -131,13 +152,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
           <span className="label-uppercase ml-3 lg:ml-0">
-            {[...navItems, ...bottomNavItems].find((n) => n.url === location.pathname)?.title || "Portaal"}
+            {[...navGroups.flatMap(g => g.items), ...bottomNavItems].find((n) => n.url === location.pathname)?.title || "Portal"}
           </span>
         </header>
         <main className={`flex-1 w-full ${
-          location.pathname === "/mindmap" || location.pathname === "/kennisgraaf" || location.pathname === "/bpmn" || location.pathname === "/processen"
-            ? "p-0"
-            : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
+          location.pathname === "/processen" ? "p-0" : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
         }`}>
           {children}
         </main>
