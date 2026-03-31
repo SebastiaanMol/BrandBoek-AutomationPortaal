@@ -62,9 +62,9 @@
 
 ### Naming Consistency
 
-- [ ] **NAME-01**: All UI labels, nav items, and page titles use English (no Dutch labels in the interface)
-- [ ] **NAME-02**: Form field labels are consistent across all pages that reference the same concept (e.g. Name, Trigger, Steps, Systems always the same term)
-- [ ] **NAME-03**: Status labels (Active, Outdated, Disabled) are consistent across all pages that display automation status
+- [x] **NAME-01**: All UI labels, nav items, and page titles use English (no Dutch labels in the interface)
+- [x] **NAME-02**: Form field labels are consistent across all pages that reference the same concept (e.g. Name, Trigger, Steps, Systems always the same term)
+- [x] **NAME-03**: Status labels (Active, Outdated, Disabled) are consistent across all pages that display automation status
 
 ## v2 Requirements
 
@@ -116,9 +116,9 @@
 | LINK-02 | Phase 8 | Pending |
 | LINK-03 | Phase 8 | Pending |
 | LINK-04 | Phase 8 | Pending |
-| NAME-01 | Phase 6 | Pending |
-| NAME-02 | Phase 6 | Pending |
-| NAME-03 | Phase 6 | Pending |
+| NAME-01 | Phase 6 | Complete |
+| NAME-02 | Phase 6 | Complete |
+| NAME-03 | Phase 6 | Complete |
 
 **Coverage:**
 - v1 requirements: 15 total, 15 mapped ✓

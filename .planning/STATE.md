@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-31T21:37:19.433Z"
+stopped_at: Completed 06-navigation-naming-02-PLAN.md
+last_updated: "2026-03-31T21:48:30.916Z"
 last_activity: 2026-03-31
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 17
-  completed_plans: 14
+  completed_plans: 15
   percent: 20
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Phase: 06 (Navigation & Naming) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-03-31
 
@@ -71,6 +71,7 @@ Progress: [##░░░░░░░░] 20%
 | Phase 04-portal-quality P02 | 151 | 2 tasks | 5 files |
 | Phase 04-portal-quality P03 | 8 | 2 tasks | 1 files |
 | Phase 06-navigation-naming P01 | 8 | 2 tasks | 7 files |
+| Phase 06-navigation-naming P02 | 45 | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Recent decisions affecting current work:
 - [v1.1 roadmap]: Phase 6 depends on Phase 4 (portal must be stable before structural nav changes); Phase 7 depends on Phase 6 (sidebar nav must name the new pages before they are built); Phase 8 depends on Phase 7 (cross-links need Systems and Owners pages to exist as link targets)
 - [Phase 06-navigation-naming]: navGroups flatMap pattern used in top bar span to search across all grouped items
 - [Phase 06-navigation-naming]: Systems & People group intentionally has empty items array; Pages are Phase 7 scope
+- [Phase 06-navigation-naming]: STATUS_LABELS and VERIFICATIE_LABELS added to types.ts as canonical display maps — DB values remain Dutch, display layer uses English maps
+- [Phase 06-navigation-naming]: CSS badge class selectors renamed to English (actief→active, verouderd→outdated, uitgeschakeld→disabled); tab values updated to match in Dashboard and Verificatie
 
 ### Pending Todos
 
@@ -105,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-31T21:37:19.429Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-03-31T21:48:30.912Z
+Stopped at: Completed 06-navigation-naming-02-PLAN.md
 Resume file: None
