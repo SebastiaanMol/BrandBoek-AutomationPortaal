@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { triggerHubSpotSync } from "@/lib/supabaseStorage";
+import { KLANT_FASEN } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,7 @@ interface Confidence {
   systemen: string; stappen: string; branches: string;
   categorie: string; doel: string;
   beschrijving_in_simpele_taal?: string;
+  fasen?: string;    // from edge function inferFasen confidence
 }
 
 interface ImportProposal {
@@ -50,6 +53,8 @@ interface PendingAutomation {
   import_status: string;
   import_proposal: ImportProposal;
   created_at: string;
+  fasen: string[];    // lifecycle phases
+  owner: string;      // responsible person
 }
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
@@ -57,7 +62,7 @@ interface PendingAutomation {
 async function fetchPending(): Promise<PendingAutomation[]> {
   const { data, error } = await (supabase as any)
     .from("automatiseringen")
-    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at")
+    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,fasen,owner")
     .eq("import_status", "pending_approval")
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -212,7 +217,14 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
 
   const [expanded,     setExpanded]     = useState(false);
   const [editing,      setEditing]      = useState(false);
-  const [draft,        setDraft]        = useState({ naam: item.naam, doel: item.doel, trigger, categorie: item.categorie });
+  const [draft,        setDraft]        = useState({
+    naam: item.naam,
+    doel: item.doel,
+    trigger,
+    categorie: item.categorie,
+    fasen: item.fasen ?? [],
+    owner: item.owner ?? "",
+  });
   const [rejectOpen,   setRejectOpen]   = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [saving,       setSaving]       = useState(false);
@@ -240,6 +252,8 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
         doel:                 draft.doel,
         trigger_beschrijving: draft.trigger,
         categorie:            draft.categorie,
+        fasen:                draft.fasen,
+        owner:                draft.owner,
       });
       toast.success("Wijzigingen opgeslagen");
       refresh();
