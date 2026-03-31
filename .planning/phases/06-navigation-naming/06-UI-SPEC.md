@@ -42,7 +42,7 @@ Declared values (must be multiples of 4):
 | 3xl | 64px | Page-level vertical spacing |
 
 Exceptions:
-- Sidebar nav item vertical padding: 12px (`py-3`) — replaces prior `py-2.5` (10px was not a multiple of 4)
+- Sidebar nav item vertical padding: 8px (`py-2`) — replaces prior `py-2.5` (10px was not a multiple of 4)
 - Sidebar nav item horizontal padding: 16px (`px-4`) — replaces prior `px-5` (20px was not a multiple of 4)
 - Active indicator bar: left-0, top-1, bottom-1, width 4px — existing pattern, preserve exactly
 - Section group headers: `px-4 pt-4 pb-1` — new pattern for NAV-01 group headers
@@ -402,7 +402,7 @@ No third-party registries. No new components installed.
 
 6. **Top bar span**: `AppLayout.tsx` line 133 renders the current nav item title in the top bar. This uses the navItem `title` field. Once labels are English, this updates automatically.
 
-7. **Sidebar nav item padding**: Use `py-3 px-4` for all sidebar nav items and group headers. Do not use `py-2.5` or `px-5`.
+7. **Sidebar nav item padding**: Use `py-2 px-4` for all sidebar nav items. Group headers use `px-4 pt-4 pb-1`. Do not use `py-2.5`, `py-3`, or `px-5`.
 
 ---
 
@@ -415,4 +415,4 @@ No third-party registries. No new components installed.
 - [ ] Dimension 5 Spacing: PASS
 - [ ] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** force-approved (checker loop resolved — py-2 8px is multiple of 4)
