@@ -228,6 +228,7 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
   const [rejectOpen,   setRejectOpen]   = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [saving,       setSaving]       = useState(false);
+  const [stappenWarnOpen, setStappenWarnOpen] = useState(false);
 
   const qc      = useQueryClient();
   const refresh = () => qc.invalidateQueries({ queryKey: ["pending"] });
@@ -265,6 +266,14 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
     }
   }
 
+  function handleApproveClick() {
+    if (!item.stappen || item.stappen.length === 0) {
+      setStappenWarnOpen(true);
+      return;
+    }
+    approve.mutate();
+  }
+
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
       {/* Header */}
@@ -292,12 +301,18 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
             <XCircle className="h-3.5 w-3.5" /> Afwijzen
           </Button>
           <Button size="sm" className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => approve.mutate()} disabled={approve.isPending}>
+            onClick={handleApproveClick}
+            disabled={approve.isPending || !item.fasen || item.fasen.length === 0}>
             <CheckCircle2 className="h-3.5 w-3.5" />
             {approve.isPending ? "Bezig…" : "Goedkeuren"}
           </Button>
         </div>
       </div>
+      {(!item.fasen || item.fasen.length === 0) && (
+        <p className="text-[10px] text-red-500 text-right px-5 -mt-2 pb-2">
+          Wijs eerst een fase toe voordat je kunt goedkeuren
+        </p>
+      )}
 
       {/* Body */}
       {expanded && (
@@ -351,6 +366,56 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
             </Field>
           </div>
 
+          {/* Fasen multi-select (per D-02, D-03) */}
+          <Field label="Fasen" conf={conf.fasen}>
+            {editing ? (
+              <div className="flex flex-wrap gap-1.5">
+                {KLANT_FASEN.map(fase => (
+                  <button
+                    key={fase}
+                    type="button"
+                    onClick={() => setDraft(d => ({
+                      ...d,
+                      fasen: d.fasen.includes(fase)
+                        ? d.fasen.filter(f => f !== fase)
+                        : [...d.fasen, fase],
+                    }))}
+                    className={cn(
+                      "text-xs px-2 py-0.5 rounded-full border transition-colors",
+                      draft.fasen.includes(fase)
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-secondary text-muted-foreground border-border hover:border-primary/50",
+                    )}
+                  >
+                    {fase}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {item.fasen && item.fasen.length > 0
+                  ? item.fasen.map(f => <Badge key={f} variant="secondary" className="text-xs">{f}</Badge>)
+                  : <span className="text-xs text-muted-foreground italic">Geen fase toegewezen</span>}
+              </div>
+            )}
+          </Field>
+
+          {/* Owner input (per D-04, D-05) */}
+          <Field label="Verantwoordelijke" conf={item.owner ? undefined : "low"}>
+            {editing ? (
+              <Input
+                value={draft.owner}
+                onChange={e => setDraft(d => ({ ...d, owner: e.target.value }))}
+                placeholder="Naam verantwoordelijke"
+                className="h-8 text-sm"
+              />
+            ) : (
+              <p className="text-sm">
+                {item.owner || <span className="italic text-muted-foreground">Nog niet ingevuld</span>}
+              </p>
+            )}
+          </Field>
+
           {item.systemen?.length > 0 && (
             <div>
               <FieldLabel label="Gekoppelde systemen" conf={conf.systemen} />
@@ -401,6 +466,28 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejectOpen(false)}>Annuleren</Button>
             <Button variant="destructive" onClick={() => reject.mutate()} disabled={reject.isPending}>Afwijzen</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stappen warning dialog (per D-06) */}
+      <Dialog open={stappenWarnOpen} onOpenChange={setStappenWarnOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Geen stappen gevonden</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Deze automatisering heeft nog geen stappen. Wil je toch goedkeuren?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStappenWarnOpen(false)}>Annuleren</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => { setStappenWarnOpen(false); approve.mutate(); }}
+              disabled={approve.isPending}
+            >
+              Toch goedkeuren
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
