@@ -104,7 +104,11 @@ Plans:
   2. Every nav label in the sidebar exactly matches the h1 on the page it links to
   3. No route or sidebar link leads to Mindmap, Kennisgraaf, BPMN Viewer, or Proceskaart
   4. All visible labels, form fields, and status values across the portal use English (no Dutch text in the UI)
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 06-01-PLAN.md — Wave 1: Sidebar grouped nav (NAV-01) + dead page removal (NAV-03)
+- [ ] 06-02-PLAN.md — Wave 1: English labels across all pages (NAME-01, NAME-02, NAME-03) — parallel
+- [ ] 06-03-PLAN.md — Wave 2: Page h1 compliance (NAV-02) + human verification
 **UI hint**: yes
 
 ### Phase 7: Entity Pages
