@@ -15,8 +15,8 @@
 
 ### Data & Imports
 
-- [ ] **DATA-01**: All Brand Boekhouders automations are entered in the portal (manually or via HubSpot import)
-- [ ] **DATA-02**: HubSpot import flow works end-to-end (sync → confidence review → approve/reject → save to DB)
+- [x] **DATA-01**: All Brand Boekhouders automations are entered in the portal (manually or via HubSpot import)
+- [x] **DATA-02**: HubSpot import flow works end-to-end (sync → confidence review → approve/reject → save to DB)
 - [ ] **DATA-03**: Imported automations have correct and complete fields (trigger, steps, systems, phase, owner)
 
 ### Portal Quality
@@ -63,8 +63,8 @@
 | PROC-02 | Phase 1 | Complete |
 | PROC-03 | Phase 1 | Complete |
 | PROC-04 | Phase 1 | Complete |
-| DATA-01 | Phase 2 | Pending |
-| DATA-02 | Phase 2 | Pending |
+| DATA-01 | Phase 2 | Complete |
+| DATA-02 | Phase 2 | Complete |
 | DATA-03 | Phase 2 | Pending |
 | PROC-05 | Phase 3 | Pending |
 | QUAL-01 | Phase 4 | Pending |

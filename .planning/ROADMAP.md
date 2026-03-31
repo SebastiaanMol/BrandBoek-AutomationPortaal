@@ -47,8 +47,8 @@ Plans:
   3. Every approved automation has a non-empty trigger, at least one step, at least one system, a phase assignment, and an owner
 **Plans**: 3 plans
 Plans:
-- [ ] 02-01-PLAN.md — Wave 1: inferFasen() in edge function + test scaffold (DATA-01, DATA-02)
-- [ ] 02-02-PLAN.md — Wave 1: ProposalCard fasen/owner fields and completeness gate (DATA-03)
+- [x] 02-01-PLAN.md — Wave 1: inferFasen() in edge function + test scaffold (DATA-01, DATA-02)
+- [x] 02-02-PLAN.md — Wave 1: ProposalCard fasen/owner fields and completeness gate (DATA-03)
 - [ ] 02-03-PLAN.md — Wave 2: Human verification of full import-review-approve flow (DATA-01, DATA-02, DATA-03)
 
 ### Phase 3: Export
