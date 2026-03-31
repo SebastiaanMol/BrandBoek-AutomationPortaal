@@ -35,6 +35,37 @@
 - [ ] **HAND-01**: Portal is deployed and accessible to Brand Boekhouders staff
 - [ ] **HAND-02**: Brief usage guide exists for maintaining the portal after internship ends
 
+## v1.1 Requirements
+
+### Navigation & Structure
+
+- [ ] **NAV-01**: Sidebar is organized into named sections with group headers (Overview / Automations / Systems & People / Analysis)
+- [ ] **NAV-02**: Every sidebar nav label exactly matches the h1 heading on its destination page
+- [ ] **NAV-03**: Dead pages are removed from the codebase (Mindmap, Kennisgraaf, BPMN Viewer, Proceskaart)
+
+### Systems
+
+- [ ] **SYS-01**: User can view a Systems page listing all unique systems with their automation count
+- [ ] **SYS-02**: User can click a system to see all automations linked to that system
+
+### Owners
+
+- [ ] **OWN-01**: User can view an Owners page listing all unique owners with their automation count
+- [ ] **OWN-02**: User can click an owner to see all automations they own
+
+### Cross-Linking
+
+- [ ] **LINK-01**: Automation detail view shows a clickable link to the process canvas (navigates to Processes page)
+- [ ] **LINK-02**: Automation detail view shows each system as a clickable badge that navigates to the Systems page filtered to that system
+- [ ] **LINK-03**: Automation detail view shows the owner as a clickable link that navigates to the Owners page filtered to that person
+- [ ] **LINK-04**: Automation detail view shows related automations (same phase or sharing a system)
+
+### Naming Consistency
+
+- [ ] **NAME-01**: All UI labels, nav items, and page titles use English (no Dutch labels in the interface)
+- [ ] **NAME-02**: Form field labels are consistent across all pages that reference the same concept (e.g. Name, Trigger, Steps, Systems always the same term)
+- [ ] **NAME-03**: Status labels (Active, Outdated, Disabled) are consistent across all pages that display automation status
+
 ## v2 Requirements
 
 ### Enhancements (deferred)
@@ -74,12 +105,25 @@
 | BACK-02 | Phase 5 | Pending |
 | HAND-01 | Phase 5 | Pending |
 | HAND-02 | Phase 5 | Pending |
+| NAV-01 | Phase 6 | Pending |
+| NAV-02 | Phase 6 | Pending |
+| NAV-03 | Phase 6 | Pending |
+| SYS-01 | Phase 7 | Pending |
+| SYS-02 | Phase 7 | Pending |
+| OWN-01 | Phase 7 | Pending |
+| OWN-02 | Phase 7 | Pending |
+| LINK-01 | Phase 8 | Pending |
+| LINK-02 | Phase 8 | Pending |
+| LINK-03 | Phase 8 | Pending |
+| LINK-04 | Phase 8 | Pending |
+| NAME-01 | Phase 6 | Pending |
+| NAME-02 | Phase 6 | Pending |
+| NAME-03 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 15 total
-- Mapped to phases: 15
-- Unmapped: 0 ✓
+- v1 requirements: 15 total, 15 mapped ✓
+- v1.1 requirements: 13 total, 13 mapped ✓
 
 ---
 *Requirements defined: 2026-03-30*
-*Last updated: 2026-03-30 — phase assignments updated to match ROADMAP.md*
+*Last updated: 2026-03-31 — v1.1 requirements added (Unified Portal Structure)*
