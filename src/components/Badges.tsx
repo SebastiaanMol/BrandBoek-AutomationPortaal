@@ -1,4 +1,4 @@
-import { Categorie, Status, Systeem } from "@/lib/types";
+import { Categorie, Status, STATUS_LABELS, Systeem } from "@/lib/types";
 
 export function SystemBadge({ systeem }: { systeem: Systeem | string }) {
   const map: Record<string, string> = {
@@ -33,15 +33,15 @@ export function CategorieBadge({ categorie }: { categorie: Categorie }) {
 
 export function StatusBadge({ status }: { status: Status }) {
   const map: Record<Status, string> = {
-    Actief: "badge-status-actief",
-    Verouderd: "badge-status-verouderd",
+    Actief: "badge-status-active",
+    Verouderd: "badge-status-outdated",
     "In review": "badge-status-review",
-    Uitgeschakeld: "badge-status-uitgeschakeld",
+    Uitgeschakeld: "badge-status-disabled",
   };
   return (
     <span className={`${map[status]} inline-flex items-center gap-1`}>
       <span className="w-1.5 h-1.5 rounded-full bg-current" />
-      {status}
+      {STATUS_LABELS[status] ?? status}
     </span>
   );
 }

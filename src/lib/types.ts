@@ -95,6 +95,19 @@ export const SYSTEMEN: Systeem[] = ["HubSpot", "Zapier", "Typeform", "SharePoint
 
 export const STATUSSEN: Status[] = ["Actief", "Verouderd", "In review", "Uitgeschakeld"];
 
+export const STATUS_LABELS: Record<string, string> = {
+  "Actief": "Active",
+  "Verouderd": "Outdated",
+  "Uitgeschakeld": "Disabled",
+  "In review": "In Review",
+};
+
+export const VERIFICATIE_LABELS: Record<string, string> = {
+  "geverifieerd": "Verified",
+  "verouderd": "Outdated",
+  "nooit": "Never",
+};
+
 export const KLANT_FASEN: KlantFase[] = ["Marketing", "Sales", "Onboarding", "Boekhouding", "Offboarding"];
 
 // --- Computed scores ---
