@@ -29,10 +29,10 @@ export default function Dashboard() {
   const vProgress = totaal > 0 ? (vGeverifieerd / totaal) * 100 : 0;
 
   const metrics = [
-    { label: "Totaal Vastgelegd", value: totaal, color: "text-foreground" },
-    { label: "Actief", value: actief, color: "text-status-active" },
-    { label: "Verouderd", value: verouderd, color: "text-status-outdated" },
-    { label: "Uitgeschakeld", value: uitgeschakeld, color: "text-status-disabled" },
+    { label: "Total Recorded", value: totaal, color: "text-foreground" },
+    { label: "Active", value: actief, color: "text-status-active" },
+    { label: "Outdated", value: verouderd, color: "text-status-outdated" },
+    { label: "Disabled", value: uitgeschakeld, color: "text-status-disabled" },
   ];
 
   return (
@@ -52,7 +52,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-              <p className="label-uppercase">Verificatie Status</p>
+              <p className="label-uppercase">Verification Status</p>
             </div>
             <span className="text-xs text-muted-foreground">{vGeverifieerd}/{totaal} up-to-date</span>
           </div>
@@ -60,15 +60,15 @@ export default function Dashboard() {
           <div className="grid grid-cols-3 gap-3 text-center">
             <div>
               <span className="text-xl font-mono font-bold text-[hsl(var(--status-active))]">{vGeverifieerd}</span>
-              <p className="text-[10px] text-muted-foreground mt-0.5">🟢 Geverifieerd</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">🟢 Verified</p>
             </div>
             <div>
               <span className="text-xl font-mono font-bold text-[hsl(var(--status-review))]">{vVerouderd}</span>
-              <p className="text-[10px] text-muted-foreground mt-0.5">🟡 &gt;90 dagen</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">🟡 &gt;90 days</p>
             </div>
             <div>
               <span className="text-xl font-mono font-bold text-[hsl(var(--status-outdated))]">{vNooit}</span>
-              <p className="text-[10px] text-muted-foreground mt-0.5">🔴 Nooit</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">🔴 Never</p>
             </div>
           </div>
         </div>
@@ -77,27 +77,27 @@ export default function Dashboard() {
       {/* Status lijsten */}
       <div>
         <h2 className="text-lg font-semibold tracking-tight text-foreground mb-4">
-          Automatiseringen per Status
+          Automations by Status
         </h2>
-        <Tabs defaultValue="actief">
+        <Tabs defaultValue="active">
           <TabsList>
-            <TabsTrigger value="actief">
-              Actief <span className="ml-1.5 text-xs text-muted-foreground">({actief})</span>
+            <TabsTrigger value="active">
+              Active <span className="ml-1.5 text-xs text-muted-foreground">({actief})</span>
             </TabsTrigger>
-            <TabsTrigger value="verouderd">
-              Verouderd <span className="ml-1.5 text-xs text-muted-foreground">({verouderd})</span>
+            <TabsTrigger value="outdated">
+              Outdated <span className="ml-1.5 text-xs text-muted-foreground">({verouderd})</span>
             </TabsTrigger>
-            <TabsTrigger value="uitgeschakeld">
-              Uitgeschakeld <span className="ml-1.5 text-xs text-muted-foreground">({uitgeschakeld})</span>
+            <TabsTrigger value="disabled">
+              Disabled <span className="ml-1.5 text-xs text-muted-foreground">({uitgeschakeld})</span>
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="actief">
+          <TabsContent value="active">
             <StatusList items={all.filter((a) => a.status === "Actief")} />
           </TabsContent>
-          <TabsContent value="verouderd">
+          <TabsContent value="outdated">
             <StatusList items={all.filter((a) => a.status === "Verouderd")} />
           </TabsContent>
-          <TabsContent value="uitgeschakeld">
+          <TabsContent value="disabled">
             <StatusList items={all.filter((a) => a.status === "Uitgeschakeld")} />
           </TabsContent>
         </Tabs>
@@ -107,7 +107,7 @@ export default function Dashboard() {
         to="/nieuw"
         className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
       >
-        + Nieuwe Automatisering
+        + New Automation
       </Link>
     </div>
   );
@@ -115,7 +115,7 @@ export default function Dashboard() {
 
 function StatusList({ items }: { items: Automatisering[] }) {
   if (items.length === 0) {
-    return <p className="text-muted-foreground text-sm py-4">Geen automatiseringen in deze categorie.</p>;
+    return <p className="text-muted-foreground text-sm py-4">No automations in this category.</p>;
   }
   return (
     <div className="space-y-2 mt-2">

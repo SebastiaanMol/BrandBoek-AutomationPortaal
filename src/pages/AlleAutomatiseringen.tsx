@@ -68,37 +68,37 @@ export default function AlleAutomatiseringen() {
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Zoek in alle velden..." className="pl-9" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all fields..." className="pl-9" />
           </div>
           <Select value={catFilter} onValueChange={setCatFilter}>
             <SelectTrigger className="w-48"><SelectValue placeholder="Categorie" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="alle">Alle categorieën</SelectItem>
+              <SelectItem value="alle">All categories</SelectItem>
               {CATEGORIEEN.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={sysFilter} onValueChange={setSysFilter}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Systeem" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="alle">Alle systemen</SelectItem>
+              <SelectItem value="alle">All systems</SelectItem>
               {SYSTEMEN.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="alle">Alle statussen</SelectItem>
+              <SelectItem value="alle">All statuses</SelectItem>
               {STATUSSEN.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{filtered.length} resultaten</p>
+          <p className="text-sm text-muted-foreground">{filtered.length} results</p>
           <button
             onClick={downloadCSV}
             className="inline-flex items-center gap-2 bg-card border border-border px-3 py-2 rounded-md text-sm hover:bg-secondary transition-colors"
           >
-            <Download className="h-4 w-4" /> CSV Downloaden
+            <Download className="h-4 w-4" /> Download CSV
           </button>
         </div>
       </div>
@@ -140,64 +140,64 @@ export default function AlleAutomatiseringen() {
                         onClick={() => navigate(`/bewerk/${a.id}`)}
                         className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
                       >
-                        <Pencil className="h-3.5 w-3.5" /> Bewerken
+                        <Pencil className="h-3.5 w-3.5" /> Edit
                       </button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <button className="inline-flex items-center gap-1.5 text-sm text-destructive hover:underline">
-                            <Trash2 className="h-3.5 w-3.5" /> Verwijderen
+                            <Trash2 className="h-3.5 w-3.5" /> Delete
                           </button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Automatisering verwijderen?</AlertDialogTitle>
+                            <AlertDialogTitle>Delete automation?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Weet je zeker dat je <strong>{a.id} — {a.naam}</strong> wilt verwijderen? Dit verwijdert ook alle koppelingen. Deze actie kan niet ongedaan worden gemaakt.
+                              Are you sure you want to delete <strong>{a.id} — {a.naam}</strong>? This also removes all links. This action cannot be undone.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Annuleren</AlertDialogCancel>
+                            <AlertDialogCancel>Keep Automation</AlertDialogCancel>
                             <AlertDialogAction
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                               onClick={async () => {
                                 try {
                                   await deleteMutation.mutateAsync(a.id);
                                   setOpenId(null);
-                                  toast.success(`${a.id} verwijderd`);
+                                  toast.success(`${a.id} deleted`);
                                 } catch (err: any) {
-                                  toast.error(err.message || "Verwijderen mislukt");
+                                  toast.error(err.message || "Delete failed");
                                 }
                               }}
                             >
-                              Verwijderen
+                              Delete
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
-                      <Detail label="Bronsysteem" value={a.categorie} />
-                      <Detail label="Doel" value={a.doel} />
+                      <Detail label="Source System" value={a.categorie} />
+                      <Detail label="Goal" value={a.doel} />
                       <Detail label="Trigger" value={a.trigger} />
                       <Detail label="Owner" value={a.owner} />
-                      <Detail label="Afhankelijkheden" value={a.afhankelijkheden} />
+                      <Detail label="Dependencies" value={a.afhankelijkheden} />
                     </div>
                     <div>
-                      <p className="label-uppercase mb-1">Systemen</p>
+                      <p className="label-uppercase mb-1">Systems</p>
                       <div className="flex gap-1.5 flex-wrap">
                         {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
                       </div>
                     </div>
                     <div>
-                      <p className="label-uppercase mb-1">Stappen</p>
+                      <p className="label-uppercase mb-1">Flow Steps</p>
                       <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
                         {a.stappen.map((s, i) => <li key={i}>{s}</li>)}
                       </ol>
                     </div>
-                    {a.verbeterideeën && <Detail label="Verbeterideeën" value={a.verbeterideeën} />}
+                    {a.verbeterideeën && <Detail label="Improvement Ideas" value={a.verbeterideeën} />}
                     {a.mermaidDiagram && (
                       <div>
-                        <p className="label-uppercase mb-2">BPMN Diagram</p>
+                        <p className="label-uppercase mb-2">Flow Diagram</p>
                         <MermaidDiagram chart={a.mermaidDiagram} />
                       </div>
                     )}
@@ -208,7 +208,7 @@ export default function AlleAutomatiseringen() {
           </div>
         );
       })}
-      {filtered.length === 0 && <p className="text-muted-foreground text-sm">Geen resultaten gevonden.</p>}
+      {filtered.length === 0 && <p className="text-muted-foreground text-sm">No results found.</p>}
     </div>
   );
 }
