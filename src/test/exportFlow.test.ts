@@ -9,24 +9,15 @@
  * jsdom-limited. Full export correctness is verified via human checkpoint (Plan 03).
  * Only pure-math helpers are tested here.
  */
-
 import { describe, it, expect } from "vitest";
-// Wave 1 will enable: import { jsPDF } from "jspdf"
-// Until then, test 3 uses a dynamic import so the suite doesn't crash at parse time.
+import { jsPDF } from "jspdf";
 
-// ── Duplicated pure logic from src/pages/Processen.tsx ──────────────────────
-// Keep in sync with Processen.tsx if the source logic ever changes.
-// Do NOT import from src/pages/Processen.tsx — React component side effects
-// prevent direct import in unit tests.
+// Pure logic duplicated here for testability — React component side effects
+// prevent direct import in unit tests. Keep in sync with source.
 
 const SVG_SELECTOR = ".process-canvas-wrap svg";
 
-function svgDimensions(
-  w_attr: string | null,
-  vbw: number,
-  h_attr: string | null,
-  vbh: number,
-): { w: number; h: number } {
+function svgDimensions(w_attr: string | null, vbw: number, h_attr: string | null, vbh: number): { w: number; h: number } {
   return { w: Number(w_attr ?? vbw), h: Number(h_attr ?? vbh) };
 }
 
@@ -38,10 +29,8 @@ function pdfDimensions(canvasW: number, canvasH: number): { w: number; h: number
   return { w: canvasW / 2, h: canvasH / 2 };
 }
 
-// ── PROC-05: Export pipeline ──────────────────────────────────────────────────
-
 describe("export pipeline", () => {
-  it("SVG_SELECTOR is the correct selector string", () => {
+  it("getSvgElement selector string is correct", () => {
     expect(SVG_SELECTOR).toBe(".process-canvas-wrap svg");
   });
 
@@ -50,14 +39,8 @@ describe("export pipeline", () => {
     expect(svgDimensions(null, 1200, null, 400)).toEqual({ w: 1200, h: 400 });
   });
 
-  it("jsPDF is importable from npm package", async () => {
-    // Uses a variable import specifier to bypass Vite's static import analysis.
-    // This way the test is a runtime failure (red), not a build-time suite crash.
-    // Intentionally red in Wave 0 — turns green after Wave 1 installs jspdf npm package.
-    // Wave 1 target: import { jsPDF } from "jspdf"
-    const pkg = "jspdf";
-    const mod = await import(/* @vite-ignore */ pkg);
-    expect(typeof mod.jsPDF).toBe("function");
+  it("jsPDF is importable from npm package", () => {
+    expect(typeof jsPDF).toBe("function");
   });
 
   it("canvas output dimensions are 2x the SVG logical dimensions", () => {
