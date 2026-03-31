@@ -23,7 +23,7 @@
 
 - [ ] **QUAL-01**: All routed pages are stable and accessible from the sidebar nav
 - [ ] **QUAL-02**: Legacy/dead code removed (NieuweAutomatisering.tsx, dual storage layer reconciled)
-- [ ] **QUAL-03**: Core domain logic (berekenComplexiteit, berekenImpact, graphProblems) has basic test coverage
+- [x] **QUAL-03**: Core domain logic (berekenComplexiteit, berekenImpact, graphProblems) has basic test coverage
 
 ### Backend
 
@@ -69,7 +69,7 @@
 | PROC-05 | Phase 3 | Complete |
 | QUAL-01 | Phase 4 | Pending |
 | QUAL-02 | Phase 4 | Pending |
-| QUAL-03 | Phase 4 | Pending |
+| QUAL-03 | Phase 4 | Complete |
 | BACK-01 | Phase 5 | Pending |
 | BACK-02 | Phase 5 | Pending |
 | HAND-01 | Phase 5 | Pending |
