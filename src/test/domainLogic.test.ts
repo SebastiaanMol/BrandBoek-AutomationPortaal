@@ -1,14 +1,12 @@
 /**
  * domainLogic.test.ts
- * Failing test scaffold for QUAL-03 domain logic coverage (Wave 0).
+ * GREEN phase for QUAL-03 domain logic coverage.
  *
- * QUAL-03: berekenComplexiteit, berekenImpact, detectProblems
- *
- * These are it.todo stubs — they establish the RED state required before
- * Plan 04-03 replaces them with real assertions.
+ * Replaces the it.todo stubs from Plan 04-01 with real passing assertions
+ * covering berekenComplexiteit, berekenImpact, and detectProblems.
  */
 
-import { describe, it } from "vitest";
+import { describe, it, expect } from "vitest";
 import { berekenComplexiteit, berekenImpact, Automatisering } from "@/lib/types";
 import { detectProblems } from "@/lib/graphProblems";
 
@@ -24,29 +22,82 @@ function makeAutomatisering(overrides: Partial<Automatisering> = {}): Automatise
   };
 }
 
-// Re-export references to suppress unused-import warnings while keeping
-// the imports verifiable by tsc.
-void berekenComplexiteit;
-void berekenImpact;
-void detectProblems;
-void makeAutomatisering;
-
 describe("berekenComplexiteit", () => {
-  it.todo("empty automation returns 0");
-  it.todo("4 stappen returns stappenScore of 40");
-  it.todo("cap is respected — 5 stappen still returns 40");
-  it.todo("afhankelijkheden non-empty adds 15");
+  it("empty automation returns 0", () => {
+    const a = makeAutomatisering();
+    expect(berekenComplexiteit(a)).toBe(0);
+  });
+
+  it("4 stappen returns stappenScore of 40", () => {
+    const a = makeAutomatisering({ stappen: ["a", "b", "c", "d"] });
+    expect(berekenComplexiteit(a)).toBe(40);
+  });
+
+  it("cap is respected — 5 stappen still returns 40", () => {
+    const a = makeAutomatisering({ stappen: ["a", "b", "c", "d", "e"] });
+    expect(berekenComplexiteit(a)).toBe(40);
+  });
+
+  it("afhankelijkheden non-empty adds 15", () => {
+    const a = makeAutomatisering({ afhankelijkheden: "heeft deps" });
+    expect(berekenComplexiteit(a)).toBe(15);
+  });
+
+  it("combined scoring: 1 stap + 1 systeem + afhankelijkheden + 1 koppeling = 42", () => {
+    const a = makeAutomatisering({
+      stappen: ["a"],
+      systemen: ["HubSpot"],
+      afhankelijkheden: "x",
+      koppelingen: [{ doelId: "b" }],
+    });
+    // stappenScore=10, systemenScore=12, afhankScore=15, koppScore=5 → 42
+    expect(berekenComplexiteit(a)).toBe(42);
+  });
 });
 
 describe("berekenImpact", () => {
-  it.todo("2 fasen returns fasenScore of 24");
-  it.todo("depScore: automation depended on by another scores 20");
-  it.todo("Actief status adds 10 bonus");
+  it("2 fasen and Actief status returns 34 (fasenScore 24 + statusBonus 10)", () => {
+    const a = makeAutomatisering({ fasen: ["Marketing", "Sales"], status: "Actief" });
+    expect(berekenImpact(a, [a])).toBe(34);
+  });
+
+  it("depScore: automation depended on by another scores 20 (+ statusBonus 10 = 30)", () => {
+    const autoA = makeAutomatisering({ id: "auto-a", fasen: [], systemen: [], status: "Actief" });
+    const autoB = makeAutomatisering({ id: "auto-b", koppelingen: [{ doelId: "auto-a" }] });
+    const score = berekenImpact(autoA, [autoA, autoB]);
+    expect(score).toBe(10 + 20); // statusBonus + depScore
+  });
+
+  it("Verouderd status adds no bonus", () => {
+    const a = makeAutomatisering({ status: "Verouderd" });
+    expect(berekenImpact(a, [a])).toBe(0);
+  });
 });
 
 describe("detectProblems", () => {
-  it.todo("automation missing owner gets missing-owner problem");
-  it.todo("automation missing trigger gets missing-trigger problem");
-  it.todo("isolated automation with empty koppelingen is flagged as orphan");
-  it.todo("two connected automations have no orphan problem");
+  it("automation missing owner gets missing-owner problem", () => {
+    const a = makeAutomatisering({ owner: "" });
+    const problems = detectProblems([a]);
+    expect(problems.some(p => p.type === "missing-owner")).toBe(true);
+  });
+
+  it("automation missing trigger gets missing-trigger problem", () => {
+    const a = makeAutomatisering({ trigger: "" });
+    const problems = detectProblems([a]);
+    expect(problems.some(p => p.type === "missing-trigger")).toBe(true);
+  });
+
+  it("isolated automation with empty koppelingen is flagged as orphan", () => {
+    const a = makeAutomatisering({ koppelingen: [] });
+    const problems = detectProblems([a]);
+    expect(problems.some(p => p.type === "orphan")).toBe(true);
+  });
+
+  it("two connected automations have no orphan problem", () => {
+    const autoA = makeAutomatisering({ id: "node-a", owner: "Jan", trigger: "Form", koppelingen: [] });
+    const autoB = makeAutomatisering({ id: "node-b", owner: "Jan", trigger: "Form", koppelingen: [{ doelId: "node-a" }] });
+    const problems = detectProblems([autoA, autoB]);
+    const orphans = problems.filter(p => p.type === "orphan");
+    expect(orphans).toHaveLength(0);
+  });
 });
