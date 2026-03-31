@@ -42,10 +42,10 @@ Declared values (must be multiples of 4):
 | 3xl | 64px | Page-level vertical spacing |
 
 Exceptions:
-- Sidebar nav item vertical padding: 10px (`py-2.5`) — existing pattern, preserve exactly
-- Sidebar nav item horizontal padding: 20px (`px-5`) — existing pattern, preserve exactly
+- Sidebar nav item vertical padding: 12px (`py-3`) — replaces prior `py-2.5` (10px was not a multiple of 4)
+- Sidebar nav item horizontal padding: 16px (`px-4`) — replaces prior `px-5` (20px was not a multiple of 4)
 - Active indicator bar: left-0, top-1, bottom-1, width 4px — existing pattern, preserve exactly
-- Section group headers: `px-5 pt-4 pb-1` — new pattern for NAV-01 group headers
+- Section group headers: `px-4 pt-4 pb-1` — new pattern for NAV-01 group headers
 
 ---
 
@@ -54,9 +54,11 @@ Exceptions:
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 14px (text-sm) | 400 (regular) | 1.5 |
-| Label | 10px uppercase tracked (label-uppercase utility) | 700 (bold) | 1 |
+| Label | 10px uppercase tracked (label-uppercase utility) | 600 (semibold) | 1 |
 | Heading (h2) | 18px (text-lg) | 600 (semibold) | 1.2 |
-| Display (metric) | 30px (text-3xl) | 700 (bold), font-mono | 1 |
+| Display (metric) | 30px (text-3xl) | 600 (semibold), font-mono | 1 |
+
+Declared weights: 400 (regular) and 600 (semibold) only. Weight 700 (bold) is not used in this phase.
 
 Sidebar group header (new in Phase 6):
 - Size: 10px (`text-[10px]`)
@@ -64,7 +66,7 @@ Sidebar group header (new in Phase 6):
 - Color: `text-sidebar-foreground/40`
 - Transform: uppercase
 - Tracking: `tracking-widest`
-- Padding: `px-5 pt-4 pb-1`
+- Padding: `px-4 pt-4 pb-1`
 
 Source: existing `label-uppercase` class in `src/index.css`; Tailwind font scale from `tailwind.config.ts`
 
@@ -117,7 +119,7 @@ The flat `navItems` array in `AppLayout.tsx` is replaced with a grouped structur
 ### Group Header Visual Contract
 
 - Text: Section label (e.g. "Overview", "Automations", "Systems & People", "Analysis")
-- Style: `text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-5 pt-4 pb-1`
+- Style: `text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 pt-4 pb-1`
 - No icon, no link, not interactive
 - First group header ("Overview") has no top padding — sits directly below the brand header separator
 
@@ -399,6 +401,8 @@ No third-party registries. No new components installed.
 5. **Page h1 requirement**: Each routed page must have exactly one `<h1>` whose text matches the sidebar nav label. Pages that currently render no visible `<h1>` (Dashboard, AlleAutomatiseringen, Processen, Analyse, Imports) need a heading added. The heading may be visually hidden (`sr-only`) if the page design does not show a visible title — but it must exist in the DOM for NAV-02 compliance.
 
 6. **Top bar span**: `AppLayout.tsx` line 133 renders the current nav item title in the top bar. This uses the navItem `title` field. Once labels are English, this updates automatically.
+
+7. **Sidebar nav item padding**: Use `py-3 px-4` for all sidebar nav items and group headers. Do not use `py-2.5` or `px-5`.
 
 ---
 
