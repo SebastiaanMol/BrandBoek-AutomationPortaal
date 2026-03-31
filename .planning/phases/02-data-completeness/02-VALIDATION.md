@@ -50,7 +50,7 @@ created: 2026-03-30
 
 ## Wave 0 Requirements
 
-- [ ] `src/pages/__tests__/Imports.test.tsx` — stubs for DATA-02, DATA-03
+- [ ] `src/test/importsFlow.test.ts` — stubs for DATA-02, DATA-03
 - [ ] vitest + @testing-library/react installed if not already present
 
 *Check `package.json` for existing vitest dependency before installing.*
