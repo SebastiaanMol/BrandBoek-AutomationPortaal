@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Export** - Process map can be exported as PNG or PDF for handover documentation
 - [ ] **Phase 4: Portal Quality** - All pages stable, dead code removed, critical logic has test coverage
 - [ ] **Phase 5: Backend & Handover** - Backend documented and deployable, portal live, usage guide written
-- [ ] **Phase 6: Navigation & Naming** - Sidebar grouped into named sections, dead pages removed, all labels in English
+- [x] **Phase 6: Navigation & Naming** - Sidebar grouped into named sections, dead pages removed, all labels in English (completed 2026-04-01)
 - [ ] **Phase 7: Entity Pages** - Dedicated Systems and Owners pages with drill-in views
 - [ ] **Phase 8: Cross-Linking** - Automation detail panel wired to process canvas, Systems, Owners, and related automations
 
@@ -108,7 +108,7 @@ Plans:
 Plans:
 - [x] 06-01-PLAN.md — Wave 1: Sidebar grouped nav (NAV-01) + dead page removal (NAV-03)
 - [x] 06-02-PLAN.md — Wave 1: English labels across all pages (NAME-01, NAME-02, NAME-03) — parallel
-- [ ] 06-03-PLAN.md — Wave 2: Page h1 compliance (NAV-02) + human verification
+- [x] 06-03-PLAN.md — Wave 2: Page h1 compliance (NAV-02) + human verification
 **UI hint**: yes
 
 ### Phase 7: Entity Pages
@@ -147,6 +147,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. Export | 2/3 | In Progress | - |
 | 4. Portal Quality | 3/4 | In Progress | - |
 | 5. Backend & Handover | 0/? | Not started | - |
-| 6. Navigation & Naming | 2/3 | In Progress|  |
+| 6. Navigation & Naming | 3/3 | Complete   | 2026-04-01 |
 | 7. Entity Pages | 0/? | Not started | - |
 | 8. Cross-Linking | 0/? | Not started | - |

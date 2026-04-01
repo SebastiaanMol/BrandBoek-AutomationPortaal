@@ -40,7 +40,7 @@
 ### Navigation & Structure
 
 - [x] **NAV-01**: Sidebar is organized into named sections with group headers (Overview / Automations / Systems & People / Analysis)
-- [ ] **NAV-02**: Every sidebar nav label exactly matches the h1 heading on its destination page
+- [x] **NAV-02**: Every sidebar nav label exactly matches the h1 heading on its destination page
 - [x] **NAV-03**: Dead pages are removed from the codebase (Mindmap, Kennisgraaf, BPMN Viewer, Proceskaart)
 
 ### Systems
@@ -106,7 +106,7 @@
 | HAND-01 | Phase 5 | Pending |
 | HAND-02 | Phase 5 | Pending |
 | NAV-01 | Phase 6 | Complete |
-| NAV-02 | Phase 6 | Pending |
+| NAV-02 | Phase 6 | Complete |
 | NAV-03 | Phase 6 | Complete |
 | SYS-01 | Phase 7 | Pending |
 | SYS-02 | Phase 7 | Pending |
