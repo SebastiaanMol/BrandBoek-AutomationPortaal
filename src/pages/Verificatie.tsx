@@ -178,6 +178,7 @@ export default function Verificatie() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      <h1 className="sr-only">Verification</h1>
       {/* Progress bar */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">

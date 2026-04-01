@@ -523,7 +523,7 @@ export default function Imports() {
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold">Import & Goedkeuring</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Imports</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Nieuwe HubSpot workflows wachten hier op goedkeuring voordat ze actief worden.
           </p>

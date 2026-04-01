@@ -6,6 +6,7 @@ import AIUpload from "./AIUpload";
 export default function NieuweAutomatiseringPage() {
   return (
     <div className="space-y-6">
+      <h1 className="text-xl font-semibold tracking-tight text-foreground">New Automation</h1>
       <Tabs defaultValue="manual">
         <TabsList>
           <TabsTrigger value="manual" className="gap-2">

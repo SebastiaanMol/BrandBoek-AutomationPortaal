@@ -64,6 +64,7 @@ export default function AlleAutomatiseringen() {
 
   return (
     <div className="space-y-4">
+      <h1 className="sr-only">All Automations</h1>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">

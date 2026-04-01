@@ -129,6 +129,7 @@ export default function Analyse() {
 
   return (
     <div className="space-y-10">
+      <h1 className="sr-only">Analysis</h1>
       {/* ═══════════════ KLANTPROCES TIJDLIJN ═══════════════ */}
       <section>
         <div className="flex items-center gap-2 mb-6">

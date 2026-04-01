@@ -394,7 +394,7 @@ export default function Processen() {
       <div className="shrink-0 px-6 py-3 border-b border-border bg-card flex items-center gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold">Proceskaart</h1>
+            <h1 className="text-base font-bold">Processes</h1>
             {isDirty && (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border border-amber-200">
                 Niet opgeslagen
