@@ -44,7 +44,7 @@ Declared values (must be multiples of 4):
 Exceptions:
 - Row vertical padding: 8px (`py-2`) — matches sidebar nav item convention from Phase 6
 - Accordion detail panel inner padding: `px-4 pb-4 pt-2` — 16px horizontal and bottom padding
-- Count badge horizontal padding: 8px (`px-2`) with 4px vertical (`py-0.5`) — compact inline badge
+- Count badge horizontal padding: 8px (`px-2`) with 4px vertical (`py-1`) — compact inline badge
 - Back button: no additional margin, sits inline at top of content area
 
 Source: Phase 6 UI-SPEC spacing scale; `src/pages/AlleAutomatiseringen.tsx` row padding.
