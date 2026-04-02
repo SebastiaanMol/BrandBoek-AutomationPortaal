@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-entity-pages-02-PLAN.md
-last_updated: "2026-04-02T08:02:37.379Z"
+stopped_at: Completed 07-entity-pages-03-PLAN.md
+last_updated: "2026-04-02T08:03:41.468Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 21
-  completed_plans: 18
+  completed_plans: 19
   percent: 20
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Phase: 07 (Entity Pages) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-04-02
 
@@ -75,6 +75,7 @@ Progress: [##░░░░░░░░] 20%
 | Phase 06-navigation-naming P03 | 10 | 2 tasks | 7 files |
 | Phase 07-entity-pages P01 | 5 | 1 tasks | 1 files |
 | Phase 07-entity-pages P02 | 2 | 2 tasks | 4 files |
+| Phase 07-entity-pages P03 | 12 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,7 @@ Recent decisions affecting current work:
 - [Phase 07-entity-pages]: Used it.todo stubs (not failing assertions) for Wave 0 scaffold so Wave 1 agents (07-02, 07-03) are not blocked by red test output — same decision as Phase 04
 - [Phase 07-entity-pages]: Derivation uses Map from a.systemen — never SYSTEMEN constant — only systems with actual automations appear
 - [Phase 07-entity-pages]: useSearchParams drives selected state (not useState) for Phase 8 deep-link support
+- [Phase 07-entity-pages]: useSearchParams (not useState) for selected-owner state — enables Phase 8 deep-link navigation to ?owner=X
 
 ### Pending Todos
 
@@ -115,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T08:02:37.375Z
-Stopped at: Completed 07-entity-pages-02-PLAN.md
+Last session: 2026-04-02T08:03:41.463Z
+Stopped at: Completed 07-entity-pages-03-PLAN.md
 Resume file: None

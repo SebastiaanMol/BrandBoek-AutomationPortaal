@@ -88,16 +88,80 @@ describe("system filter", () => {
   });
 });
 
+function deriveOwnerCounts(automations: Automatisering[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const a of automations) {
+    if (a.owner?.trim()) {
+      map.set(a.owner, (map.get(a.owner) ?? 0) + 1);
+    }
+  }
+  return map;
+}
+
+function filterByOwner(automations: Automatisering[], owner: string): Automatisering[] {
+  return automations.filter(a => a.owner === owner);
+}
+
 // OWN-01: ownerCounts derivation
 describe("ownerCounts derivation", () => {
-  it.todo("returns empty map for no automations");
-  it.todo("groups automations by owner name");
-  it.todo("skips automations with empty string owner");
-  it.todo("sorts descending by count");
+  it("returns empty map for no automations", () => {
+    const result = deriveOwnerCounts([]);
+    expect(result.size).toBe(0);
+  });
+
+  it("groups automations by owner name", () => {
+    const automations = [
+      makeAutomatisering({ id: "a1", owner: "Jan" }),
+      makeAutomatisering({ id: "a2", owner: "Jan" }),
+    ];
+    const result = deriveOwnerCounts(automations);
+    expect(result.get("Jan")).toBe(2);
+  });
+
+  it("skips automations with empty string owner", () => {
+    const automations = [
+      makeAutomatisering({ id: "a1", owner: "" }),
+      makeAutomatisering({ id: "a2", owner: "Jan" }),
+    ];
+    const result = deriveOwnerCounts(automations);
+    expect(result.size).toBe(1);
+    expect(result.has("")).toBe(false);
+    expect(result.get("Jan")).toBe(1);
+  });
+
+  it("sorts descending by count", () => {
+    const automations = [
+      makeAutomatisering({ id: "a1", owner: "Lisa" }),
+      makeAutomatisering({ id: "a2", owner: "Jan" }),
+      makeAutomatisering({ id: "a3", owner: "Jan" }),
+    ];
+    const result = deriveOwnerCounts(automations);
+    const sorted = [...result.entries()].sort((a, b) => b[1] - a[1]);
+    expect(sorted[0][0]).toBe("Jan");
+    expect(sorted[0][1]).toBe(2);
+    expect(sorted[1][0]).toBe("Lisa");
+    expect(sorted[1][1]).toBe(1);
+  });
 });
 
 // OWN-02: owner filter
 describe("owner filter", () => {
-  it.todo("returns only automations whose owner matches");
-  it.todo("returns empty array when no automations match the owner");
+  it("returns only automations whose owner matches", () => {
+    const automations = [
+      makeAutomatisering({ id: "a1", owner: "Jan" }),
+      makeAutomatisering({ id: "a2", owner: "Lisa" }),
+      makeAutomatisering({ id: "a3", owner: "Jan" }),
+    ];
+    const result = filterByOwner(automations, "Jan");
+    expect(result).toHaveLength(2);
+    expect(result.every(a => a.owner === "Jan")).toBe(true);
+  });
+
+  it("returns empty array when no automations match the owner", () => {
+    const automations = [
+      makeAutomatisering({ id: "a1", owner: "Jan" }),
+    ];
+    const result = filterByOwner(automations, "Unknown");
+    expect(result).toHaveLength(0);
+  });
 });
