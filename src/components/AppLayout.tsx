@@ -12,6 +12,7 @@ import {
   Settings,
   Download,
   Server,
+  Users,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -38,6 +39,7 @@ const navGroups: NavGroup[] = [
     title: "Systems & People",
     items: [
       { title: "Systems", url: "/systems", icon: Server },
+      { title: "Owners", url: "/owners", icon: Users },
     ],
   },
   {
