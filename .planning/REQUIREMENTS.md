@@ -45,13 +45,13 @@
 
 ### Systems
 
-- [ ] **SYS-01**: User can view a Systems page listing all unique systems with their automation count
-- [ ] **SYS-02**: User can click a system to see all automations linked to that system
+- [x] **SYS-01**: User can view a Systems page listing all unique systems with their automation count
+- [x] **SYS-02**: User can click a system to see all automations linked to that system
 
 ### Owners
 
-- [ ] **OWN-01**: User can view an Owners page listing all unique owners with their automation count
-- [ ] **OWN-02**: User can click an owner to see all automations they own
+- [x] **OWN-01**: User can view an Owners page listing all unique owners with their automation count
+- [x] **OWN-02**: User can click an owner to see all automations they own
 
 ### Cross-Linking
 
@@ -108,10 +108,10 @@
 | NAV-01 | Phase 6 | Complete |
 | NAV-02 | Phase 6 | Complete |
 | NAV-03 | Phase 6 | Complete |
-| SYS-01 | Phase 7 | Pending |
-| SYS-02 | Phase 7 | Pending |
-| OWN-01 | Phase 7 | Pending |
-| OWN-02 | Phase 7 | Pending |
+| SYS-01 | Phase 7 | Complete |
+| SYS-02 | Phase 7 | Complete |
+| OWN-01 | Phase 7 | Complete |
+| OWN-02 | Phase 7 | Complete |
 | LINK-01 | Phase 8 | Pending |
 | LINK-02 | Phase 8 | Pending |
 | LINK-03 | Phase 8 | Pending |
