@@ -120,7 +120,12 @@ Plans:
   2. User can click a system name and see only the automations linked to that system
   3. User can navigate to an Owners page and see every unique owner with the count of automations they own
   4. User can click an owner name and see only the automations that person owns
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 07-01-PLAN.md — Wave 0: Test scaffold (entityPages.test.ts — it.todo stubs for SYS-01, SYS-02, OWN-01, OWN-02)
+- [ ] 07-02-PLAN.md — Wave 1: Systems.tsx page + SYS tests GREEN (SYS-01, SYS-02)
+- [ ] 07-03-PLAN.md — Wave 1: Owners.tsx page + OWN tests GREEN (OWN-01, OWN-02) — parallel with 07-02
+- [ ] 07-04-PLAN.md — Wave 2: Wire nav + routes (AppLayout + App.tsx) + human smoke test
 **UI hint**: yes
 
 ### Phase 8: Cross-Linking
@@ -148,5 +153,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Portal Quality | 3/4 | In Progress | - |
 | 5. Backend & Handover | 0/? | Not started | - |
 | 6. Navigation & Naming | 3/3 | Complete   | 2026-04-01 |
-| 7. Entity Pages | 0/? | Not started | - |
+| 7. Entity Pages | 0/4 | Not started | - |
 | 8. Cross-Linking | 0/? | Not started | - |
