@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   Settings,
   Download,
+  Server,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -35,7 +36,9 @@ const navGroups: NavGroup[] = [
   },
   {
     title: "Systems & People",
-    items: [],
+    items: [
+      { title: "Systems", url: "/systems", icon: Server },
+    ],
   },
   {
     title: "Analysis",
