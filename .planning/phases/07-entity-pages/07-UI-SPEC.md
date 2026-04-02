@@ -43,7 +43,7 @@ Declared values (must be multiples of 4):
 
 Exceptions:
 - Row vertical padding: 8px (`py-2`) — matches sidebar nav item convention from Phase 6
-- Accordion detail panel inner padding: `px-5 pb-5 pt-2` — exact match to AlleAutomatiseringen pattern
+- Accordion detail panel inner padding: `px-4 pb-4 pt-2` — 16px horizontal and bottom padding
 - Count badge horizontal padding: 8px (`px-2`) with 4px vertical (`py-0.5`) — compact inline badge
 - Back button: no additional margin, sits inline at top of content area
 
@@ -58,13 +58,13 @@ Source: Phase 6 UI-SPEC spacing scale; `src/pages/AlleAutomatiseringen.tsx` row 
 | Body | 14px (text-sm) | 400 (regular) | 1.5 |
 | Label | 10px uppercase tracked (label-uppercase utility) | 600 (semibold) | 1 |
 | Heading (h1, visible) | 20px (text-xl) | 600 (semibold) | 1.2 |
-| Entity name (list row) | 14px (text-sm) | 500 (medium) | 1.5 |
+| Entity name (list row) | 14px (text-sm) | 400 (regular) | 1.5 |
 
-Declared weights: 400 (regular) and 600 (semibold). Weight 500 (medium) for entity row names only, matching the `font-medium` pattern in AlleAutomatiseringen rows.
+Declared weights: 400 (regular) and 600 (semibold).
 
 Page h1 text ("Systems", "Owners") is a visible heading — not sr-only. These are new list pages without a full-bleed metric header, so a visible h1 is appropriate (established Phase 6 pattern for non-metric pages like Imports and New Automation).
 
-Source: Phase 6 UI-SPEC typography; `src/pages/AlleAutomatiseringen.tsx` row class `font-medium`.
+Source: Phase 6 UI-SPEC typography.
 
 ---
 
@@ -98,7 +98,7 @@ Two visual states driven by `?system=` URL search param:
 **State 1: List view** (`?system=` absent)
 - Visible `<h1>Systems</h1>` at 20px semibold
 - One card row per unique system, sorted descending by automation count
-- Each row: `SystemBadge` on the left, system name at 14px medium, count badge on the right ("N automations")
+- Each row: `SystemBadge` on the left, system name at 14px regular, count badge on the right ("N automations")
 - Entire row is a `<button>` — click calls `setSearchParams({ system: name })`
 - Row hover: `hover:bg-secondary/50` — matches AlleAutomatiseringen row hover
 - Loading state: `Loader2` spinner centered, `text-muted-foreground`, same as AlleAutomatiseringen
@@ -108,7 +108,7 @@ Two visual states driven by `?system=` URL search param:
 - `<h1 className="sr-only">Systems</h1>` (NAV-02 compliance maintained; the back button and system name serve as visible context)
 - Selected system name displayed as `<SystemBadge>` + heading: e.g. `SystemBadge` then `<span className="text-xl font-semibold ml-2">HubSpot</span>` — inline flex row
 - Automation rows: exact same card pattern as AlleAutomatiseringen (`bg-card border border-border rounded-[var(--radius-outer)] shadow-sm`)
-- Each automation row shows: ID (mono xs), name (font-medium truncate), CategorieBadge, StatusBadge, VerificatieBadge, expand chevron
+- Each automation row shows: ID (mono xs), name (font-normal truncate), CategorieBadge, StatusBadge, VerificatieBadge, expand chevron
 - Expanded row: same `AnimatePresence` + `framer-motion` accordion as AlleAutomatiseringen
 
 ### Owners Page (`/owners`)
@@ -118,7 +118,7 @@ Mirrors Systems page structure, replacing system-specific elements:
 **State 1: List view** (`?owner=` absent)
 - Visible `<h1>Owners</h1>` at 20px semibold
 - One card row per unique owner (skip empty-string owners), sorted descending by automation count
-- Each row: `Users` icon (16px, `text-muted-foreground`) on the left, owner name at 14px medium, count badge on the right
+- Each row: `Users` icon (16px, `text-muted-foreground`) on the left, owner name at 14px regular, count badge on the right
 - Entire row is a `<button>` — click calls `setSearchParams({ owner: name })`
 
 **State 2: Detail/filtered view** (`?owner=Jan`)
@@ -207,6 +207,7 @@ Identical to AlleAutomatiseringen:
 - Click toggles: `setOpenId(isOpen ? null : a.id)`
 - `AnimatePresence` wraps `motion.div` with `initial={{ height: 0, opacity: 0 }}`, `animate={{ height: "auto", opacity: 1 }}`, `exit={{ height: 0, opacity: 0 }}`
 - Spring: `{ type: "spring", stiffness: 300, damping: 30 }`
+- Inner padding: `px-4 pb-4 pt-2` (16px horizontal and bottom)
 
 ### Loading
 
@@ -245,6 +246,8 @@ No third-party registries. No new components installed. All building blocks alre
 8. **SystemBadge reuse:** Use existing `SystemBadge` from `@/components/Badges` for system identifiers in list rows. Do not render raw text.
 
 9. **Top bar auto-resolution:** Once nav items are added to `navGroups`, the top bar `flatMap` lookup will resolve "Systems" and "Owners" automatically. No additional top bar changes needed.
+
+10. **Font weight in rows:** Entity name in list rows uses `font-normal` (400). Do not use `font-medium` — only two weights are in contract: 400 (regular) and 600 (semibold).
 
 ---
 
