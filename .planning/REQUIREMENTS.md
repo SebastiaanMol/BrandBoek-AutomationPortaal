@@ -58,7 +58,7 @@
 - [ ] **LINK-01**: Automation detail view shows a clickable link to the process canvas (navigates to Processes page)
 - [ ] **LINK-02**: Automation detail view shows each system as a clickable badge that navigates to the Systems page filtered to that system
 - [ ] **LINK-03**: Automation detail view shows the owner as a clickable link that navigates to the Owners page filtered to that person
-- [ ] **LINK-04**: Automation detail view shows related automations (same phase or sharing a system)
+- [x] **LINK-04**: Automation detail view shows related automations (same phase or sharing a system)
 
 ### Naming Consistency
 
@@ -115,7 +115,7 @@
 | LINK-01 | Phase 8 | Pending |
 | LINK-02 | Phase 8 | Pending |
 | LINK-03 | Phase 8 | Pending |
-| LINK-04 | Phase 8 | Pending |
+| LINK-04 | Phase 8 | Complete |
 | NAME-01 | Phase 6 | Complete |
 | NAME-02 | Phase 6 | Complete |
 | NAME-03 | Phase 6 | Complete |

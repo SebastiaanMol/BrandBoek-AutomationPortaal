@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-cross-linking planning — 3 plans, PASS verification
-last_updated: "2026-04-07T00:00:00.000Z"
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-04-07T09:30:57.029Z"
 last_activity: 2026-04-07
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 24
-  completed_plans: 19
-  percent: 25
+  completed_plans: 20
+  percent: 20
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Phase: 08 (Cross-Linking) — READY TO EXECUTE
-Plan: 0 of 3
+Plan: 1 of 3
 Status: Ready to execute
 Last activity: 2026-04-07
 
@@ -76,6 +76,7 @@ Progress: [##░░░░░░░░] 20%
 | Phase 07-entity-pages P01 | 5 | 1 tasks | 1 files |
 | Phase 07-entity-pages P02 | 2 | 2 tasks | 4 files |
 | Phase 07-entity-pages P03 | 12 | 2 tasks | 2 files |
+| Phase 08 P01 | 5 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,7 @@ Recent decisions affecting current work:
 - [Phase 07-entity-pages]: Derivation uses Map from a.systemen — never SYSTEMEN constant — only systems with actual automations appear
 - [Phase 07-entity-pages]: useSearchParams drives selected state (not useState) for Phase 8 deep-link support
 - [Phase 07-entity-pages]: useSearchParams (not useState) for selected-owner state — enables Phase 8 deep-link navigation to ?owner=X
+- [Phase 08]: Inline deriveRelated in test file — no shared fixture, matches entityPages.test.ts pattern
 
 ### Pending Todos
 
@@ -117,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T08:03:41.463Z
-Stopped at: Completed 07-entity-pages-03-PLAN.md
+Last session: 2026-04-07T09:30:57.025Z
+Stopped at: Completed 08-01-PLAN.md
 Resume file: None
