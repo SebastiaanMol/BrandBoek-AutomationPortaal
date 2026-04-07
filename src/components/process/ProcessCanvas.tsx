@@ -664,6 +664,7 @@ export function ProcessCanvas({
               <path d={arrow.path} stroke="transparent" strokeWidth="22" fill="none" className="cursor-pointer"
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
+                onClick={() => { if (hasAuto) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
                 onDoubleClick={() => onDeleteConnection(conn.id)}
                 onDragOver={e => { e.preventDefault(); setHoveredConn(conn.id); }}
                 onDragLeave={() => setHoveredConn(null)}
