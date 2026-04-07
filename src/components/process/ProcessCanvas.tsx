@@ -340,6 +340,9 @@ export function ProcessCanvas({
   const [drawingBranch, setDrawingBranch] = useState<{
     automationId: string; startX: number; startY: number; curX: number; curY: number;
   } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    connId: string; x: number; y: number;
+  } | null>(null);
   const [editingLabel, setEditingLabel] = useState<{
     connId: string; x: number; y: number; value: string;
   } | null>(null);
@@ -527,6 +530,7 @@ export function ProcessCanvas({
       <svg ref={svgRef} width={svgWidth} height={effectiveSvgHeight}
         onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
         onMouseLeave={() => { setDrawing(null); setDragging(null); }}
+        onClick={() => setContextMenu(null)}
         onDragOver={e => {
           if (!e.dataTransfer.types.includes("newstep")) return;
           e.preventDefault();
@@ -663,6 +667,7 @@ export function ProcessCanvas({
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
                 onClick={() => { if (hasAuto) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
+                onContextMenu={e => { e.preventDefault(); setContextMenu({ connId: conn.id, x: e.clientX, y: e.clientY }); }}
                 onDragOver={e => { e.preventDefault(); setHoveredConn(conn.id); }}
                 onDragLeave={() => setHoveredConn(null)}
                 onDrop={e => {
@@ -869,7 +874,8 @@ export function ProcessCanvas({
               {/* Invisible wide hit area */}
               <path d={branchPath} stroke="transparent" strokeWidth="18" fill="none"
                 className="cursor-pointer"
-                onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })} />
+                onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}
+                onContextMenu={e => { e.preventDefault(); setContextMenu({ connId: conn.id, x: e.clientX, y: e.clientY }); }} />
               {/* Visible path */}
               <path d={branchPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
                 markerEnd="url(#ah-branch)" opacity={0.75} style={{ pointerEvents: "none" }} />
@@ -932,6 +938,22 @@ export function ProcessCanvas({
           );
         })()}
       </svg>
+
+      {/* ── Context menu ── */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-white border border-border rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseLeave={() => setContextMenu(null)}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+            onClick={() => { onDeleteConnection(contextMenu.connId); setContextMenu(null); }}
+          >
+            Verbinding verwijderen
+          </button>
+        </div>
+      )}
     </div>
   );
 }
