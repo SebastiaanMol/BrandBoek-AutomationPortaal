@@ -12,6 +12,7 @@ import {
   Download,
   Server,
   Users,
+  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -45,6 +46,12 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Processes", url: "/processen", icon: GitBranch },
       { title: "Analysis", url: "/analyse", icon: BarChart3 },
+    ],
+  },
+  {
+    title: "Brandy",
+    items: [
+      { title: "Brandy", url: "/brandy", icon: Sparkles },
     ],
   },
 ];
@@ -159,7 +166,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </span>
         </header>
         <main className={`flex-1 w-full ${
-          location.pathname === "/processen" ? "p-0" : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
+          location.pathname === "/processen" || location.pathname === "/brandy" ? "p-0" : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
         }`}>
           {children}
         </main>

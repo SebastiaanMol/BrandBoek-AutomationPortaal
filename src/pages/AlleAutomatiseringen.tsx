@@ -8,7 +8,7 @@ import { MermaidDiagram } from "@/components/MermaidDiagram";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Download, Search as SearchIcon, Loader2, Pencil, Trash2, Zap } from "lucide-react";
+import { ChevronDown, Download, Search as SearchIcon, Loader2, Pencil, Trash2, Zap, Sparkles } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
@@ -152,6 +152,12 @@ export default function AlleAutomatiseringen() {
                   <div className="px-5 pb-5 pt-3 border-t border-border space-y-5">
                     {/* Actions */}
                     <div className="flex justify-end gap-3">
+                      <button
+                        onClick={() => navigate(`/brandy?context=${a.id}&naam=${encodeURIComponent(a.naam)}`)}
+                        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> Vraag Brandy
+                      </button>
                       <button
                         onClick={() => navigate(`/bewerk/${a.id}`)}
                         className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

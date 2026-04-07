@@ -16,6 +16,7 @@ import Processen from "./pages/Processen";
 import Imports from "./pages/Imports";
 import Systems from "./pages/Systems";
 import Owners from "./pages/Owners";
+import Brandy from "./pages/Brandy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ function ProtectedRoutes() {
         <Route path="/imports" element={<Imports />} />
         <Route path="/systems" element={<Systems />} />
         <Route path="/owners" element={<Owners />} />
+        <Route path="/brandy" element={<Brandy />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
