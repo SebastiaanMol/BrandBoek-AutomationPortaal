@@ -634,27 +634,25 @@ export function ProcessCanvas({
                     strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
                   <path d={arrow.postDotPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
                     markerEnd={`url(#${isHov ? "ah-h" : "ah-branch"})`} opacity={0.85} style={{ pointerEvents: "none" }} />
-                  {/* Label on post-dot segment — only shown when a label has been set */}
-                  {postLabelText && (isEditingPost ? (
-                    <foreignObject x={mid.x - postEstW / 2} y={mid.y - 13} width={postEstW} height={26}>
+                  {/* Label on post-dot segment — edit input when active, badge when label is set */}
+                  {isEditingPost ? (
+                    <foreignObject x={mid.x - postEstW / 2} y={mid.y - 13} width={Math.max(postEstW, 120)} height={26}>
                       <input autoFocus value={editingLabel!.value}
                         onChange={e => setEditingLabel(prev => prev ? { ...prev, value: e.target.value } : null)}
                         onBlur={() => { onUpdateConnectionLabel(conn.id, editingLabel!.value); setEditingLabel(null); }}
                         onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") { onUpdateConnectionLabel(conn.id, editingLabel!.value); setEditingLabel(null); } }}
                         className="w-full h-full text-center text-[10px] font-medium bg-white border border-amber-300 rounded px-1 outline-none" />
                     </foreignObject>
-                  ) : (
-                    <g className="cursor-pointer"
-                      onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}>
+                  ) : postLabelText ? (
+                    <g style={{ pointerEvents: "none" }}>
                       <rect x={mid.x - postEstW / 2} y={mid.y - 8} width={postEstW} height={16}
-                        fill="white" fillOpacity={0.92} rx={2} style={{ pointerEvents: "none" }} />
+                        fill="white" fillOpacity={0.92} rx={2} />
                       <text x={mid.x} y={mid.y} textAnchor="middle" dominantBaseline="middle"
-                        fontSize={10} fontWeight={500} fill="#92400e"
-                        style={{ pointerEvents: "none" }}>
+                        fontSize={10} fontWeight={500} fill="#92400e">
                         {postLabelText}
                       </text>
                     </g>
-                  ))}
+                  ) : null}
                 </>
               ) : (
                 <path d={arrow.path} stroke={isHov ? "#3b82f6" : "#94a3b8"} strokeWidth="1.5" fill="none"
@@ -665,7 +663,6 @@ export function ProcessCanvas({
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
                 onClick={() => { if (hasAuto) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
-                onDoubleClick={() => onDeleteConnection(conn.id)}
                 onDragOver={e => { e.preventDefault(); setHoveredConn(conn.id); }}
                 onDragLeave={() => setHoveredConn(null)}
                 onDrop={e => {
