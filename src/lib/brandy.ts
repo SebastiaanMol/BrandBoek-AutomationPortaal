@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { Automatisering } from "@/lib/types";
 
 export interface BrandyContext {
   automationId?: string;
@@ -25,10 +26,11 @@ export interface BrandyMessage {
 
 export async function askBrandy(
   vraag: string,
+  automations: Automatisering[],
   context?: BrandyContext
 ): Promise<BrandyResponse> {
   const { data, error } = await supabase.functions.invoke("brandy-ask", {
-    body: { vraag, context },
+    body: { vraag, context, automations },
   });
 
   if (error) {

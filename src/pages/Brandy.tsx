@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Loader2, ThumbsUp, ThumbsDown, AlertCircle, Sparkles } from "lucide-react";
 import { askBrandy, sendBrandyFeedback, BrandyMessage, BrandyFeedbackLabel } from "@/lib/brandy";
+import { useAutomatiseringen } from "@/lib/hooks";
 import { toast } from "sonner";
 
 const SUGGESTED_QUESTIONS = [
@@ -16,6 +17,7 @@ const SUGGESTED_QUESTIONS = [
 
 export default function Brandy() {
   const [searchParams] = useSearchParams();
+  const { data: automations = [] } = useAutomatiseringen();
   const [messages, setMessages] = useState<BrandyMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -51,7 +53,7 @@ export default function Brandy() {
     setLoading(true);
 
     try {
-      const response = await askBrandy(q, {
+      const response = await askBrandy(q, automations, {
         automationId: contextId,
         automationNaam: contextNaam,
       });

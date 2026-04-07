@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -67,9 +66,10 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { vraag, context } = await req.json() as {
+    const { vraag, context, automations } = await req.json() as {
       vraag: string;
       context?: { automationId?: string; automationNaam?: string };
+      automations?: Array<Record<string, unknown>>;
     };
 
     if (!vraag?.trim()) {
@@ -82,23 +82,12 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // Fetch automations from Supabase for context
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const db = createClient(supabaseUrl, supabaseKey);
-
-    const { data: automations } = await db
-      .from("automatiseringen")
-      .select("id,naam,doel,trigger_beschrijving,stappen,systemen,fasen,owner,status,categorie,afhankelijkheden")
-      .or("import_status.is.null,import_status.eq.approved")
-      .order("created_at", { ascending: true });
-
-    // Compact serialization of automations as context
-    const automationContext = (automations || []).map((a: Record<string, unknown>) => {
+    // Compact serialization of automations passed from frontend
+    const automationContext = (automations || []).map((a) => {
       const stappen = Array.isArray(a.stappen) ? (a.stappen as string[]).join(" → ") : "";
       const systemen = Array.isArray(a.systemen) ? (a.systemen as string[]).join(", ") : "";
       const fasen = Array.isArray(a.fasen) ? (a.fasen as string[]).join(", ") : "";
-      return `${a.id} | ${a.naam} | ${a.categorie} | ${a.status} | Doel: ${a.doel || "—"} | Trigger: ${a.trigger_beschrijving || "—"} | Systemen: ${systemen} | Fasen: ${fasen} | Stappen: ${stappen}`;
+      return `${a.id} | ${a.naam} | ${a.categorie} | ${a.status} | Doel: ${a.doel || "—"} | Trigger: ${a.trigger || "—"} | Systemen: ${systemen} | Fasen: ${fasen} | Stappen: ${stappen}`;
     }).join("\n");
 
     // Build context-aware user message
@@ -118,7 +107,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `${BRANDY_SYSTEM_PROMPT}\n\n== AUTOMATIONS IN HET PORTAAL (${(automations || []).length} stuks) ==\n${automationContext}`,
+            content: `${BRANDY_SYSTEM_PROMPT}\n\n== AUTOMATIONS IN HET PORTAAL (${automationContext ? (automations || []).length : 0} stuks) ==\n${automationContext}`,
           },
           {
             role: "user",
