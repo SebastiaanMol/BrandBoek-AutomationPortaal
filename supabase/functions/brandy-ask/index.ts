@@ -144,7 +144,6 @@ serve(async (req) => {
                   },
                 },
                 required: ["antwoord", "bronnen", "entiteiten", "zekerheid"],
-                additionalProperties: false,
               },
             },
           },
@@ -156,7 +155,7 @@ serve(async (req) => {
     if (!response.ok) {
       const text = await response.text();
       console.error("LLM error:", response.status, text);
-      return new Response(JSON.stringify({ error: "AI gateway fout" }), {
+      return new Response(JSON.stringify({ error: `LLM fout ${response.status}: ${text}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
