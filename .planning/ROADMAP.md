@@ -140,7 +140,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 - [x] 08-01-PLAN.md — Wave 0: Test scaffold (crossLinking.test.ts — deriveRelated full assertions + it.todo stubs for LINK-01/02/03)
-- [ ] 08-02-PLAN.md — Wave 1: Implement LINK-01 through LINK-04 in AutomationDetailPanel.tsx
+- [x] 08-02-PLAN.md — Wave 1: Implement LINK-01 through LINK-04 in AutomationDetailPanel.tsx
 - [ ] 08-03-PLAN.md — Wave 2: Human smoke test of all four cross-links
 **UI hint**: yes
 
@@ -158,4 +158,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Backend & Handover | 0/? | Not started | - |
 | 6. Navigation & Naming | 3/3 | Complete   | 2026-04-01 |
 | 7. Entity Pages | 3/4 | In Progress|  |
-| 8. Cross-Linking | 1/3 | In Progress|  |
+| 8. Cross-Linking | 2/3 | In Progress|  |
