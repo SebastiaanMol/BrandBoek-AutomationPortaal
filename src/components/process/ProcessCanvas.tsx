@@ -141,25 +141,15 @@ function buildArrow(
   // midXOffset staggers parallel connections sharing the same column corridor so they don't overlap.
   const sx = edgeRight(from, fx), ex = edgeLeft(to, tx);
   const midX = sx + DOT_R * 2 + EDGE_PAD + midXOffset;
-  const path = `M ${sx} ${fy} L ${midX} ${fy} L ${midX} ${ty} L ${ex} ${ty}`;
-  const dc: Pt = { x: (sx + midX) / 2, y: fy };
+  // Smooth cubic bezier: exit horizontally, curve into vertical, curve out horizontally into target
+  const cr = Math.min(24, Math.abs(ty - fy) / 2); // corner radius, capped at 24px
+  const goDown = ty > fy;
+  const path = `M ${sx} ${fy} L ${midX - cr} ${fy} C ${midX} ${fy} ${midX} ${fy} ${midX} ${fy + (goDown ? cr : -cr)} L ${midX} ${ty + (goDown ? -cr : cr)} C ${midX} ${ty} ${midX} ${ty} ${midX + cr} ${ty} L ${ex} ${ty}`;
+  const dc: Pt = { x: (sx + midX - cr) / 2, y: fy };
   const pre  = `M ${sx} ${fy} L ${dc.x - DOT_R} ${fy}`;
-  const post = `M ${dc.x + DOT_R} ${fy} L ${midX} ${fy} L ${midX} ${ty} L ${ex} ${ty}`;
-  // Exact 50% midpoint of post-dot path
-  const pSeg1 = midX - (dc.x + DOT_R);
-  const pSeg2 = Math.abs(ty - fy);
-  const pSeg3 = Math.abs(ex - midX);
-  const pHalf = (pSeg1 + pSeg2 + pSeg3) / 2;
-  let postDotMid: Pt; let postDotMidVertical = false;
-  if (pHalf <= pSeg1) {
-    postDotMid = { x: dc.x + DOT_R + pHalf, y: fy };
-  } else if (pHalf <= pSeg1 + pSeg2) {
-    postDotMid = { x: midX, y: fy + (pHalf - pSeg1) * (ty > fy ? 1 : -1) };
-    postDotMidVertical = true;
-  } else {
-    postDotMid = { x: midX + (pHalf - pSeg1 - pSeg2) * (ex > midX ? 1 : -1), y: ty };
-  }
-  return { path, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical, dotCenter: dc, isVertical: false };
+  const post = `M ${dc.x + DOT_R} ${fy} L ${midX - cr} ${fy} C ${midX} ${fy} ${midX} ${fy} ${midX} ${fy + (goDown ? cr : -cr)} L ${midX} ${ty + (goDown ? -cr : cr)} C ${midX} ${ty} ${midX} ${ty} ${midX + cr} ${ty} L ${ex} ${ty}`;
+  const postDotMid: Pt = { x: midX, y: (fy + ty) / 2 };
+  return { path, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: true, dotCenter: dc, isVertical: false };
 }
 
 function dotPositions(center: Pt, n: number): Pt[] {
