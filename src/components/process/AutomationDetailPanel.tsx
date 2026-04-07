@@ -1,9 +1,11 @@
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Zap, ExternalLink, Unlink, ArrowRight, User, Clock, Layers, Lightbulb } from "lucide-react";
 import type { Automation, Connection } from "@/data/processData";
 import { TEAM_CONFIG } from "@/data/processData";
 import type { Automatisering } from "@/lib/types";
+import { useAutomatiseringen } from "@/lib/hooks";
 
 interface AutomationDetailPanelProps {
   automation: Automation | null;
@@ -41,12 +43,23 @@ export function AutomationDetailPanel({
   onDetach,
 }: AutomationDetailPanelProps) {
 
+  const { data: allAutomations } = useAutomatiseringen();
+
   if (!automation) return null;
 
   const cfg        = TEAM_CONFIG[automation.team];
   const fromStep   = steps.find(s => s.id === automation.fromStepId);
   const toStep     = steps.find(s => s.id === automation.toStepId);
   const isAttached = !!(automation.fromStepId && automation.toStepId);
+
+  const relatedAutomations = fullData
+    ? (allAutomations ?? []).filter(a => {
+        if (a.id === fullData.id) return false;
+        const sharedFase = a.fasen?.some(f => fullData.fasen?.includes(f));
+        const sharedSystem = a.systemen?.some(s => fullData.systemen?.includes(s));
+        return sharedFase || sharedSystem;
+      }).slice(0, 5)
+    : [];
 
   return (
     <div
@@ -88,6 +101,17 @@ export function AutomationDetailPanel({
       {/* ── Body ────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
+        {/* LINK-01: View on canvas */}
+        {fullData && (
+          <Link
+            to="/processen"
+            className="text-xs text-primary flex items-center gap-1 hover:underline"
+          >
+            <ExternalLink className="h-3 w-3" />
+            View on canvas
+          </Link>
+        )}
+
         {/* Team + categorie */}
         <div className="flex items-center gap-2 flex-wrap">
           <Badge
@@ -121,7 +145,11 @@ export function AutomationDetailPanel({
           <Section label="Systemen">
             <div className="flex flex-wrap gap-1.5">
               {fullData.systemen.map(s => (
-                <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
+                <Link key={s} to={`/systems?system=${encodeURIComponent(s)}`}>
+                  <Badge variant="secondary" className="text-xs cursor-pointer hover:opacity-80 transition-opacity">
+                    {s}
+                  </Badge>
+                </Link>
               ))}
             </div>
           </Section>
@@ -169,7 +197,12 @@ export function AutomationDetailPanel({
               {fullData.owner && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <User className="h-3.5 w-3.5 shrink-0" />
-                  <span>Owner: <strong className="text-foreground">{fullData.owner}</strong></span>
+                  <span>Owner: <Link
+                    to={`/owners?owner=${encodeURIComponent(fullData.owner)}`}
+                    className="font-medium text-foreground hover:underline text-primary"
+                  >
+                    {fullData.owner}
+                  </Link></span>
                 </div>
               )}
               {fullData.geverifieerdDoor && (
@@ -222,6 +255,24 @@ export function AutomationDetailPanel({
             </div>
           )}
         </Section>
+
+        {/* LINK-04: Related automations */}
+        {relatedAutomations.length > 0 && (
+          <Section label="Related">
+            <div className="space-y-1">
+              {relatedAutomations.map(rel => (
+                <Link
+                  key={rel.id}
+                  to={`/alle?open=${rel.id}`}
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline py-0.5"
+                >
+                  <ArrowRight className="h-3 w-3 shrink-0" />
+                  {rel.naam}
+                </Link>
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* External link */}
         {automation.link && (
