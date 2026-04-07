@@ -8,7 +8,6 @@ import {
   BarChart3,
   Menu,
   LogOut,
-  ClipboardCheck,
   Settings,
   Download,
   Server,
@@ -31,8 +30,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "All Automations", url: "/alle", icon: List },
       { title: "New Automation", url: "/nieuw", icon: PlusCircle },
-      { title: "Verification", url: "/verificatie", icon: ClipboardCheck },
-      { title: "Imports", url: "/imports", icon: Download },
+{ title: "Imports", url: "/imports", icon: Download },
     ],
   },
   {

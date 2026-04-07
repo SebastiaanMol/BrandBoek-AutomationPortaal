@@ -21,6 +21,7 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
   const { data: rows, error } = await supabase
     .from("automatiseringen")
     .select("*")
+    .or("import_status.is.null,import_status.eq.approved")
     .order("created_at", { ascending: true });
 
   if (error) throw error;

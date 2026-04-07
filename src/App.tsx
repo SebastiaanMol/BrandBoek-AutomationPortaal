@@ -9,7 +9,6 @@ import Dashboard from "./pages/Dashboard";
 import NieuweAutomatiseringPage from "./pages/NieuweAutomatiseringPage";
 import AlleAutomatiseringen from "./pages/AlleAutomatiseringen";
 import Analyse from "./pages/Analyse";
-import Verificatie from "./pages/Verificatie";
 import BewerkAutomatisering from "./pages/BewerkAutomatisering";
 import AuthPage from "./pages/AuthPage";
 import Instellingen from "./pages/Instellingen";
@@ -41,8 +40,7 @@ function ProtectedRoutes() {
         <Route path="/nieuw" element={<NieuweAutomatiseringPage />} />
         <Route path="/alle" element={<AlleAutomatiseringen />} />
         <Route path="/bewerk/:id" element={<BewerkAutomatisering />} />
-        <Route path="/verificatie" element={<Verificatie />} />
-        <Route path="/analyse" element={<Analyse />} />
+<Route path="/analyse" element={<Analyse />} />
         <Route path="/instellingen" element={<Instellingen />} />
         <Route path="/processen" element={<Processen />} />
         <Route path="/imports" element={<Imports />} />
