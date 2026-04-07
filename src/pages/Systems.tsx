@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router-dom";
 import { useAutomatiseringen } from "@/lib/hooks";
 import { Systeem } from "@/lib/types";
 import { SystemBadge, StatusBadge, CategorieBadge } from "@/components/Badges";
-import { VerificatieBadge } from "@/components/VerificatieBadge";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Loader2, Server } from "lucide-react";
 
@@ -126,7 +125,6 @@ export default function Systems() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <VerificatieBadge item={a} />
                     <ChevronDown
                       className={`h-4 w-4 text-muted-foreground transition-transform ${
                         isOpen ? "rotate-180" : ""

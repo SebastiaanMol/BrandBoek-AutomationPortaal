@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAutomatiseringen } from "@/lib/hooks";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
-import { VerificatieBadge } from "@/components/VerificatieBadge";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Loader2, Users } from "lucide-react";
 
@@ -101,7 +100,6 @@ export default function Owners() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  <VerificatieBadge item={a} />
                   <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
                 </div>
               </button>
