@@ -231,7 +231,10 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
   const [stappenWarnOpen, setStappenWarnOpen] = useState(false);
 
   const qc      = useQueryClient();
-  const refresh = () => qc.invalidateQueries({ queryKey: ["pending"] });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["pending"] });
+    qc.invalidateQueries({ queryKey: ["automatiseringen"] });
+  };
 
   const approve = useMutation({
     mutationFn: () => approveAutomation(item.id),
@@ -357,7 +360,7 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
                 ? <Input value={draft.categorie} onChange={e => setDraft(d => ({ ...d, categorie: e.target.value }))} className="h-8 text-sm" />
                 : <p className="text-sm">{item.categorie || "—"}</p>}
             </Field>
-            <Field label="Doel" conf={conf.doel} className="col-span-2">
+            <Field label="Doel" conf={item.doel ? undefined : "low"} className="col-span-2">
               {editing
                 ? <Textarea value={draft.doel} onChange={e => setDraft(d => ({ ...d, doel: e.target.value }))} className="text-sm resize-none" rows={2} />
                 : <p className="text-sm text-muted-foreground">
@@ -367,7 +370,7 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
           </div>
 
           {/* Fasen multi-select (per D-02, D-03) */}
-          <Field label="Fasen" conf={conf.fasen}>
+          <Field label="Fasen" conf={(editing ? draft.fasen.length > 0 : item.fasen && item.fasen.length > 0) ? undefined : "low"}>
             {editing ? (
               <div className="flex flex-wrap gap-1.5">
                 {KLANT_FASEN.map(fase => (

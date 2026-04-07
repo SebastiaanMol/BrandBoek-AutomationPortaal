@@ -55,6 +55,7 @@ export interface Automatisering {
   source?: string;
   lastSyncedAt?: string | null;
   branches?: AutomationBranch[];
+  beschrijvingInSimpeleTaal?: string[];
 }
 
 export interface Integration {

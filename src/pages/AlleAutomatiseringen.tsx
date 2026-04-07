@@ -1,14 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAutomatiseringen, useDeleteAutomatisering } from "@/lib/hooks";
 import { exportToCSV } from "@/lib/supabaseStorage";
-import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem } from "@/lib/types";
+import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem, Automatisering } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Download, Search as SearchIcon, Loader2, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, Download, Search as SearchIcon, Loader2, Pencil, Trash2, Zap } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
@@ -19,6 +19,20 @@ export default function AlleAutomatiseringen() {
   const deleteMutation = useDeleteAutomatisering();
   const [openId, setOpenId] = useState<string | null>(searchParams.get("open") || null);
   const [query, setQuery] = useState("");
+
+  // When navigated here with ?open=ID, wait for data then open that item (clear filters so it's visible)
+  const pendingOpen = searchParams.get("open");
+  useEffect(() => {
+    if (!pendingOpen || !data) return;
+    const exists = data.some((a) => a.id === pendingOpen);
+    if (exists) {
+      setOpenId(pendingOpen);
+      setQuery("");
+      setCatFilter("alle");
+      setSysFilter("alle");
+      setStatusFilter("alle");
+    }
+  }, [pendingOpen, data]);
   const [catFilter, setCatFilter] = useState<string>("alle");
   const [sysFilter, setSysFilter] = useState<string>("alle");
   const [statusFilter, setStatusFilter] = useState<string>("alle");
@@ -105,6 +119,7 @@ export default function AlleAutomatiseringen() {
 
       {filtered.map((a) => {
         const isOpen = openId === a.id;
+        const score = completenessScore(a);
         return (
           <div key={a.id} className="bg-card border border-border rounded-[var(--radius-outer)] shadow-sm overflow-hidden">
             <button
@@ -121,6 +136,7 @@ export default function AlleAutomatiseringen() {
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
+                <CompletenessBadge score={score} />
                 <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
               </div>
             </button>
@@ -133,7 +149,8 @@ export default function AlleAutomatiseringen() {
                   transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   className="overflow-hidden"
                 >
-                  <div className="px-5 pb-5 pt-2 border-t border-border space-y-4">
+                  <div className="px-5 pb-5 pt-3 border-t border-border space-y-5">
+                    {/* Actions */}
                     <div className="flex justify-end gap-3">
                       <button
                         onClick={() => navigate(`/bewerk/${a.id}`)}
@@ -174,26 +191,76 @@ export default function AlleAutomatiseringen() {
                         </AlertDialogContent>
                       </AlertDialog>
                     </div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <Detail label="Source System" value={a.categorie} />
-                      <Detail label="Goal" value={a.doel} />
-                      <Detail label="Trigger" value={a.trigger} />
-                      <Detail label="Owner" value={a.owner} />
-                      <Detail label="Dependencies" value={a.afhankelijkheden} />
+
+                    {/* Plain-language description */}
+                    {a.beschrijvingInSimpeleTaal && a.beschrijvingInSimpeleTaal.length > 0 ? (
+                      <div className="bg-secondary/40 rounded-md px-4 py-3 space-y-1.5">
+                        <p className="label-uppercase mb-2">Wat doet deze automatisering?</p>
+                        {a.beschrijvingInSimpeleTaal.map((line, i) => (
+                          <p key={i} className="text-sm text-foreground leading-relaxed">{line}</p>
+                        ))}
+                      </div>
+                    ) : a.doel ? (
+                      <div className="bg-secondary/40 rounded-md px-4 py-3">
+                        <p className="label-uppercase mb-1">Wat doet deze automatisering?</p>
+                        <p className="text-sm text-foreground leading-relaxed">{a.doel}</p>
+                      </div>
+                    ) : null}
+
+                    {/* Trigger */}
+                    {a.trigger && (
+                      <div className="flex items-start gap-2">
+                        <Zap className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <div>
+                          <p className="label-uppercase mb-0.5">Wordt gestart door</p>
+                          <p className="text-sm text-foreground">{a.trigger}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Flow steps */}
+                    {a.stappen.length > 0 && (
+                      <div>
+                        <p className="label-uppercase mb-2">Hoe werkt het?</p>
+                        <div className="flex flex-col gap-1.5">
+                          {a.stappen.map((s, i) => (
+                            <div key={i} className="flex items-start gap-2.5">
+                              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center mt-0.5">
+                                {i + 1}
+                              </span>
+                              <p className="text-sm text-foreground leading-snug pt-0.5">{s}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Phase + meta row */}
+                    <div className="grid md:grid-cols-2 gap-4 pt-1 border-t border-border">
+                      {a.fasen && a.fasen.length > 0 && (
+                        <div>
+                          <p className="label-uppercase mb-1.5">Bedrijfsfasen</p>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {a.fasen.map((f) => (
+                              <span key={f} className="px-2 py-0.5 rounded-full text-[11px] bg-secondary text-foreground border border-border">{f}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {a.owner && <Detail label="Owner" value={a.owner} />}
+                      {a.afhankelijkheden && <Detail label="Dependencies" value={a.afhankelijkheden} />}
                     </div>
+
+                    {/* Systems */}
                     <div>
-                      <p className="label-uppercase mb-1">Systems</p>
+                      <p className="label-uppercase mb-1">Systemen</p>
                       <div className="flex gap-1.5 flex-wrap">
                         {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
                       </div>
                     </div>
-                    <div>
-                      <p className="label-uppercase mb-1">Flow Steps</p>
-                      <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
-                        {a.stappen.map((s, i) => <li key={i}>{s}</li>)}
-                      </ol>
-                    </div>
+
                     {a.verbeterideeën && <Detail label="Improvement Ideas" value={a.verbeterideeën} />}
+
                     {a.mermaidDiagram && (
                       <div>
                         <p className="label-uppercase mb-2">Flow Diagram</p>
@@ -218,5 +285,29 @@ function Detail({ label, value }: { label: string; value: string }) {
       <p className="label-uppercase mb-0.5">{label}</p>
       <p className="text-sm text-foreground">{value || "—"}</p>
     </div>
+  );
+}
+
+function completenessScore(a: Automatisering): number {
+  const checks = [
+    !!a.doel?.trim(),
+    !!a.trigger?.trim(),
+    a.stappen?.length > 0,
+    a.systemen?.length > 0,
+    !!a.owner?.trim(),
+    a.fasen?.length > 0,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+function CompletenessBadge({ score }: { score: number }) {
+  const color =
+    score === 100 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
+    score >= 67   ? "text-amber-600 bg-amber-50 border-amber-200" :
+                    "text-red-600 bg-red-50 border-red-200";
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${color}`}>
+      {score}%
+    </span>
   );
 }

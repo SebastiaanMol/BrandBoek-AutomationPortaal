@@ -4,7 +4,7 @@ import { useAutomatiseringen } from "@/lib/hooks";
 import { Systeem } from "@/lib/types";
 import { SystemBadge, StatusBadge, CategorieBadge } from "@/components/Badges";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Loader2, Server } from "lucide-react";
+import { ChevronDown, Loader2, Server, Zap } from "lucide-react";
 
 export default function Systems() {
   const { data, isLoading } = useAutomatiseringen();
@@ -141,30 +141,76 @@ export default function Systems() {
                       transition={{ type: "spring", stiffness: 300, damping: 30 }}
                       className="overflow-hidden"
                     >
-                      <div className="px-4 pb-4 pt-2 border-t border-border space-y-4">
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <Detail label="Source System" value={a.categorie} />
-                          <Detail label="Goal" value={a.doel} />
-                          <Detail label="Trigger" value={a.trigger} />
-                          <Detail label="Owner" value={a.owner} />
-                          <Detail label="Dependencies" value={a.afhankelijkheden} />
+                      <div className="px-4 pb-4 pt-3 border-t border-border space-y-5">
+                        {/* Plain-language description */}
+                        {a.beschrijvingInSimpeleTaal && a.beschrijvingInSimpeleTaal.length > 0 ? (
+                          <div className="bg-secondary/40 rounded-md px-4 py-3 space-y-1.5">
+                            <p className="label-uppercase mb-2">Wat doet deze automatisering?</p>
+                            {a.beschrijvingInSimpeleTaal.map((line, i) => (
+                              <p key={i} className="text-sm text-foreground leading-relaxed">{line}</p>
+                            ))}
+                          </div>
+                        ) : a.doel ? (
+                          <div className="bg-secondary/40 rounded-md px-4 py-3">
+                            <p className="label-uppercase mb-1">Wat doet deze automatisering?</p>
+                            <p className="text-sm text-foreground leading-relaxed">{a.doel}</p>
+                          </div>
+                        ) : null}
+
+                        {/* Trigger */}
+                        {a.trigger && (
+                          <div className="flex items-start gap-2">
+                            <Zap className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                            <div>
+                              <p className="label-uppercase mb-0.5">Wordt gestart door</p>
+                              <p className="text-sm text-foreground">{a.trigger}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Flow steps */}
+                        {a.stappen.length > 0 && (
+                          <div>
+                            <p className="label-uppercase mb-2">Hoe werkt het?</p>
+                            <div className="flex flex-col gap-1.5">
+                              {a.stappen.map((s, i) => (
+                                <div key={i} className="flex items-start gap-2.5">
+                                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center mt-0.5">
+                                    {i + 1}
+                                  </span>
+                                  <p className="text-sm text-foreground leading-snug pt-0.5">{s}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Meta */}
+                        <div className="grid md:grid-cols-2 gap-4 pt-1 border-t border-border">
+                          {a.fasen && a.fasen.length > 0 && (
+                            <div>
+                              <p className="label-uppercase mb-1.5">Bedrijfsfasen</p>
+                              <div className="flex gap-1.5 flex-wrap">
+                                {a.fasen.map((f) => (
+                                  <span key={f} className="px-2 py-0.5 rounded-full text-[11px] bg-secondary text-foreground border border-border">{f}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {a.owner && <Detail label="Owner" value={a.owner} />}
+                          {a.afhankelijkheden && <Detail label="Dependencies" value={a.afhankelijkheden} />}
                         </div>
+
+                        {/* Systems */}
                         <div>
-                          <p className="label-uppercase mb-1">Systems</p>
+                          <p className="label-uppercase mb-1">Systemen</p>
                           <div className="flex gap-1.5 flex-wrap">
                             {a.systemen.map((s) => (
                               <SystemBadge key={s} systeem={s} />
                             ))}
                           </div>
                         </div>
-                        <div>
-                          <p className="label-uppercase mb-1">Flow Steps</p>
-                          <ol className="list-decimal list-inside text-sm text-foreground space-y-0.5">
-                            {a.stappen.map((s, i) => (
-                              <li key={i}>{s}</li>
-                            ))}
-                          </ol>
-                        </div>
+
                         {a.verbeterideeën && (
                           <Detail label="Improvement Ideas" value={a.verbeterideeën} />
                         )}

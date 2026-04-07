@@ -20,7 +20,7 @@ function toFriendlyDbError(error: any): Error {
 export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
   const { data: rows, error } = await supabase
     .from("automatiseringen")
-    .select("*")
+    .select("*, import_proposal")
     .or("import_status.is.null,import_status.eq.approved")
     .order("created_at", { ascending: true });
 
@@ -60,6 +60,7 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
     externalId: r.external_id ?? undefined,
     source: r.source ?? undefined,
     lastSyncedAt: r.last_synced_at ?? undefined,
+    beschrijvingInSimpeleTaal: (r.import_proposal as any)?.beschrijving_in_simpele_taal ?? undefined,
   }));
 }
 
