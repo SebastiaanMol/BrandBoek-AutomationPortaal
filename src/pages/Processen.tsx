@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { RotateCcw, Save, Plus, ImageDown, FileDown, ChevronDown, HelpCircle, X } from "lucide-react";
+import { RotateCcw, Save, Plus, ImageDown, FileDown, ChevronDown, HelpCircle, X, Sparkles } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +53,7 @@ function toCanvasAutomation(a: Automatisering, existing?: Automation): Automatio
 }
 
 export default function Processen() {
+  const navigate = useNavigate();
   const [state, setState]     = useState<ProcessState>(initialState);
   const [saved, setSaved]     = useState<ProcessState>(initialState);
   const [isDirty, setIsDirty] = useState(false);
@@ -450,6 +452,12 @@ export default function Processen() {
           >
             <Plus className="h-3.5 w-3.5" />
             Stap toevoegen
+          </Button>
+
+          <Button variant="ghost" size="sm" onClick={() => navigate("/brandy")}
+            className="gap-1.5 text-muted-foreground hover:text-foreground">
+            <Sparkles className="h-3.5 w-3.5" />
+            Brandy
           </Button>
 
           <Button variant="ghost" size="icon" onClick={() => setHelpOpen(true)}
