@@ -167,6 +167,8 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
   onPortMouseDown: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
+  const label = auto.name;
+  const estW = Math.max(64, label.length * 6 + 16);
   return (
     <g onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       className="cursor-pointer"
@@ -180,6 +182,18 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
           </svg>
         </div>
       </foreignObject>
+      {/* Tooltip — name of automation, always horizontal, appears on hover */}
+      {hov && (
+        <g style={{ pointerEvents: "none" }}>
+          <rect x={cx - estW / 2} y={cy - DOT_R - 26} width={estW} height={18}
+            rx="4" fill="#1e293b" fillOpacity={0.88} />
+          <text x={cx} y={cy - DOT_R - 17} textAnchor="middle" dominantBaseline="middle"
+            fontSize="10" fontWeight="500" fill="white"
+            style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+            {label}
+          </text>
+        </g>
+      )}
       {/* Port handle — appears on hover for drawing branch connections */}
       {hov && (
         <circle cx={cx + DOT_R} cy={cy} r={5}
@@ -609,9 +623,8 @@ export function ProcessCanvas({
           const hasAuto = connAutos.length > 0;
           const mid = arrow.postDotMid;
           const isEditingPost = editingLabel?.connId === conn.id;
-          const postLabelText = conn.label || (hasAuto ? "klik om te bewerken" : "");
+          const postLabelText = conn.label || "";
           const postEstW = Math.max(80, (postLabelText.length) * 5.5 + 16);
-          const postLabelTransform = arrow.postDotMidVertical ? `rotate(90, ${mid.x}, ${mid.y})` : undefined;
           return (
             <g key={conn.id}>
               {/* Pre-dot segment always in gray; post-dot in amber dashed when automation sits on this connection */}
@@ -621,8 +634,8 @@ export function ProcessCanvas({
                     strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
                   <path d={arrow.postDotPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
                     markerEnd={`url(#${isHov ? "ah-h" : "ah-branch"})`} opacity={0.85} style={{ pointerEvents: "none" }} />
-                  {/* Label on post-dot segment */}
-                  {isEditingPost ? (
+                  {/* Label on post-dot segment — only shown when a label has been set */}
+                  {postLabelText && (isEditingPost ? (
                     <foreignObject x={mid.x - postEstW / 2} y={mid.y - 13} width={postEstW} height={26}>
                       <input autoFocus value={editingLabel!.value}
                         onChange={e => setEditingLabel(prev => prev ? { ...prev, value: e.target.value } : null)}
@@ -631,17 +644,17 @@ export function ProcessCanvas({
                         className="w-full h-full text-center text-[10px] font-medium bg-white border border-amber-300 rounded px-1 outline-none" />
                     </foreignObject>
                   ) : (
-                    <g transform={postLabelTransform} className="cursor-pointer"
+                    <g className="cursor-pointer"
                       onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}>
                       <rect x={mid.x - postEstW / 2} y={mid.y - 8} width={postEstW} height={16}
                         fill="white" fillOpacity={0.92} rx={2} style={{ pointerEvents: "none" }} />
                       <text x={mid.x} y={mid.y} textAnchor="middle" dominantBaseline="middle"
-                        fontSize={10} fontWeight={500} fill={conn.label ? "#92400e" : "#d97706"}
-                        fillOpacity={conn.label ? 1 : 0.6} style={{ pointerEvents: "none" }}>
+                        fontSize={10} fontWeight={500} fill="#92400e"
+                        style={{ pointerEvents: "none" }}>
                         {postLabelText}
                       </text>
                     </g>
-                  )}
+                  ))}
                 </>
               ) : (
                 <path d={arrow.path} stroke={isHov ? "#3b82f6" : "#94a3b8"} strokeWidth="1.5" fill="none"
@@ -845,12 +858,12 @@ export function ProcessCanvas({
             mid = { x: (dotX + DOT_R + ex) / 2, y: dotY };
           }
 
+          // Label always horizontal — positioned above the midpoint of the line
           const labelText = conn.label || "klik om te bewerken";
           const estW = Math.max(80, labelText.length * 5.5 + 16);
-          // When vertical: rotate -90° around midpoint so text runs along the line
-          const labelTransform = labelVertical
-            ? `rotate(90, ${mid.x}, ${mid.y})`
-            : undefined;
+          // Offset label above the line so it never overlaps the path
+          const labelOffsetY = labelVertical ? 0 : -12;
+          const labelOffsetX = labelVertical ? 10 : 0;
           const isEditing = editingLabel?.connId === conn.id;
 
           return (
@@ -859,12 +872,12 @@ export function ProcessCanvas({
               <path d={branchPath} stroke="transparent" strokeWidth="18" fill="none"
                 className="cursor-pointer"
                 onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })} />
-              {/* Visible path (drawn first so label sits on top) */}
+              {/* Visible path */}
               <path d={branchPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
                 markerEnd="url(#ah-branch)" opacity={0.75} style={{ pointerEvents: "none" }} />
-              {/* Label centered at exact 50% of path length */}
+              {/* Label always horizontal, offset from midpoint so it doesn't overlap the line */}
               {isEditing ? (
-                <foreignObject x={mid.x - estW / 2} y={mid.y - 13} width={estW} height={26}>
+                <foreignObject x={mid.x - estW / 2 + labelOffsetX} y={mid.y - 13 + labelOffsetY} width={estW} height={26}>
                   <input
                     autoFocus
                     value={editingLabel!.value}
@@ -883,16 +896,17 @@ export function ProcessCanvas({
                   />
                 </foreignObject>
               ) : (
-                <g className="cursor-pointer" transform={labelTransform}
+                <g className="cursor-pointer"
                   onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}>
                   <rect
-                    x={mid.x - estW / 2} y={mid.y - 9}
+                    x={mid.x - estW / 2 + labelOffsetX} y={mid.y - 9 + labelOffsetY}
                     width={estW} height={18} rx="3"
                     fill="white" fillOpacity={0.92}
                     style={{ pointerEvents: "none" }}
                   />
-                  <text x={mid.x} y={mid.y} textAnchor="middle" dominantBaseline="middle"
-                    fontSize="10" fontWeight="500" fill="#92400e"
+                  <text x={mid.x + labelOffsetX} y={mid.y + labelOffsetY} textAnchor="middle" dominantBaseline="middle"
+                    fontSize="10" fontWeight="500" fill={conn.label ? "#92400e" : "#d97706"}
+                    fillOpacity={conn.label ? 1 : 0.5}
                     style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
                     {labelText}
                   </text>
