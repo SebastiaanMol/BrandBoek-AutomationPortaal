@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: milestone
-status: executing
+milestone: v1.2
+milestone_name: Brandy Proactieve Analyse
+status: defining phases
 stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-04-07T09:34:04.351Z"
+last_updated: "2026-04-07T00:00:00.000Z"
 last_activity: 2026-04-07
 progress:
-  total_phases: 8
+  total_phases: 11
   completed_phases: 4
   total_plans: 24
   completed_plans: 21
@@ -21,24 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** One interactive process overview where every automation Brand Boekhouders uses is visible, organized by customer phase, and explorable by any team member.
-**Current focus:** Phase 08 — Cross-Linking
+**Current focus:** Phase 09 — Brandy Signaalengine
 
 ## Current Position
 
-Phase: 08 (Cross-Linking) — READY TO EXECUTE
-Plan: 2 of 3
-Status: Ready to execute
+Phase: 09 (Brandy Signaalengine) — NOT STARTED
+Plan: 0 of TBD
+Status: Defining phases
 Last activity: 2026-04-07
 
 Progress: [##░░░░░░░░] 20%
 
-## Milestone v1.1 Phases
+## Milestone v1.2 Phases
 
 | Phase | Goal | Requirements | Status |
 |-------|------|--------------|--------|
-| 6. Navigation & Naming | Grouped sidebar, dead pages removed, English labels | NAV-01..03, NAME-01..03 | Not started |
-| 7. Entity Pages | Systems and Owners pages with drill-in | SYS-01..02, OWN-01..02 | Not started |
-| 8. Cross-Linking | Automation detail panel fully wired | LINK-01..04 | Not started |
+| 9. Brandy Signaalengine | Pure TS signal detection module | BSIG-01..04 | Not started |
+| 10. Signalen in Dashboard & All Automations | Top-3 widget + inline row indicators | BDASH-01..02, BLIST-01..02 | Not started |
+| 11. Brandy Proactieve Analyse Pagina | Auto-analysis on open + signal click-throughs | BPAGE-01..02 | Not started |
 
 ## Performance Metrics
 
@@ -122,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-07T09:34:04.346Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-04-07T00:00:00.000Z
+Stopped at: Completed 08-02-PLAN.md — milestone v1.2 roadmap defined
 Resume file: None

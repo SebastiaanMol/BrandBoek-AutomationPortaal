@@ -66,6 +66,30 @@
 - [x] **NAME-02**: Form field labels are consistent across all pages that reference the same concept (e.g. Name, Trigger, Steps, Systems always the same term)
 - [x] **NAME-03**: Status labels (Active, Outdated, Disabled) are consistent across all pages that display automation status
 
+## v1.2 Requirements
+
+### Signal Detection (Brandy Signaalengine)
+
+- [ ] **BSIG-01**: The signal engine detects automations with status "Outdated" and returns them as signals with severity and category
+- [ ] **BSIG-02**: The signal engine detects automations with no owner assigned and returns them as signals
+- [ ] **BSIG-03**: The signal engine detects automations with high complexity but zero or one step and returns them as signals
+- [ ] **BSIG-04**: The signal engine detects automations that are disabled but referenced by other active automations and returns them as signals
+
+### Dashboard Signals (Brandy Dashboard)
+
+- [ ] **BDASH-01**: User can see a dashboard widget listing the top 3 highest-priority signals, each showing signal type and affected automation name
+- [ ] **BDASH-02**: User can click a signal in the dashboard widget and navigate directly to the relevant automation or page
+
+### Automation List Signals (Brandy List)
+
+- [ ] **BLIST-01**: User can see a signal indicator badge on automation rows in All Automations where one or more signals exist
+- [ ] **BLIST-02**: User can hover or click the signal badge on an automation row to read the signal description
+
+### Brandy Analyse Page
+
+- [ ] **BPAGE-01**: When the user opens the Brandy page, an analysis of all current signals runs automatically without requiring a manual trigger
+- [ ] **BPAGE-02**: User can click any signal (from dashboard, list, or Brandy page) and arrive in a Brandy chat session with the affected automation's context pre-loaded and an opening analysis message ready
+
 ## v2 Requirements
 
 ### Enhancements (deferred)
@@ -119,11 +143,22 @@
 | NAME-01 | Phase 6 | Complete |
 | NAME-02 | Phase 6 | Complete |
 | NAME-03 | Phase 6 | Complete |
+| BSIG-01 | Phase 9 | Pending |
+| BSIG-02 | Phase 9 | Pending |
+| BSIG-03 | Phase 9 | Pending |
+| BSIG-04 | Phase 9 | Pending |
+| BDASH-01 | Phase 10 | Pending |
+| BDASH-02 | Phase 10 | Pending |
+| BLIST-01 | Phase 10 | Pending |
+| BLIST-02 | Phase 10 | Pending |
+| BPAGE-01 | Phase 11 | Pending |
+| BPAGE-02 | Phase 11 | Pending |
 
 **Coverage:**
 - v1 requirements: 15 total, 15 mapped ✓
 - v1.1 requirements: 13 total, 13 mapped ✓
+- v1.2 requirements: 10 total, 10 mapped ✓
 
 ---
 *Requirements defined: 2026-03-30*
-*Last updated: 2026-03-31 — v1.1 requirements added (Unified Portal Structure)*
+*Last updated: 2026-04-07 — v1.2 requirements added (Brandy Proactieve Analyse)*

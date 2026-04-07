@@ -6,6 +6,8 @@ The portal infrastructure is built. What remains is making it complete, correct,
 
 Milestone v1.1 (Phases 6–8) transforms the portal into a cohesive, hierarchically organized system: grouped navigation, dedicated entity pages for Systems and Owners, wired-up cross-links in the automation detail panel, and consistent English naming throughout.
 
+Milestone v1.2 (Phases 9–11) adds Brandy Proactieve Analyse: a signal detection engine that identifies automation health issues, surfaces the top signals on the dashboard and automation list, and triggers contextual Brandy chat analysis when the user opens the Brandy page.
+
 ## Phases
 
 **Phase Numbering:**
@@ -22,6 +24,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Navigation & Naming** - Sidebar grouped into named sections, dead pages removed, all labels in English (completed 2026-04-01)
 - [ ] **Phase 7: Entity Pages** - Dedicated Systems and Owners pages with drill-in views
 - [ ] **Phase 8: Cross-Linking** - Automation detail panel wired to process canvas, Systems, Owners, and related automations
+- [ ] **Phase 9: Brandy Signaalengine** - Pure TypeScript signal detection module that classifies automation health issues into typed signals
+- [ ] **Phase 10: Signalen in Dashboard & All Automations** - Top-3 signals widget on the dashboard and inline signal indicators on automation list rows
+- [ ] **Phase 11: Brandy Proactieve Analyse Pagina** - Brandy page runs auto-analysis on open and all signal click-throughs route to Brandy chat with context
 
 ## Phase Details
 
@@ -144,10 +149,45 @@ Plans:
 - [ ] 08-03-PLAN.md — Wave 2: Human smoke test of all four cross-links
 **UI hint**: yes
 
+---
+
+## Milestone v1.2
+
+### Phase 9: Brandy Signaalengine
+**Goal**: A pure TypeScript module detects automation health signals from the automations array and returns typed, categorized results — with no UI dependency
+**Depends on**: Phase 8
+**Requirements**: BSIG-01, BSIG-02, BSIG-03, BSIG-04
+**Success Criteria** (what must be TRUE):
+  1. Calling the signal engine with a known automations array returns a typed array of signals with category, severity, and affected automation ID — verifiable in a unit test without mounting any React component
+  2. All four signal categories (outdated, no owner, high complexity without steps, disabled with active dependencies) are detected correctly and produce no false positives on a clean automation set
+  3. The module is importable by dashboard, list, and Brandy page consumers without circular dependencies
+**Plans**: TBD
+
+### Phase 10: Signalen in Dashboard & All Automations
+**Goal**: Users can see the most important automation health signals at a glance — on the dashboard and inline on every automation row in the list
+**Depends on**: Phase 9
+**Requirements**: BDASH-01, BDASH-02, BLIST-01, BLIST-02
+**Success Criteria** (what must be TRUE):
+  1. User can open the Dashboard and see a widget listing the top 3 signals, each showing the signal type and the affected automation name
+  2. User can click a signal in the dashboard widget and be taken directly to the relevant automation or page
+  3. User can see a signal indicator badge on each automation row in All Automations where a signal exists, and hovering or clicking it shows the signal description
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 11: Brandy Proactieve Analyse Pagina
+**Goal**: When the user opens the Brandy page, it automatically runs an analysis of all signals and every signal is a launchpad into a Brandy chat conversation with full context
+**Depends on**: Phase 10
+**Requirements**: BPAGE-01, BPAGE-02
+**Success Criteria** (what must be TRUE):
+  1. User can open the Brandy page and within a few seconds see an analysis summary of all current signals — without clicking any button
+  2. User can click any signal (from the dashboard, list, or Brandy page) and land in a Brandy chat session that already has the automation context loaded and an opening analysis message ready
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -159,3 +199,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 6. Navigation & Naming | 3/3 | Complete   | 2026-04-01 |
 | 7. Entity Pages | 3/4 | In Progress|  |
 | 8. Cross-Linking | 2/3 | In Progress|  |
+| 9. Brandy Signaalengine | 0/? | Not started | - |
+| 10. Signalen in Dashboard & All Automations | 0/? | Not started | - |
+| 11. Brandy Proactieve Analyse Pagina | 0/? | Not started | - |
