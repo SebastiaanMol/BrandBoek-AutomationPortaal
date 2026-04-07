@@ -87,6 +87,7 @@ export default function Processen() {
   const { data: dbAutomations } = useAutomatiseringen();
   useEffect(() => {
     if (!dbAutomations) return;
+    if (loading) return; // wait for fetchProcessState to populate savedLinksRef
     setState(prev => ({
       ...prev,
       automations: dbAutomations.map(a => {
@@ -95,7 +96,7 @@ export default function Processen() {
         return toCanvasAutomation(a, existing ?? (savedLink ? { ...savedLink } as Automation : undefined));
       }),
     }));
-  }, [dbAutomations]);
+  }, [dbAutomations, loading]);
 
   // UI state
   const [selectedAuto, setSelectedAuto] = useState<Automation | null>(null);
