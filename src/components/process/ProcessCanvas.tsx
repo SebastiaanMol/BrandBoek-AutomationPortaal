@@ -105,6 +105,7 @@ function buildArrow(
   to: ProcessStep,
   colX: number[],
   laneStarts: Record<TeamKey, number>,
+  midXOffset = 0,
 ): ArrowData {
   const fx = colX[from.column], fy = stepCY(from, laneStarts);
   const tx = colX[to.column],   ty = stepCY(to, laneStarts);
@@ -135,8 +136,11 @@ function buildArrow(
   }
 
   // Orthogonal routing: exit right → vertical → enter left (90° corners only)
+  // The vertical segment is placed just past the from-step's right edge (in the inter-column gap)
+  // rather than at the midpoint, so it never passes through intermediate step nodes.
+  // midXOffset staggers parallel connections sharing the same column corridor so they don't overlap.
   const sx = edgeRight(from, fx), ex = edgeLeft(to, tx);
-  const midX = (sx + ex) / 2;
+  const midX = sx + DOT_R * 2 + EDGE_PAD + midXOffset;
   const path = `M ${sx} ${fy} L ${midX} ${fy} L ${midX} ${ty} L ${ex} ${ty}`;
   const dc: Pt = { x: (sx + midX) / 2, y: fy };
   const pre  = `M ${sx} ${fy} L ${dc.x - DOT_R} ${fy}`;
@@ -348,6 +352,31 @@ export function ProcessCanvas({
     [connections],
   );
 
+  // Stagger offsets for parallel orthogonal connections sharing the same column corridor.
+  // Groups connections by (fromColumn, toColumn). Within each group, orthogonal connections
+  // (different rows) get a midX offset so their vertical segments don't overlap.
+  const connOffsets = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const conn of stepConnections) {
+      const from = steps.find(s => s.id === conn.fromStepId);
+      const to   = steps.find(s => s.id === conn.toStepId);
+      if (!from || !to) continue;
+      if (from.team === to.team && stepRow(from) === stepRow(to)) continue; // same-row = straight, no overlap
+      if (from.column === to.column) continue; // same-col = vertical, no midX
+      const key = `${from.column}-${to.column}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(conn.id);
+    }
+    const offsets = new Map<string, number>();
+    for (const ids of groups.values()) {
+      if (ids.length < 2) continue; // single connection in corridor — no offset needed
+      ids.forEach((id, i) => {
+        offsets.set(id, (i - (ids.length - 1) / 2) * 16);
+      });
+    }
+    return offsets;
+  }, [stepConnections, steps]);
+
   // Build a map of automationId → SVG dot center position
   const autoPositions = useMemo(() => {
     const map = new Map<string, Pt>();
@@ -357,13 +386,13 @@ export function ProcessCanvas({
       if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) continue;
       const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
       if (!connAutos.length) continue;
-      const arrow = buildArrow(from, to, colX, laneStarts);
+      const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
       dotPositions(arrow.dotCenter, connAutos.length).forEach((pos, i) => {
         map.set(connAutos[i].id, pos);
       });
     }
     return map;
-  }, [steps, stepConnections, automations, colX, laneStarts]);
+  }, [steps, stepConnections, automations, colX, laneStarts, connOffsets]);
 
   const clientToSvg = useCallback((clientX: number, clientY: number): Pt => {
     const svg = svgRef.current;
@@ -584,7 +613,7 @@ export function ProcessCanvas({
           const from = steps.find(s => s.id === conn.fromStepId);
           const to   = steps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return null;
-          const arrow = buildArrow(from, to, colX, laneStarts);
+          const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           const isHov = hoveredConn === conn.id;
           const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
           const hasAuto = connAutos.length > 0;
@@ -652,7 +681,7 @@ export function ProcessCanvas({
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
           const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
           if (!connAutos.length) return [];
-          const arrow = buildArrow(from, to, colX, laneStarts);
+          const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           return dotPositions(arrow.dotCenter, connAutos.length).map((pos, i) => (
             <AutomationDot key={connAutos[i].id} auto={connAutos[i]} cx={pos.x} cy={pos.y}
               onClick={ev => { ev.stopPropagation(); onAutomationClick(connAutos[i]); }}
