@@ -440,11 +440,6 @@ export default function Processen() {
             Opslaan
           </Button>
 
-          <Button variant="ghost" size="sm" onClick={() => setHelpOpen(true)}
-            className="gap-1.5 text-muted-foreground hover:text-foreground ml-1" title="Uitleg">
-            <HelpCircle className="h-4 w-4" />
-          </Button>
-
           <Button
             draggable
             variant="outline" size="sm"
@@ -455,6 +450,11 @@ export default function Processen() {
           >
             <Plus className="h-3.5 w-3.5" />
             Stap toevoegen
+          </Button>
+
+          <Button variant="ghost" size="icon" onClick={() => setHelpOpen(true)}
+            className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Uitleg">
+            <HelpCircle className="h-4 w-4" />
           </Button>
         </div>
       </div>
