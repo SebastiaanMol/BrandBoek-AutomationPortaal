@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { RotateCcw, Save, Plus, ImageDown, FileDown, ChevronDown } from "lucide-react";
+import { RotateCcw, Save, Plus, ImageDown, FileDown, ChevronDown, HelpCircle, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +58,7 @@ export default function Processen() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
   const savedLinksRef = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
 
   // ── Load canvas from Supabase on mount ─────────────────────────────────────
@@ -439,6 +440,11 @@ export default function Processen() {
             Opslaan
           </Button>
 
+          <Button variant="ghost" size="sm" onClick={() => setHelpOpen(true)}
+            className="gap-1.5 text-muted-foreground hover:text-foreground ml-1" title="Uitleg">
+            <HelpCircle className="h-4 w-4" />
+          </Button>
+
           <Button
             draggable
             variant="outline" size="sm"
@@ -548,6 +554,48 @@ export default function Processen() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Help modal ────────────────────────────────────────────────── */}
+      {helpOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setHelpOpen(false)}>
+          <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h2 className="text-base font-semibold">Hoe werkt de proceskaart?</h2>
+              <button onClick={() => setHelpOpen(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4 text-sm overflow-y-auto max-h-[70vh]">
+              <Section title="🗂 Stappen beheren">
+                <p>Sleep de knop <strong>"Stap toevoegen"</strong> naar de canvas om een nieuwe stap neer te zetten op de juiste swimlane en kolom. Of klik erop om een stap aan te maken en daarna te verplaatsen.</p>
+                <p>Klik op een bestaande stap om hem te <strong>bewerken of te verwijderen</strong>.</p>
+                <p>Sleep een stap naar een andere plek om hem te <strong>verplaatsen</strong>.</p>
+              </Section>
+              <Section title="➡️ Verbindingen tekenen">
+                <p>Sleep vanuit het <strong>kleine bolletje rechts</strong> op een stap of event naar een andere stap om een verbinding te tekenen.</p>
+                <p><strong>Rechtermuisknop</strong> op een verbindingslijn → "Verbinding verwijderen".</p>
+                <p>Klik op een lijn waarop een automation zit om er een <strong>label</strong> aan toe te voegen (bijv. "Ja" of "Nee").</p>
+              </Section>
+              <Section title="⚡ Automations plaatsen">
+                <p>Automations staan rechts in het <strong>paneel "Niet geplaatst"</strong>. Sleep een automation naar een verbindingslijn op de canvas om hem te koppelen.</p>
+                <p>Klik op een automation-bolletje om de <strong>details</strong> te zien.</p>
+                <p>Hover over een bolletje om de <strong>naam</strong> te zien.</p>
+                <p>Sleep vanuit het bolletje rechts op een automation om een <strong>vertakking</strong> te tekenen naar een andere stap.</p>
+              </Section>
+              <Section title="💾 Opslaan">
+                <p>Wijzigingen worden <strong>niet automatisch opgeslagen</strong>. Klik op <strong>"Opslaan"</strong> om de huidige staat op te slaan. De badge "Niet opgeslagen" verdwijnt dan.</p>
+                <p>Met <strong>"Reset"</strong> keer je terug naar de laatste opgeslagen versie.</p>
+              </Section>
+              <Section title="📤 Exporteren">
+                <p>Klik op <strong>"Export"</strong> rechtsboven om de proceskaart te downloaden als <strong>PNG</strong> of <strong>PDF</strong>.</p>
+              </Section>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Bevestiging Opslaan ────────────────────────────────────────── */}
       <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
         <AlertDialogContent>
@@ -565,6 +613,15 @@ export default function Processen() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="font-semibold text-foreground">{title}</p>
+      <div className="space-y-1 text-muted-foreground">{children}</div>
     </div>
   );
 }
