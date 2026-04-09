@@ -173,7 +173,7 @@ export default function Brandy() {
           </div>
           <button
             onClick={handleAnalyse}
-            disabled={mindLoading}
+            disabled={mindLoading || mindFetching}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-40"
           >
             {mindLoading ? (
