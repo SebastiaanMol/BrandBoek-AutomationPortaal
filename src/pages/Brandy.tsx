@@ -1,8 +1,18 @@
+// src/pages/Brandy.tsx
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Loader2, ThumbsUp, ThumbsDown, AlertCircle, Sparkles } from "lucide-react";
-import { askBrandy, sendBrandyFeedback, BrandyMessage, BrandyFeedbackLabel } from "@/lib/brandy";
+import { Send, Loader2, ThumbsUp, ThumbsDown, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
+import {
+  askBrandy,
+  sendBrandyFeedback,
+  fetchBrandyMind,
+  runBrandyAnalyse,
+  BrandyMessage,
+  BrandyFeedbackLabel,
+  BrandyMind,
+} from "@/lib/brandy";
+import { detectSignalen } from "@/lib/signalen";
 import { useAutomatiseringen } from "@/lib/hooks";
 import { toast } from "sonner";
 
@@ -15,9 +25,22 @@ const SUGGESTED_QUESTIONS = [
   "Hoe werkt de BTW-pipeline?",
 ];
 
+const ERNST_CLASSES: Record<string, string> = {
+  error: "bg-red-100 text-red-700",
+  warning: "bg-amber-100 text-amber-700",
+  info: "bg-blue-100 text-blue-700",
+};
+
 export default function Brandy() {
   const [searchParams] = useSearchParams();
   const { data: automations = [] } = useAutomatiseringen();
+
+  // Mind state
+  const [mind, setMind] = useState<BrandyMind | null>(null);
+  const [mindFetching, setMindFetching] = useState(true);
+  const [mindLoading, setMindLoading] = useState(false);
+
+  // Chat state
   const [messages, setMessages] = useState<BrandyMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,13 +52,29 @@ export default function Brandy() {
   const contextNaam = searchParams.get("naam") ?? undefined;
 
   useEffect(() => {
+    fetchBrandyMind().then(setMind).finally(() => setMindFetching(false));
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Auto-focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  async function handleAnalyse() {
+    setMindLoading(true);
+    try {
+      const signalen = detectSignalen(automations);
+      const result = await runBrandyAnalyse(signalen, automations);
+      setMind(result);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Analyse mislukt");
+    } finally {
+      setMindLoading(false);
+    }
+  }
 
   async function handleSubmit(vraag?: string) {
     const q = (vraag ?? input).trim();
@@ -70,7 +109,6 @@ export default function Brandy() {
       setMessages((m) => [...m, brandyMsg]);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Brandy kon geen antwoord geven");
-      // Remove the user message on error so user can retry
       setMessages((m) => m.filter((msg) => msg.id !== userMsg.id));
     } finally {
       setLoading(false);
@@ -116,6 +154,79 @@ export default function Brandy() {
         )}
       </div>
 
+      {/* Mind panel */}
+      <div className="px-6 py-4 border-b border-border bg-secondary/20 shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Analyse</span>
+            {mind && (
+              <span className="text-[11px] text-muted-foreground">
+                {new Date(mind.aangemaakt_op).toLocaleDateString("nl-NL", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+                {" · "}
+                {mind.automation_count} automatiseringen
+              </span>
+            )}
+          </div>
+          <button
+            onClick={handleAnalyse}
+            disabled={mindLoading}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {mindLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+            Analyseer
+          </button>
+        </div>
+
+        {mindFetching ? (
+          <p className="text-sm text-muted-foreground">Laden...</p>
+        ) : !mind ? (
+          <p className="text-sm text-muted-foreground italic">
+            Brandy heeft nog geen analyse uitgevoerd — klik op Analyseer om te beginnen.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-foreground/80 leading-relaxed">{mind.samenvatting}</p>
+            {mind.prioriteiten.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                  Prioritaire signalen
+                </p>
+                <div className="grid gap-1.5">
+                  {mind.prioriteiten.map((sigId) => {
+                    const sig = mind.signalen.find((s) => s.id === sigId);
+                    if (!sig) return null;
+                    return (
+                      <div
+                        key={sigId}
+                        className="flex items-start gap-2 px-3 py-2 rounded-md border border-border bg-card text-sm"
+                      >
+                        <span
+                          className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${ERNST_CLASSES[sig.ernst] ?? ""}`}
+                        >
+                          {sig.ernst}
+                        </span>
+                        <span>
+                          <span className="font-medium">{sig.naam}</span>
+                          <span className="text-muted-foreground"> — {sig.bericht}</span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {showWelcome && (
@@ -153,10 +264,7 @@ export default function Brandy() {
               ) : (
                 <div className="max-w-[85%] space-y-3">
                   <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3 space-y-3">
-                    {/* Answer text */}
                     <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-
-                    {/* Entities */}
                     {msg.response && msg.response.entiteiten.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border">
                         {msg.response.entiteiten.map((e) => (
@@ -166,8 +274,6 @@ export default function Brandy() {
                         ))}
                       </div>
                     )}
-
-                    {/* Sources */}
                     {msg.response && msg.response.bronnen.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         <span className="text-[10px] text-muted-foreground">Bronnen:</span>
@@ -178,8 +284,6 @@ export default function Brandy() {
                         ))}
                       </div>
                     )}
-
-                    {/* Certainty */}
                     {msg.response?.zekerheid === "laag" && (
                       <div className="flex items-center gap-1.5 text-[10px] text-amber-600">
                         <AlertCircle className="h-3 w-3" />
@@ -187,8 +291,6 @@ export default function Brandy() {
                       </div>
                     )}
                   </div>
-
-                  {/* Feedback */}
                   <div className="flex items-center gap-2 px-1">
                     <span className="text-[10px] text-muted-foreground">Klopt dit?</span>
                     {feedbackSent.has(msg.id) ? (
