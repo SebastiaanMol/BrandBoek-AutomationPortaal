@@ -65,7 +65,7 @@ serve(async (req) => {
       }>;
     };
 
-    if (!signalen || !automations) {
+    if (!Array.isArray(signalen) || !Array.isArray(automations) || automations.length === 0) {
       return new Response(JSON.stringify({ error: "signalen en automations zijn verplicht" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -158,10 +158,15 @@ Kies dan de 5 meest urgente signal-IDs op basis van bedrijfsimpact.
       });
     }
 
-    const parsed = JSON.parse(toolCall.function.arguments) as {
-      samenvatting: string;
-      prioriteiten: string[];
-    };
+    let parsed: { samenvatting: string; prioriteiten: string[] };
+    try {
+      parsed = JSON.parse(toolCall.function.arguments);
+    } catch {
+      return new Response(JSON.stringify({ error: "Brandy stuurde een onleesbaar antwoord" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
