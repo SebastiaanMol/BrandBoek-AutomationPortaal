@@ -270,16 +270,16 @@ serve(async (req) => {
 
     // Step 3: Fetch content + extract metadata + upsert
     for (const filePath of automationFiles) {
+      syncedPaths.add(filePath);
       try {
         const content = await fetchFileContent(projectId, filePath, branch, pat);
         const filename = filePath.split("/").pop() ?? filePath;
         const metadata = await extractMetadata(filename, content, GEMINI_API_KEY);
         const fasen = getFasen(filePath);
-        syncedPaths.add(filePath);
 
         if (existingMap[filePath]) {
           // Update existing record — preserve status and other user-edited fields
-          await db
+          const { error: updateError } = await db
             .from("automatiseringen")
             .update({
               naam:                 metadata.naam,
@@ -292,11 +292,12 @@ serve(async (req) => {
               last_synced_at:       now,
             })
             .eq("id", existingMap[filePath].id);
+          if (updateError) throw updateError;
           updated++;
         } else {
           // New record — auto-approved, no review queue
           const { data: newId } = await db.rpc("generate_auto_id");
-          await db.from("automatiseringen").insert({
+          const { error: insertError } = await db.from("automatiseringen").insert({
             id:                   newId || `AUTO-GL-${Date.now()}`,
             naam:                 metadata.naam,
             doel:                 metadata.doel,
@@ -316,6 +317,7 @@ serve(async (req) => {
             gitlab_file_path:     filePath,
             last_synced_at:       now,
           });
+          if (insertError) throw insertError;
           inserted++;
         }
       } catch (e) {
