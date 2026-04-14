@@ -21,7 +21,7 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
   const { data: rows, error } = await supabase
     .from("automatiseringen")
     .select("*, import_proposal")
-    .or("import_status.is.null,import_status.eq.approved")
+    .or("source.is.null,import_status.is.null,import_status.eq.approved")
     .order("created_at", { ascending: true });
 
   if (error) throw error;
@@ -61,6 +61,10 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
     source: r.source ?? undefined,
     lastSyncedAt: r.last_synced_at ?? undefined,
     beschrijvingInSimpeleTaal: (r.import_proposal as any)?.beschrijving_in_simpele_taal ?? undefined,
+    gitlabFilePath: r.gitlab_file_path ?? undefined,
+    gitlabLastCommit: r.gitlab_last_commit ?? undefined,
+    aiDescription: r.ai_description ?? undefined,
+    aiDescriptionUpdatedAt: r.ai_description_updated_at ?? undefined,
   }));
 }
 
@@ -241,6 +245,22 @@ export async function triggerZapierSync(): Promise<{ inserted: number; updated: 
 
 export async function triggerTypeformSync(): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
   return invokeEdgeFunction("typeform-sync");
+}
+
+export async function upsertGitlabData(
+  id: string,
+  data: { gitlabFilePath: string; gitlabLastCommit: string; aiDescription: string }
+): Promise<void> {
+  const { error } = await supabase
+    .from("automatiseringen")
+    .update({
+      gitlab_file_path: data.gitlabFilePath,
+      gitlab_last_commit: data.gitlabLastCommit,
+      ai_description: data.aiDescription,
+      ai_description_updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) throw error;
 }
 
 // ─── Process state (canvas) ───────────────────────────────────────────────────

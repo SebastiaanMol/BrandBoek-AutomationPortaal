@@ -56,6 +56,10 @@ export interface Automatisering {
   lastSyncedAt?: string | null;
   branches?: AutomationBranch[];
   beschrijvingInSimpeleTaal?: string[];
+  gitlabFilePath?: string;
+  gitlabLastCommit?: string;
+  aiDescription?: string;
+  aiDescriptionUpdatedAt?: string | null;
 }
 
 export interface Integration {
