@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync } from "@/lib/hooks";
+import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync } from "@/lib/hooks";
 import { Integration } from "@/lib/types";
 import { UseMutationResult } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -132,6 +132,166 @@ function IntegrationCard({ type, label, description, badge, badgeClass, tokenLab
   );
 }
 
+function GitLabCard() {
+  const { data: integration, isLoading } = useIntegration("gitlab");
+  const saveIntegration = useSaveIntegration();
+  const deleteIntegration = useDeleteIntegration();
+  const { syncGitlab, isSyncing, progress, error } = useGitlabSync();
+
+  const [pat, setPat] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [branch, setBranch] = useState("main");
+  const [showPat, setShowPat] = useState(false);
+  const isConnected = !!integration;
+
+  async function handleConnect() {
+    if (!pat.trim() || !projectId.trim()) {
+      toast.error("Voer een PAT en project ID in");
+      return;
+    }
+    try {
+      await saveIntegration.mutateAsync({
+        type: "gitlab",
+        token: JSON.stringify({ pat: pat.trim(), projectId: projectId.trim(), branch: branch.trim() || "main" }),
+      });
+      setPat("");
+      setProjectId("");
+      setBranch("main");
+      toast.success("GitLab verbonden");
+    } catch (e: any) {
+      toast.error((e as Error).message || "Verbinding mislukt");
+    }
+  }
+
+  async function handleSync() {
+    try {
+      const result = await syncGitlab();
+      toast.success(`GitLab sync voltooid — ${result.synced} automations bijgewerkt`);
+    } catch (e: any) {
+      toast.error((e as Error).message || "Sync mislukt");
+    }
+  }
+
+  async function handleDisconnect() {
+    try {
+      await deleteIntegration.mutateAsync("gitlab");
+      toast.success("GitLab ontkoppeld");
+    } catch (e: any) {
+      toast.error((e as Error).message || "Ontkoppelen mislukt");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-6 space-y-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0 bg-orange-50 border border-orange-100 text-orange-600">
+            <span className="font-bold text-sm">GL</span>
+          </div>
+          <div>
+            <h2 className="font-medium text-sm">GitLab</h2>
+            <p className="text-xs text-muted-foreground">Lees automation-bestanden en genereer AI-beschrijvingen</p>
+          </div>
+        </div>
+        {!isLoading && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isConnected ? (
+              <><CheckCircle2 className="h-3.5 w-3.5 text-green-500" /><span className="text-xs text-green-600 font-medium">Verbonden</span></>
+            ) : (
+              <span className="text-xs text-muted-foreground">Niet verbonden</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
+          {error}
+        </div>
+      )}
+
+      {!isLoading && !isConnected && (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Personal Access Token</label>
+            <div className="relative">
+              <input
+                type={showPat ? "text" : "password"}
+                value={pat}
+                onChange={(e) => setPat(e.target.value)}
+                placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm pr-16 focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button type="button" onClick={() => setShowPat(!showPat)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground">
+                {showPat ? "Verberg" : "Toon"}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">Maak een token aan in GitLab → Profile → Access Tokens met <code className="bg-muted px-1 rounded">read_repository</code> scope.</p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Project ID</label>
+            <input
+              type="text"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              placeholder="12345678"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground">Te vinden in GitLab → project homepage → Project ID.</p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Branch</label>
+            <input
+              type="text"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              placeholder="main"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <button
+            onClick={handleConnect}
+            disabled={saveIntegration.isPending || !pat.trim() || !projectId.trim()}
+            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            {saveIntegration.isPending ? "Verbinden..." : "Verbinden"}
+          </button>
+        </div>
+      )}
+
+      {!isLoading && isConnected && (
+        <div className="space-y-3">
+          {progress && (
+            <p className="text-xs text-muted-foreground">
+              Bezig: {progress.currentName} ({progress.current}/{progress.total})
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+              {isSyncing ? "Bezig met synchroniseren..." : "AI-beschrijvingen vernieuwen"}
+            </button>
+            <button
+              onClick={handleDisconnect}
+              disabled={deleteIntegration.isPending}
+              className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-50 transition-colors"
+            >
+              <Link2Off className="h-3.5 w-3.5" />
+              Ontkoppelen
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Instellingen() {
   const hubspotSync = useHubSpotSync();
   const zapierSync = useZapierSync();
@@ -179,6 +339,8 @@ export default function Instellingen() {
         tokenHint='Ga naar <strong>typeform.com</strong> → Account → Developer apps → Personal tokens.'
         syncMutation={typeformSync}
       />
+
+      <GitLabCard />
     </div>
   );
 }
