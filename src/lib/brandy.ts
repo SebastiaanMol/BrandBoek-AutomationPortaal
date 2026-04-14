@@ -16,6 +16,8 @@ export interface BrandyResponse {
   bronnen: string[];
   entiteiten: string[];
   zekerheid: "hoog" | "gemiddeld" | "laag";
+  diagnose_modus?: boolean;
+  stap_nummer?: number;
 }
 
 export type BrandyFeedbackLabel = "correct" | "incorrect" | "onvolledig";
