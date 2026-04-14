@@ -92,6 +92,7 @@ ${autoSummary}
 
 Analyseer dit landschap. Schrijf een Nederlandse samenvatting van de huidige staat.
 Kies dan de 5 meest urgente signal-IDs op basis van bedrijfsimpact.
+Geef ook 2-3 concrete suggesties voor nieuwe automations die ontbreken op basis van de bedrijfscontext.
     `.trim();
 
     const response = await fetch(
@@ -128,8 +129,25 @@ Kies dan de 5 meest urgente signal-IDs op basis van bedrijfsimpact.
                       description:
                         "De 5 meest urgente signal IDs (exact zoals aangeleverd), gesorteerd van hoogste naar laagste prioriteit op basis van bedrijfsimpact.",
                     },
+                    suggesties: {
+                      type: "array",
+                      description: "2-3 concrete suggesties voor nieuwe automations die ontbreken",
+                      items: {
+                        type: "object",
+                        properties: {
+                          titel: { type: "string", description: "Korte titel van de suggestie" },
+                          body: { type: "string", description: "Uitleg waarom deze automation nuttig is en wat hij doet" },
+                          tags: {
+                            type: "array",
+                            items: { type: "string" },
+                            description: "2-3 trefwoorden (pipeline, systeem, proces)",
+                          },
+                        },
+                        required: ["titel", "body", "tags"],
+                      },
+                    },
                   },
-                  required: ["samenvatting", "prioriteiten"],
+                  required: ["samenvatting", "prioriteiten", "suggesties"],
                 },
               },
             },
@@ -158,7 +176,7 @@ Kies dan de 5 meest urgente signal-IDs op basis van bedrijfsimpact.
       });
     }
 
-    let parsed: { samenvatting: string; prioriteiten: string[] };
+    let parsed: { samenvatting: string; prioriteiten: string[]; suggesties: Array<{ titel: string; body: string; tags: string[] }> };
     try {
       parsed = JSON.parse(toolCall.function.arguments);
     } catch {
@@ -179,6 +197,7 @@ Kies dan de 5 meest urgente signal-IDs op basis van bedrijfsimpact.
         signalen,
         samenvatting: parsed.samenvatting,
         prioriteiten: parsed.prioriteiten,
+        suggesties: parsed.suggesties ?? [],
         automation_count: automations.length,
       })
       .select()
