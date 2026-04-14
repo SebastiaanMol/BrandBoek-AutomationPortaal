@@ -12,7 +12,7 @@ import {
   BrandyFeedbackLabel,
   BrandyMind,
 } from "@/lib/brandy";
-import { detectSignalen } from "@/lib/signalen";
+import { detectSignalen, type Signaal } from "@/lib/signalen";
 import { useAutomatiseringen } from "@/lib/hooks";
 import { toast } from "sonner";
 
@@ -133,7 +133,7 @@ export default function Brandy() {
     }
   }
 
-  function handleSignaalClick(sig: { naam: string; bericht: string }) {
+  function handleSignaalClick(sig: Signaal) {
     setActiveTab("chat");
     handleSubmit(`Wat moet ik doen met het signaal "${sig.naam}"? (${sig.bericht})`);
   }
@@ -379,11 +379,177 @@ export default function Brandy() {
         </>
       )}
 
-      {/* Inzichten tab — placeholder, filled in Task 4 */}
+      {/* Inzichten tab */}
       {activeTab === "inzichten" && (
-        <div className="flex-1 overflow-y-auto py-6">
-          <div className="max-w-5xl mx-auto px-6">
-            <p className="text-sm text-muted-foreground">Inzichten worden hier geladen...</p>
+        <div className="flex-1 overflow-y-auto py-5">
+          <div className="max-w-5xl mx-auto px-6 flex flex-col gap-5">
+
+            {/* Loading state */}
+            {mindFetching && (
+              <p className="text-sm text-muted-foreground">Laden...</p>
+            )}
+
+            {/* Empty state */}
+            {!mindFetching && !mind && (
+              <div className="text-center py-16">
+                <p className="text-sm text-muted-foreground">Brandy heeft nog geen analyse uitgevoerd.</p>
+                <p className="text-[11px] text-muted-foreground/60 mt-1">Klik op Analyseer om te beginnen.</p>
+              </div>
+            )}
+
+            {mind && (() => {
+              // Derived counts
+              const errorCount = mind.signalen.filter((s) => s.ernst === "error").length;
+              const warningCount = mind.signalen.filter((s) => s.ernst === "warning").length;
+              const suggestieCount = mind.suggesties?.length ?? 0;
+              const okCount = Math.max(0, mind.automation_count - errorCount - warningCount);
+              const analyseDate = new Date(mind.aangemaakt_op).toLocaleDateString("nl-NL", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              });
+
+              const CATEGORIES: Array<{
+                key: "status" | "kwaliteit" | "structuur" | "verificatie";
+                label: string;
+                icon: string;
+                iconBg: string;
+                countBg: string;
+                countText: string;
+              }> = [
+                { key: "status", label: "Status", icon: "🔄", iconBg: "bg-amber-100", countBg: "bg-amber-100", countText: "text-amber-700" },
+                { key: "kwaliteit", label: "Kwaliteit", icon: "📋", iconBg: "bg-blue-100", countBg: "bg-blue-100", countText: "text-blue-700" },
+                { key: "structuur", label: "Structuur", icon: "🔗", iconBg: "bg-green-100", countBg: "bg-green-100", countText: "text-green-700" },
+                { key: "verificatie", label: "Verificatie", icon: "✓", iconBg: "bg-purple-100", countBg: "bg-purple-100", countText: "text-purple-700" },
+              ];
+
+              const ernstDot = (ernst: string) => {
+                if (ernst === "error") return "bg-red-500";
+                if (ernst === "warning") return "bg-amber-400";
+                return "bg-indigo-400";
+              };
+
+              return (
+                <>
+                  {/* Summary row */}
+                  <div className="grid grid-cols-5 gap-3">
+                    <div className="bg-card border border-border rounded-xl p-3.5">
+                      <div className="text-2xl font-bold leading-none mb-1 text-red-600">{errorCount}</div>
+                      <div className="text-[11px] text-muted-foreground">Errors</div>
+                    </div>
+                    <div className="bg-card border border-border rounded-xl p-3.5">
+                      <div className="text-2xl font-bold leading-none mb-1 text-amber-600">{warningCount}</div>
+                      <div className="text-[11px] text-muted-foreground">Warnings</div>
+                    </div>
+                    <div className="bg-card border border-border rounded-xl p-3.5">
+                      <div className="text-2xl font-bold leading-none mb-1 text-purple-600">{suggestieCount}</div>
+                      <div className="text-[11px] text-muted-foreground">Suggesties</div>
+                    </div>
+                    <div className="bg-card border border-border rounded-xl p-3.5">
+                      <div className="text-2xl font-bold leading-none mb-1 text-green-600">{okCount}</div>
+                      <div className="text-[11px] text-muted-foreground">Automations OK</div>
+                      <div className="text-[10px] text-muted-foreground/60 mt-1">van de {mind.automation_count} totaal</div>
+                    </div>
+                    <div className="bg-card border border-border rounded-xl p-3.5">
+                      <div className="text-lg font-bold leading-none mb-1 text-muted-foreground">
+                        {new Date(mind.aangemaakt_op).toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">Laatste analyse</div>
+                      <div className="text-[10px] text-muted-foreground/60 mt-1">{mind.automation_count} automations bekeken</div>
+                    </div>
+                  </div>
+
+                  {/* Brandy narrative */}
+                  <div className="bg-gradient-to-br from-[#f5f3ff] to-[#ede9fe] border border-[#ddd6fe] rounded-xl p-4 flex gap-3">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center text-white text-xs shrink-0 mt-0.5">
+                      ✦
+                    </div>
+                    <div>
+                      <p className="text-sm text-[#4c1d95] leading-relaxed">{mind.samenvatting}</p>
+                      <p className="text-[10px] text-[#9333ea] mt-2">Brandy's samenvatting · {analyseDate}</p>
+                    </div>
+                  </div>
+
+                  {/* Category grid */}
+                  <div className="grid grid-cols-2 gap-3.5">
+                    {CATEGORIES.map(({ key, label, icon, iconBg, countBg, countText }) => {
+                      const catSignalen = mind.signalen.filter((s) => s.categorie === key);
+                      return (
+                        <div key={key} className="bg-card border border-border rounded-xl overflow-hidden">
+                          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/60">
+                            <div className={`w-7 h-7 rounded-md ${iconBg} flex items-center justify-center text-sm shrink-0`}>
+                              {icon}
+                            </div>
+                            <span className="text-sm font-semibold flex-1">{label}</span>
+                            <span className={`text-[10px] font-semibold ${countBg} ${countText} rounded-full px-2 py-0.5`}>
+                              {catSignalen.length} {catSignalen.length === 1 ? "signaal" : "signalen"}
+                            </span>
+                          </div>
+                          {catSignalen.length === 0 ? (
+                            <p className="px-3.5 py-3 text-[11px] text-muted-foreground italic">Geen signalen</p>
+                          ) : (
+                            catSignalen.map((sig) => (
+                              <button
+                                key={sig.id}
+                                onClick={() => handleSignaalClick(sig)}
+                                className="group w-full flex items-start gap-2.5 px-3.5 py-2.5 border-b border-border/40 last:border-b-0 hover:bg-secondary/40 transition-colors text-left"
+                              >
+                                <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${ernstDot(sig.ernst)}`} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-medium text-foreground truncate">{sig.naam}</div>
+                                  <div className="text-[11px] text-muted-foreground truncate">{sig.bericht}</div>
+                                </div>
+                                <span className="text-[10px] text-primary opacity-0 group-hover:opacity-100 shrink-0 transition-opacity">
+                                  → Brandy
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Suggesties section */}
+                  {(mind.suggesties?.length ?? 0) > 0 && (
+                    <div className="bg-card border border-border rounded-xl overflow-hidden">
+                      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/60">
+                        <div className="w-7 h-7 rounded-md bg-green-50 flex items-center justify-center text-sm shrink-0">
+                          💡
+                        </div>
+                        <span className="text-sm font-semibold flex-1">Suggesties voor nieuwe automations</span>
+                        <span className="text-[10px] font-semibold bg-green-50 text-green-700 rounded-full px-2 py-0.5">
+                          {mind.suggesties!.length} {mind.suggesties!.length === 1 ? "idee" : "ideeën"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2">
+                        {mind.suggesties!.map((sug, i) => (
+                          <div
+                            key={i}
+                            className={`p-4 hover:bg-secondary/30 transition-colors ${
+                              i % 2 === 0 ? "border-r border-border/60" : ""
+                            } ${
+                              i < mind.suggesties!.length - 2 ? "border-b border-border/60" : ""
+                            }`}
+                          >
+                            <div className="text-xs font-semibold text-foreground mb-1.5">{sug.titel}</div>
+                            <div className="text-[11px] text-muted-foreground leading-relaxed mb-2.5">{sug.body}</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {sug.tags.map((tag) => (
+                                <span key={tag} className="text-[10px] bg-secondary rounded-full px-2 py-0.5 text-muted-foreground border border-border">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
           </div>
         </div>
       )}
