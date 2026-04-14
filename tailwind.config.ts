@@ -60,6 +60,7 @@ export default {
           automation: "hsl(var(--dot-automation))",
         },
         hubspot: "hsl(var(--hubspot))",
+        gitlab: "hsl(var(--gitlab))",
         zapier: "hsl(var(--zapier))",
         backend: "hsl(var(--backend))",
         "status-active": "hsl(var(--status-active))",

@@ -27,6 +27,11 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/typeform-api/, ""),
       },
+      "/gitlab-api": {
+        target: "https://gitlab.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/gitlab-api/, ""),
+      },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
