@@ -115,7 +115,6 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
     verbeterideeen: item.verbeterideeën,
     mermaid_diagram: item.mermaidDiagram,
     fasen: item.fasen,
-    gitlab_file_path: item.gitlabFilePath ?? null,
   }).eq("id", item.id);
   if (error) throw toFriendlyDbError(error);
 
@@ -248,20 +247,8 @@ export async function triggerTypeformSync(): Promise<{ inserted: number; updated
   return invokeEdgeFunction("typeform-sync");
 }
 
-export async function updateGitlabData(
-  id: string,
-  data: { gitlabFilePath: string; gitlabLastCommit: string; aiDescription: string }
-): Promise<void> {
-  const { error } = await supabase
-    .from("automatiseringen")
-    .update({
-      gitlab_file_path: data.gitlabFilePath,
-      gitlab_last_commit: data.gitlabLastCommit,
-      ai_description: data.aiDescription,
-      ai_description_updated_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-  if (error) throw error;
+export async function triggerGitlabSync(): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
+  return invokeEdgeFunction("gitlab-sync");
 }
 
 // ─── Process state (canvas) ───────────────────────────────────────────────────
