@@ -11,6 +11,7 @@ export function SystemBadge({ systeem }: { systeem: Systeem | string }) {
     Docufy: "badge-docufy",
     "E-mail": "badge-email",
     API: "badge-api",
+    GitLab: "badge-gitlab",
   };
   return <span className={map[systeem] || "badge-backend"}>{systeem}</span>;
 }

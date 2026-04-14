@@ -11,6 +11,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Download, Search as SearchIcon, Loader2, Pencil, Trash2, Zap, Sparkles } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { nl } from "date-fns/locale";
 
 export default function AlleAutomatiseringen() {
   const [searchParams] = useSearchParams();
@@ -133,6 +135,9 @@ export default function AlleAutomatiseringen() {
                   <CategorieBadge categorie={a.categorie} />
                   <SystemBadge systeem={a.systemen[0] || "Anders"} />
                   <StatusBadge status={a.status} />
+                  {a.gitlabFilePath && (
+                    <span className="badge-gitlab">GL</span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
@@ -212,6 +217,18 @@ export default function AlleAutomatiseringen() {
                         <p className="text-sm text-foreground leading-relaxed">{a.doel}</p>
                       </div>
                     ) : null}
+
+                    {a.aiDescription && (
+                      <div className="bg-orange-50/50 border border-orange-100 rounded-md px-4 py-3">
+                        <p className="label-uppercase mb-1">GitLab AI-beschrijving</p>
+                        <p className="text-sm text-foreground leading-relaxed">{a.aiDescription}</p>
+                        {a.gitlabLastCommit && a.gitlabLastCommit !== "onbekend" && (
+                          <p className="text-xs text-muted-foreground mt-1.5">
+                            Laatste commit: {format(new Date(a.gitlabLastCommit), "d MMM yyyy, HH:mm", { locale: nl })}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Trigger */}
                     {a.trigger && (
