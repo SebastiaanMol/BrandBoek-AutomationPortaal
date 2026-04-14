@@ -136,7 +136,7 @@ function GitLabCard() {
   const { data: integration, isLoading } = useIntegration("gitlab");
   const saveIntegration = useSaveIntegration();
   const deleteIntegration = useDeleteIntegration();
-  const { syncGitlab, isSyncing, progress, error } = useGitlabSync();
+  const gitlabSync = useGitlabSync();
 
   const [pat, setPat] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -165,8 +165,8 @@ function GitLabCard() {
 
   async function handleSync() {
     try {
-      const result = await syncGitlab();
-      toast.success(`GitLab sync voltooid — ${result.synced} automations bijgewerkt`);
+      const result = await gitlabSync.mutateAsync();
+      toast.success(`Sync voltooid — ${result.updated} bijgewerkt van de ${result.total}`);
     } catch (e: any) {
       toast.error((e as Error).message || "Sync mislukt");
     }
@@ -203,12 +203,6 @@ function GitLabCard() {
           </div>
         )}
       </div>
-
-      {error && (
-        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
 
       {!isLoading && !isConnected && (
         <div className="space-y-3">
@@ -262,30 +256,17 @@ function GitLabCard() {
       )}
 
       {!isLoading && isConnected && (
-        <div className="space-y-3">
-          {progress && (
-            <p className="text-xs text-muted-foreground">
-              Bezig: {progress.currentName} ({progress.current}/{progress.total})
-            </p>
-          )}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSync}
-              disabled={isSyncing}
-              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-              {isSyncing ? "Bezig met synchroniseren..." : "AI-beschrijvingen vernieuwen"}
-            </button>
-            <button
-              onClick={handleDisconnect}
-              disabled={deleteIntegration.isPending}
-              className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-50 transition-colors"
-            >
-              <Link2Off className="h-3.5 w-3.5" />
-              Ontkoppelen
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handleSync} disabled={gitlabSync.isPending}
+            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+            <RefreshCw className={`h-3.5 w-3.5 ${gitlabSync.isPending ? "animate-spin" : ""}`} />
+            {gitlabSync.isPending ? "Bezig met synchroniseren..." : "Nu synchroniseren"}
+          </button>
+          <button onClick={handleDisconnect} disabled={deleteIntegration.isPending}
+            className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-50 transition-colors">
+            <Link2Off className="h-3.5 w-3.5" />
+            Ontkoppelen
+          </button>
         </div>
       )}
     </div>

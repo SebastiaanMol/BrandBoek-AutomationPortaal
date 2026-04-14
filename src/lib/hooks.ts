@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, updateGitlabData } from "./supabaseStorage";
 import { Automatisering } from "./types";
@@ -120,23 +119,10 @@ export function useTypeformSync() {
   });
 }
 
-export interface GitlabSyncProgress {
-  current: number;
-  total: number;
-  currentName: string;
-}
-
 export function useGitlabSync() {
   const queryClient = useQueryClient();
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [progress, setProgress] = useState<GitlabSyncProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function syncGitlab(): Promise<{ synced: number; total: number }> {
-    setIsSyncing(true);
-    setProgress(null);
-    setError(null);
-    try {
+  return useMutation({
+    mutationFn: async (): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> => {
       const integration = await fetchIntegration("gitlab");
       if (!integration) throw new Error("GitLab niet verbonden");
 
@@ -158,20 +144,14 @@ export function useGitlabSync() {
         throw new Error("Geen automations gevonden met een GitLab bestandspad");
       }
 
-      setProgress({ current: 0, total: withGitlab.length, currentName: "" });
-
       let synced = 0;
       const failures: string[] = [];
 
-      for (let i = 0; i < withGitlab.length; i++) {
-        const a = withGitlab[i];
-        setProgress({ current: i + 1, total: withGitlab.length, currentName: a.naam });
-
+      for (const a of withGitlab) {
         try {
           const fileContent = await fetchGitlabFileContent(projectId, a.gitlabFilePath!, branch, pat);
           const lastCommit = await fetchGitlabLastCommit(projectId, a.gitlabFilePath!, branch, pat);
           const aiDescription = await generateAiDescription(fileContent);
-
           await updateGitlabData(a.id, {
             gitlabFilePath: a.gitlabFilePath!,
             gitlabLastCommit: lastCommit,
@@ -183,20 +163,14 @@ export function useGitlabSync() {
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
       if (failures.length > 0) {
         console.warn("GitLab sync gedeeltelijk mislukt:", failures);
       }
-      return { synced, total: withGitlab.length };
-    } catch (e: any) {
-      const msg = (e as Error).message || "GitLab sync mislukt";
-      setError(msg);
-      throw new Error(msg);
-    } finally {
-      setIsSyncing(false);
-      setProgress(null);
-    }
-  }
-
-  return { syncGitlab, isSyncing, progress, error };
+      return { inserted: 0, updated: synced, deactivated: 0, total: withGitlab.length };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
+      queryClient.invalidateQueries({ queryKey: ["integration", "gitlab"] });
+    },
+  });
 }
