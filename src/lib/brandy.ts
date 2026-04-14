@@ -33,6 +33,12 @@ export interface BrandyMessage {
 
 // ── Brandy mind types ────────────────────────────────────────────────────────
 
+export interface BrandySuggestie {
+  titel: string;
+  body: string;
+  tags: string[];
+}
+
 export interface BrandyMind {
   id: string;
   signalen: Signaal[];
@@ -40,6 +46,7 @@ export interface BrandyMind {
   prioriteiten: string[];      // signal IDs ranked by urgency
   automation_count: number;
   aangemaakt_op: string;
+  suggesties?: BrandySuggestie[];
 }
 
 // ── Chat functions ────────────────────────────────────────────────────────────
