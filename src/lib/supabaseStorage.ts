@@ -115,6 +115,7 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
     verbeterideeen: item.verbeterideeën,
     mermaid_diagram: item.mermaidDiagram,
     fasen: item.fasen,
+    gitlab_file_path: item.gitlabFilePath ?? null,
   }).eq("id", item.id);
   if (error) throw toFriendlyDbError(error);
 

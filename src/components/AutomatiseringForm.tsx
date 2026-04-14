@@ -37,6 +37,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
     mermaidDiagram: "",
     koppelingen: [],
     fasen: [],
+    gitlabFilePath: "",
     ...prefill,
   });
 
@@ -102,6 +103,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
       createdAt: prefill?.createdAt || new Date().toISOString(),
       laatstGeverifieerd: prefill?.laatstGeverifieerd || null,
       geverifieerdDoor: prefill?.geverifieerdDoor || "",
+      gitlabFilePath: form.gitlabFilePath?.trim() || undefined,
     };
 
     try {
@@ -270,6 +272,16 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
           onChange={(e) => set("mermaidDiagram", e.target.value)}
           placeholder={`graph TD\n    A[Start] --> B[Stap 1]\n    B --> C[Einde]`}
         />
+      </Field>
+
+      <Field label="GitLab bestandspad">
+        <Input
+          value={form.gitlabFilePath || ""}
+          onChange={(e) => set("gitlabFilePath", e.target.value)}
+          placeholder="scripts/automation-naam.js"
+          className="font-mono text-xs"
+        />
+        <p className="text-[10px] text-muted-foreground mt-1">Pad naar het bronbestand in GitLab. Wordt gebruikt voor AI-beschrijvingen.</p>
       </Field>
 
       <button
