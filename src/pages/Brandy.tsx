@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Loader2, ThumbsUp, ThumbsDown, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
+import { Send, Loader2, ThumbsUp, ThumbsDown, AlertCircle, Sparkles, RefreshCw, Search } from "lucide-react";
 import {
   askBrandy,
   sendBrandyFeedback,
@@ -249,7 +249,7 @@ export default function Brandy() {
         )}
 
         <AnimatePresence initial={false}>
-          {messages.map((msg) => (
+          {messages.map((msg, idx) => (
             <motion.div
               key={msg.id}
               initial={{ opacity: 0, y: 8 }}
@@ -263,7 +263,23 @@ export default function Brandy() {
                 </div>
               ) : (
                 <div className="max-w-[85%] space-y-3">
+                  {(() => {
+                    const prevBrandy = messages.slice(0, idx).reverse().find(m => m.type === "brandy");
+                    const isConclusie = prevBrandy?.response?.diagnose_modus === true && msg.response?.diagnose_modus === false;
+                    return isConclusie ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium px-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                        Conclusie
+                      </div>
+                    ) : null;
+                  })()}
                   <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3 space-y-3">
+                    {msg.response?.diagnose_modus && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 -mx-1">
+                        <Search className="h-3 w-3 shrink-0" />
+                        Brandy diagnosticeert{msg.response.stap_nummer ? ` — stap ${msg.response.stap_nummer}` : ""}
+                      </div>
+                    )}
                     <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                     {msg.response && msg.response.entiteiten.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border">
