@@ -247,7 +247,7 @@ export async function triggerTypeformSync(): Promise<{ inserted: number; updated
   return invokeEdgeFunction("typeform-sync");
 }
 
-export async function upsertGitlabData(
+export async function updateGitlabData(
   id: string,
   data: { gitlabFilePath: string; gitlabLastCommit: string; aiDescription: string }
 ): Promise<void> {
