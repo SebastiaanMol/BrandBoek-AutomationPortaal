@@ -141,7 +141,11 @@ export default function Brandy() {
   const showWelcome = messages.length === 0;
 
   const badgeCount = mind
-    ? mind.signalen.filter((s) => s.ernst === "error" || s.ernst === "warning").length
+    ? new Set(
+        mind.signalen
+          .filter((s) => s.ernst === "error" || s.ernst === "warning")
+          .map((s) => s.automationId)
+      ).size
     : 0;
 
   return (
@@ -402,7 +406,12 @@ export default function Brandy() {
               const errorCount = mind.signalen.filter((s) => s.ernst === "error").length;
               const warningCount = mind.signalen.filter((s) => s.ernst === "warning").length;
               const suggestieCount = mind.suggesties?.length ?? 0;
-              const okCount = Math.max(0, mind.automation_count - errorCount - warningCount);
+              const affectedIds = new Set(
+                mind.signalen
+                  .filter((s) => s.ernst === "error" || s.ernst === "warning")
+                  .map((s) => s.automationId)
+              );
+              const okCount = Math.max(0, mind.automation_count - affectedIds.size);
               const analyseDate = new Date(mind.aangemaakt_op).toLocaleDateString("nl-NL", {
                 day: "numeric",
                 month: "long",
