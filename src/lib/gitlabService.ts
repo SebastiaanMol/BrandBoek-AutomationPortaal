@@ -22,7 +22,10 @@ export async function fetchGitlabFileContent(
   }
   const data = await res.json();
   // GitLab returns content as base64 with embedded newlines
-  return atob((data.content as string).replace(/\n/g, ""));
+  if (typeof data.content !== "string") {
+    throw new Error(`GitLab API: onverwacht antwoordformaat voor ${filePath}`);
+  }
+  return atob(data.content.replace(/\n/g, ""));
 }
 
 /**
@@ -39,8 +42,12 @@ export async function fetchGitlabLastCommit(
     `${GITLAB_BASE}/api/v4/projects/${projectId}/repository/commits?path=${encodeURIComponent(filePath)}&ref_name=${encodeURIComponent(branch)}&per_page=1`,
     { headers: { "PRIVATE-TOKEN": token } }
   );
-  if (!res.ok) return "onbekend";
+  if (!res.ok) {
+    console.warn(`GitLab commits ophalen mislukt (${res.status}): ${filePath}`);
+    return "onbekend";
+  }
   const data = await res.json();
   if (!Array.isArray(data) || data.length === 0) return "onbekend";
-  return (data[0] as { created_at: string }).created_at;
+  const ts = (data[0] as { created_at?: string }).created_at;
+  return typeof ts === "string" ? ts : "onbekend";
 }
