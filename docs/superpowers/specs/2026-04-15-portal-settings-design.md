@@ -47,7 +47,7 @@ export interface PortalSettings {
   beschikbareCategorieen: Categorie[];       // default: alle categorieën
   standaardStatusFilter: string;             // default: "alle"
   standaardSortering: "created_at" | "naam" | "status"; // default: "created_at"
-  verplichteLeiden: Array<                   // default: []
+  verplichtVelden: Array<                   // default: []
     "doel" | "trigger" | "systemen" | "stappen" | "owner" | "fasen" | "afhankelijkheden"
   >;
   extraSystemen: string[];                   // default: []
@@ -60,7 +60,7 @@ export const DEFAULT_PORTAL_SETTINGS: PortalSettings = {
   beschikbareCategorieen: [...CATEGORIEEN],
   standaardStatusFilter: "alle",
   standaardSortering: "created_at",
-  verplichteLeiden: [],
+  verplichtVelden: [],
   extraSystemen: [],
   extraCategorieen: [],
 };
@@ -117,7 +117,7 @@ export function useSavePortalSettings() {
 | `src/lib/types.ts` — `getVerificatieStatus()` | Leest `verificatiePeriodeDagen` uit settings i.p.v. hardcoded `90` |
 | `src/pages/AlleAutomatiseringen.tsx` | Initialiseer `statusFilter` en `sortOrder` vanuit portal settings |
 | `src/lib/types.ts` — `SYSTEMEN` / `CATEGORIEEN` | Exporteer `useEffectiveSystemen()` en `useEffectiveCategorieen()` die extra items samenvoegen |
-| `src/components/AutomatiseringForm.tsx` | Verplichte velden uit `verplichteLeiden` krijgen een validatiefout bij opslaan |
+| `src/components/AutomatiseringForm.tsx` | Verplichte velden uit `verplichtVelden` krijgen een validatiefout bij opslaan |
 
 ## UI
 
