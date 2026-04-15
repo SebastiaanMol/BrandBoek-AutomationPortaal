@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { useAutomatiseringen, useDeleteAutomatisering } from "@/lib/hooks";
+import { useAutomatiseringen, useDeleteAutomatisering, usePortalSettings } from "@/lib/hooks";
 import { exportToCSV } from "@/lib/supabaseStorage";
 import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem, Automatisering } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
@@ -18,9 +18,16 @@ export default function AlleAutomatiseringen() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { data, isLoading } = useAutomatiseringen();
+  const { data: portalSettings } = usePortalSettings();
+  const [sortOrder, setSortOrder] = useState<"created_at" | "naam" | "status">("created_at");
+  const [settingsApplied, setSettingsApplied] = useState(false);
   const deleteMutation = useDeleteAutomatisering();
   const [openId, setOpenId] = useState<string | null>(searchParams.get("open") || null);
   const [query, setQuery] = useState("");
+  const [catFilter, setCatFilter] = useState<string>("alle");
+  const [sysFilter, setSysFilter] = useState<string>("alle");
+  const [statusFilter, setStatusFilter] = useState<string>("alle");
+  const [koppelingFilter, setKoppelingFilter] = useState<string>("alle");
 
   // When navigated here with ?open=ID, wait for data then open that item (clear filters so it's visible)
   const pendingOpen = searchParams.get("open");
@@ -33,11 +40,17 @@ export default function AlleAutomatiseringen() {
       setCatFilter("alle");
       setSysFilter("alle");
       setStatusFilter("alle");
+      setKoppelingFilter("alle");
     }
   }, [pendingOpen, data]);
-  const [catFilter, setCatFilter] = useState<string>("alle");
-  const [sysFilter, setSysFilter] = useState<string>("alle");
-  const [statusFilter, setStatusFilter] = useState<string>("alle");
+
+  useEffect(() => {
+    if (portalSettings && !settingsApplied) {
+      setStatusFilter(portalSettings.standaardStatusFilter);
+      setSortOrder(portalSettings.standaardSortering);
+      setSettingsApplied(true);
+    }
+  }, [portalSettings, settingsApplied]);
 
   if (isLoading) {
     return (
@@ -63,7 +76,17 @@ export default function AlleAutomatiseringen() {
     const matchesCat = catFilter === "alle" || a.categorie === catFilter;
     const matchesSys = sysFilter === "alle" || a.systemen.includes(sysFilter as Systeem);
     const matchesStatus = statusFilter === "alle" || a.status === statusFilter;
-    return matchesQuery && matchesCat && matchesSys && matchesStatus;
+    const matchesKoppeling =
+      koppelingFilter === "alle" ||
+      (koppelingFilter === "verbonden" && a.koppelingen.length > 0) ||
+      (koppelingFilter === "niet-verbonden" && a.koppelingen.length === 0);
+    return matchesQuery && matchesCat && matchesSys && matchesStatus && matchesKoppeling;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortOrder === "naam") return a.naam.localeCompare(b.naam, "nl");
+    if (sortOrder === "status") return a.status.localeCompare(b.status, "nl");
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 
   const downloadCSV = () => {
@@ -107,9 +130,25 @@ export default function AlleAutomatiseringen() {
               {STATUSSEN.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={koppelingFilter} onValueChange={setKoppelingFilter}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Koppelingen" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="alle">Alle koppelingen</SelectItem>
+              <SelectItem value="verbonden">Verbonden</SelectItem>
+              <SelectItem value="niet-verbonden">Niet verbonden</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as typeof sortOrder)}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Sortering" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="created_at">Aanmaakdatum</SelectItem>
+              <SelectItem value="naam">Naam (A–Z)</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{filtered.length} results</p>
+          <p className="text-sm text-muted-foreground">{sorted.length} results</p>
           <button
             onClick={downloadCSV}
             className="inline-flex items-center gap-2 bg-card border border-border px-3 py-2 rounded-md text-sm hover:bg-secondary transition-colors"
@@ -119,7 +158,7 @@ export default function AlleAutomatiseringen() {
         </div>
       </div>
 
-      {filtered.map((a) => {
+      {sorted.map((a) => {
         const isOpen = openId === a.id;
         const score = completenessScore(a);
         return (
@@ -285,7 +324,7 @@ export default function AlleAutomatiseringen() {
           </div>
         );
       })}
-      {filtered.length === 0 && <p className="text-muted-foreground text-sm">No results found.</p>}
+      {sorted.length === 0 && <p className="text-muted-foreground text-sm">No results found.</p>}
     </div>
   );
 }
