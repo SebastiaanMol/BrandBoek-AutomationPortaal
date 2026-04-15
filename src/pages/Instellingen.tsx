@@ -166,7 +166,7 @@ function GitLabCard() {
   async function handleSync() {
     try {
       const result = await gitlabSync.mutateAsync();
-      toast.success(`Sync voltooid — ${result.updated} bijgewerkt van de ${result.total}`);
+      toast.success(`Sync voltooid — ${result.inserted} nieuw, ${result.updated} bijgewerkt, ${result.deactivated} gedeactiveerd`);
     } catch (e: any) {
       toast.error((e as Error).message || "Sync mislukt");
     }
