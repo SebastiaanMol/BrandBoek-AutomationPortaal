@@ -13,7 +13,7 @@ import {
   BrandyMind,
 } from "@/lib/brandy";
 import { detectSignalen, type Signaal } from "@/lib/signalen";
-import { useAutomatiseringen } from "@/lib/hooks";
+import { useAutomatiseringen, usePortalSettings } from "@/lib/hooks";
 import { toast } from "sonner";
 
 const SUGGESTED_QUESTIONS = [
@@ -34,6 +34,7 @@ const ERNST_CLASSES: Record<string, string> = {
 export default function Brandy() {
   const [searchParams] = useSearchParams();
   const { data: automations = [] } = useAutomatiseringen();
+  const { data: portalSettings } = usePortalSettings();
 
   // Mind state
   const [mind, setMind] = useState<BrandyMind | null>(null);
@@ -67,7 +68,7 @@ export default function Brandy() {
   async function handleAnalyse() {
     setMindLoading(true);
     try {
-      const signalen = detectSignalen(automations);
+      const signalen = detectSignalen(automations, portalSettings?.verificatiePeriodeDagen ?? 90);
       const result = await runBrandyAnalyse(signalen, automations);
       setMind(result);
     } catch (err) {

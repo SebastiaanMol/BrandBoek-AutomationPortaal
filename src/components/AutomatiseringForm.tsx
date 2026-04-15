@@ -32,6 +32,15 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
     () => Array.from(new Set([...CATEGORIEEN, ...(portalSettings?.extraCategorieen ?? [])])) as string[],
     [portalSettings?.extraCategorieen]
   );
+  const activeCategorieen = useMemo(
+    () => {
+      const activeBeschikbaar = new Set(portalSettings?.beschikbareCategorieen ?? CATEGORIEEN);
+      return effectiveCategorieen.filter(
+        (c) => activeBeschikbaar.has(c as any) || (portalSettings?.extraCategorieen ?? []).includes(c)
+      );
+    },
+    [portalSettings?.beschikbareCategorieen, portalSettings?.extraCategorieen, effectiveCategorieen]
+  );
 
   const [form, setForm] = useState<Partial<Automatisering>>({
     naam: "",
@@ -174,7 +183,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         <Select value={form.categorie} onValueChange={(v) => set("categorie", v)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {effectiveCategorieen.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            {activeCategorieen.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
           </SelectContent>
         </Select>
       </Field>
@@ -286,7 +295,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         <Select value={form.status} onValueChange={(v) => set("status", v)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {STATUSSEN.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            {(portalSettings?.beschikbareStatussen ?? STATUSSEN).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
       </Field>

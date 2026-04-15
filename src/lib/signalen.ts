@@ -28,7 +28,7 @@ export interface Signaal {
   suggestie: string;
 }
 
-export function detectSignalen(automations: Automatisering[]): Signaal[] {
+export function detectSignalen(automations: Automatisering[], periodeDagen: number = 90): Signaal[] {
   const signalen: Signaal[] = [];
   const allIds = new Set(automations.map(a => a.id));
 
@@ -126,10 +126,10 @@ export function detectSignalen(automations: Automatisering[]): Signaal[] {
         "Koppel aan gerelateerde automatiseringen of verwijder indien overbodig");
     }
 
-    const vs = getVerificatieStatus(a);
+    const vs = getVerificatieStatus(a, periodeDagen);
     if (vs === "verouderd") {
       push("unverified", "warning", "verificatie",
-        "Niet geverifieerd in 90+ dagen",
+        `Niet geverifieerd in ${periodeDagen}+ dagen`,
         "Controleer of deze automatisering nog klopt");
     } else if (vs === "nooit") {
       push("unverified", "info", "verificatie",

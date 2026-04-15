@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { StatusBadge, CategorieBadge } from "@/components/Badges";
-import { useAutomatiseringen } from "@/lib/hooks";
+import { useAutomatiseringen, usePortalSettings } from "@/lib/hooks";
 import { Automatisering, getVerificatieStatus } from "@/lib/types";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,6 +8,7 @@ import { Loader2, ClipboardCheck } from "lucide-react";
 
 export default function Dashboard() {
   const { data, isLoading } = useAutomatiseringen();
+  const { data: portalSettings } = usePortalSettings();
 
   if (isLoading) {
     return (
@@ -23,9 +24,10 @@ export default function Dashboard() {
   const verouderd = all.filter((a) => a.status === "Verouderd").length;
   const uitgeschakeld = all.filter((a) => a.status === "Uitgeschakeld").length;
 
-  const vGeverifieerd = all.filter((a) => getVerificatieStatus(a) === "geverifieerd").length;
-  const vVerouderd = all.filter((a) => getVerificatieStatus(a) === "verouderd").length;
-  const vNooit = all.filter((a) => getVerificatieStatus(a) === "nooit").length;
+  const periodeDagen = portalSettings?.verificatiePeriodeDagen ?? 90;
+  const vGeverifieerd = all.filter((a) => getVerificatieStatus(a, periodeDagen) === "geverifieerd").length;
+  const vVerouderd = all.filter((a) => getVerificatieStatus(a, periodeDagen) === "verouderd").length;
+  const vNooit = all.filter((a) => getVerificatieStatus(a, periodeDagen) === "nooit").length;
   const vProgress = totaal > 0 ? (vGeverifieerd / totaal) * 100 : 0;
 
   const metrics = [

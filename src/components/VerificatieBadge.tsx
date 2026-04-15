@@ -1,7 +1,9 @@
 import { Automatisering, getVerificatieStatus, VERIFICATIE_LABELS } from "@/lib/types";
+import { usePortalSettings } from "@/lib/hooks";
 
 export function VerificatieBadge({ item }: { item: Automatisering }) {
-  const status = getVerificatieStatus(item);
+  const { data: portalSettings } = usePortalSettings();
+  const status = getVerificatieStatus(item, portalSettings?.verificatiePeriodeDagen ?? 90);
   const config = {
     geverifieerd: { emoji: "🟢", cls: "bg-[hsl(var(--status-active)/0.1)] text-[hsl(var(--status-active))]" },
     verouderd:    { emoji: "🟡", cls: "bg-[hsl(var(--status-review)/0.1)] text-[hsl(var(--status-review))]" },
