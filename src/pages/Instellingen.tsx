@@ -195,14 +195,22 @@ function GitLabCard() {
         </div>
         {!isLoading && (
           <div className="flex items-center gap-1.5 shrink-0">
-            {isConnected ? (
+            {isConnected && integration.status === "connected" && (
               <><CheckCircle2 className="h-3.5 w-3.5 text-green-500" /><span className="text-xs text-green-600 font-medium">Verbonden</span></>
-            ) : (
-              <span className="text-xs text-muted-foreground">Niet verbonden</span>
             )}
+            {isConnected && integration.status === "error" && (
+              <><AlertCircle className="h-3.5 w-3.5 text-destructive" /><span className="text-xs text-destructive font-medium">Fout</span></>
+            )}
+            {!isConnected && <span className="text-xs text-muted-foreground">Niet verbonden</span>}
           </div>
         )}
       </div>
+
+      {isConnected && integration.lastSyncedAt && (
+        <p className="text-xs text-muted-foreground">
+          Laatste sync: {format(new Date(integration.lastSyncedAt), "d MMM yyyy, HH:mm", { locale: nl })}
+        </p>
+      )}
 
       {!isLoading && !isConnected && (
         <div className="space-y-3">

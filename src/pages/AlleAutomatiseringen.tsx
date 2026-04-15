@@ -218,18 +218,6 @@ export default function AlleAutomatiseringen() {
                       </div>
                     ) : null}
 
-                    {a.aiDescription && (
-                      <div className="bg-orange-50/50 border border-orange-100 rounded-md px-4 py-3">
-                        <p className="label-uppercase mb-1">GitLab AI-beschrijving</p>
-                        <p className="text-sm text-foreground leading-relaxed">{a.aiDescription}</p>
-                        {a.gitlabLastCommit && a.gitlabLastCommit !== "onbekend" && (
-                          <p className="text-xs text-muted-foreground mt-1.5">
-                            Laatste commit: {format(new Date(a.gitlabLastCommit), "d MMM yyyy, HH:mm", { locale: nl })}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
                     {/* Trigger */}
                     {a.trigger && (
                       <div className="flex items-start gap-2">
