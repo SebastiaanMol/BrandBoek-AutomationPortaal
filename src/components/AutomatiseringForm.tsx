@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Automatisering, CATEGORIEEN, SYSTEMEN, STATUSSEN, KLANT_FASEN, Systeem, Categorie, Status, KlantFase, Koppeling } from "@/lib/types";
-import { useAutomatiseringen, useSaveAutomatisering, useUpdateAutomatisering, useNextId } from "@/lib/hooks";
+import { useAutomatiseringen, useSaveAutomatisering, useUpdateAutomatisering, useNextId, usePortalSettings } from "@/lib/hooks";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,16 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
   const { data: nextId, isLoading: idLoading } = useNextId();
   const saveMutation = useSaveAutomatisering();
   const updateMutation = useUpdateAutomatisering();
+
+  const { data: portalSettings } = usePortalSettings();
+  const effectiveSystemen = [
+    ...SYSTEMEN,
+    ...(portalSettings?.extraSystemen ?? []),
+  ] as string[];
+  const effectiveCategorieen = [
+    ...CATEGORIEEN,
+    ...(portalSettings?.extraCategorieen ?? []),
+  ] as string[];
 
   const [form, setForm] = useState<Partial<Automatisering>>({
     naam: "",
@@ -76,6 +86,29 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
     if (!form.naam?.trim()) {
       toast.error("Name is required");
       return;
+    }
+
+    const required = portalSettings?.verplichtVelden ?? [];
+    for (const veld of required) {
+      if (veld === "systemen" && (!form.systemen || form.systemen.length === 0)) {
+        toast.error("Systemen is verplicht"); return;
+      }
+      if (veld === "fasen" && (!form.fasen || form.fasen.length === 0)) {
+        toast.error("Fasen is verplicht"); return;
+      }
+      if (veld === "stappen" && (!form.stappen || form.stappen.filter((s) => s.trim()).length === 0)) {
+        toast.error("Stappen is verplicht"); return;
+      }
+      if (
+        (veld === "doel" || veld === "trigger" || veld === "owner" || veld === "afhankelijkheden") &&
+        !form[veld]?.trim()
+      ) {
+        const label: Record<string, string> = {
+          doel: "Doel", trigger: "Trigger", owner: "Owner", afhankelijkheden: "Afhankelijkheden",
+        };
+        toast.error(`${label[veld]} is verplicht`);
+        return;
+      }
     }
 
     const id = editMode ? editId! : nextId;
@@ -141,7 +174,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         <Select value={form.categorie} onValueChange={(v) => set("categorie", v)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {CATEGORIEEN.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            {effectiveCategorieen.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
           </SelectContent>
         </Select>
       </Field>
@@ -157,9 +190,9 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
       <Field label="Primary Systems">
         <p className="text-[10px] text-muted-foreground mb-2">Select all systems used by this automation</p>
         <div className="flex flex-wrap gap-3">
-          {SYSTEMEN.map((s) => (
+          {effectiveSystemen.map((s) => (
             <label key={s} className="flex items-center gap-2 text-sm">
-              <Checkbox checked={form.systemen?.includes(s)} onCheckedChange={() => toggleSysteem(s)} />
+              <Checkbox checked={form.systemen?.includes(s as Systeem)} onCheckedChange={() => toggleSysteem(s as Systeem)} />
               {s}
             </label>
           ))}
