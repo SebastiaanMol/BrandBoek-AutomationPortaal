@@ -157,6 +157,10 @@ export type VerplichtVeld =
   | "fasen"
   | "afhankelijkheden";
 
+export const VERPLICHTE_VELDEN: VerplichtVeld[] = [
+  "doel", "trigger", "systemen", "stappen", "owner", "fasen", "afhankelijkheden"
+];
+
 export interface PortalSettings {
   verificatiePeriodeDagen: number;
   beschikbareStatussen: Status[];

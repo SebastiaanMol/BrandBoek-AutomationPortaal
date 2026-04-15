@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync, usePortalSettings, useSavePortalSettings } from "@/lib/hooks";
-import { Integration, PortalSettings, DEFAULT_PORTAL_SETTINGS, STATUSSEN, CATEGORIEEN, VerplichtVeld } from "@/lib/types";
+import { Integration, PortalSettings, DEFAULT_PORTAL_SETTINGS, STATUSSEN, CATEGORIEEN, VerplichtVeld, VERPLICHTE_VELDEN } from "@/lib/types";
 import { UseMutationResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw, Link2, Link2Off, AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
@@ -23,7 +23,10 @@ function PortaalInstellingenCard() {
       ? local.beschikbareStatussen.filter((x) => x !== s)
       : [...local.beschikbareStatussen, s];
     if (next.length === 0) return; // minimaal één
-    setLocal({ ...local, beschikbareStatussen: next });
+    const newFilter = next.includes(local.standaardStatusFilter as typeof STATUSSEN[number])
+      ? local.standaardStatusFilter
+      : "alle";
+    setLocal({ ...local, beschikbareStatussen: next, standaardStatusFilter: newFilter });
   }
 
   function toggleCategorie(c: typeof CATEGORIEEN[number]) {
@@ -175,7 +178,7 @@ function PortaalInstellingenCard() {
         <div className={rowClass}>
           <span className={fieldLabelClass}>Verplichte velden</span>
           <div className="flex flex-wrap gap-2">
-            {(["doel", "trigger", "systemen", "stappen", "owner", "fasen", "afhankelijkheden"] as VerplichtVeld[]).map((v) => (
+            {VERPLICHTE_VELDEN.map((v) => (
               <label key={v} className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -204,8 +207,8 @@ function PortaalInstellingenCard() {
               <button onClick={addSysteem} className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-secondary transition-colors">+</button>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {local.extraSystemen.map((s, i) => (
-                <span key={i} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
+              {local.extraSystemen.map((s) => (
+                <span key={s} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
                   {s}
                   <button onClick={() => setLocal({ ...local, extraSystemen: local.extraSystemen.filter((_, j) => j !== i) })} className="text-muted-foreground hover:text-foreground">×</button>
                 </span>
@@ -229,8 +232,8 @@ function PortaalInstellingenCard() {
               <button onClick={addCategorie} className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-secondary transition-colors">+</button>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {local.extraCategorieen.map((c, i) => (
-                <span key={i} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
+              {local.extraCategorieen.map((c) => (
+                <span key={c} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
                   {c}
                   <button onClick={() => setLocal({ ...local, extraCategorieen: local.extraCategorieen.filter((_, j) => j !== i) })} className="text-muted-foreground hover:text-foreground">×</button>
                 </span>

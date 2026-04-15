@@ -132,6 +132,7 @@ export function usePortalSettings() {
   return useQuery({
     queryKey: ["portal_settings"],
     queryFn: fetchPortalSettings,
+    refetchOnWindowFocus: false,
   });
 }
 
