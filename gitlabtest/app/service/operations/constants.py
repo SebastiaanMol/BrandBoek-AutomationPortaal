@@ -1,0 +1,113 @@
+"""Constants for the operations domain (pipeline IDs, stage IDs, property lists)."""
+
+from __future__ import annotations
+
+# --- Core pipeline IDs ---
+SALES_PIPELINE_ID = "5941173"
+JAARREKENING_PIPELINE_ID = "746430534"
+BTW_Q_PIPELINE_ID = "759381020"
+IB_PIPELINE_ID = "749749904"
+VPB_PIPELINE_ID = "749963431"
+IB_DOORLOPENDE_MACHTIGING_PIPELINE_ID = "61782389"
+
+# --- Pipeline ID used for deal-name canonicalization ---
+PIPELINE_ID_CANONICAL = "802700718"
+
+# --- Controle pipeline IDs (newer, used in get_controle_pipelines) ---
+CONTROLE_JAARREKENING_PIPELINE_ID = "801790127"
+CONTROLE_BTW_Q_PIPELINE_ID = "802447755"
+CONTROLE_VPB_PIPELINE_ID = "802589558"
+FULL_SERVICE_PIPELINE_ID = "807841810"
+ADMIN_WO_BTW_PIPELINE_ID = "795493928"
+ADMIN_M_PIPELINE_ID = "713153058"
+
+# --- VA pipeline IDs ---
+VA_IB_PIPELINE_ID = "827192628"
+VA_VPB_PIPELINE_ID = "827192629"
+LEGACY_VPB_2024_PIPELINE_ID = "136521024"
+
+# --- Pipeline ID sets ---
+CONTINUOUS_PIPELINE_IDS = {
+    JAARREKENING_PIPELINE_ID,
+    BTW_Q_PIPELINE_ID,
+    IB_PIPELINE_ID,
+    VPB_PIPELINE_ID,
+}
+
+BTW_Q2_2025_PIPELINE_ID = "717908747"
+BTW_Q3_2025_PIPELINE_ID = "750250281"
+BTW_PIPELINE_IDS = {BTW_Q2_2025_PIPELINE_ID, BTW_Q3_2025_PIPELINE_ID, BTW_Q_PIPELINE_ID}
+BTW_CONTROLE_PIPELINE_IDS = {CONTROLE_BTW_Q_PIPELINE_ID, BTW_Q_PIPELINE_ID}
+JR_PIPELINE_IDS = {JAARREKENING_PIPELINE_ID, "136666296"}
+JAARREKENING_PIPELINE_IDS = {
+    JAARREKENING_PIPELINE_ID,
+    CONTROLE_JAARREKENING_PIPELINE_ID,
+}
+VPB_PIPELINE_IDS = {VPB_PIPELINE_ID, CONTROLE_VPB_PIPELINE_ID}
+
+CONTINUOUS_PIPELINE_ID_LIST = [
+    JAARREKENING_PIPELINE_ID,
+    BTW_Q_PIPELINE_ID,
+    IB_PIPELINE_ID,
+    VPB_PIPELINE_ID,
+    ADMIN_WO_BTW_PIPELINE_ID,
+    ADMIN_M_PIPELINE_ID,
+    IB_DOORLOPENDE_MACHTIGING_PIPELINE_ID,
+]
+
+CONTROLE_PIPELINE_ID_LIST = [
+    CONTROLE_JAARREKENING_PIPELINE_ID,
+    CONTROLE_BTW_Q_PIPELINE_ID,
+    IB_PIPELINE_ID,
+    CONTROLE_VPB_PIPELINE_ID,
+    FULL_SERVICE_PIPELINE_ID,
+    IB_DOORLOPENDE_MACHTIGING_PIPELINE_ID,
+    ADMIN_WO_BTW_PIPELINE_ID,
+    ADMIN_M_PIPELINE_ID,
+]
+
+# --- Stage IDs ---
+BETAALT_NIET_STAGE_ID = "1028125854"
+BETAALT_NIET_LABEL = "Betaalt niet"
+
+# --- VPB stage IDs ---
+VPB_STARTING_STAGE_IDS = {"1090547729", "1147442179", "1178775729", "1178775730"}
+VPB_KAN_GEMAAKT_WORDEN_STAGE = "1090547731"
+VPB_SOFTWARE_KAN_GEMAAKT_WORDEN_STAGE = "1178945692"
+
+# --- Volledige Service stage IDs ---
+VOLLEDIGE_SERVICE_COMPLETE_STAGE = "1188896267"
+BTW_BEREKENING_COMPLEET_STAGE = "1178979656"
+
+# --- Doorlopende Machtiging stage IDs ---
+DM_KLANT_HAAKT_AF_STAGE = "1211684699"
+
+# --- Property lists (used when fetching deals/companies/contacts) ---
+NEEDED_DEAL_PROPS = [
+    "pipeline",
+    "dealstage",
+    "year",
+    "quarter",
+    "maand",
+    "amount",
+    "beginner_stage",
+    "won_dtm",
+    # BTW historical 'CSV' flags
+    "hs_v2_date_entered_1047755303",
+    "hs_v2_date_entered_1090656291",
+    "hs_v2_date_entered_1162445750",
+    # JR 'zelf berekening' flags
+    "hs_v2_date_entered_1086412193",
+    "hs_v2_date_entered_1012525422",
+]
+
+NEEDED_COMPANY_PROPS = [
+    "name",
+    "software_portaal_pakket",
+    "intensiteit",
+    "createdate",
+    "bankkoppeling_status",
+    "expiry_date",
+]
+
+NEEDED_CONTACT_PROPS = ["firstname", "lastname", "jaarklant", "createdate"]

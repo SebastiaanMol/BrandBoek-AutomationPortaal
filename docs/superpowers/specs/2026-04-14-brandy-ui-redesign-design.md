@@ -169,6 +169,7 @@ Clicking a signal row in the Inzichten tab:
 
 ## Styling Notes
 
+- **Centered layout**: All content areas (tab bar, Chat content, Inzichten dashboard) use `max-w-4xl mx-auto` (or `max-w-5xl` for the dashboard) so content is horizontally centered on wide screens. The header and tab bar backgrounds still span full width; only the inner content is constrained and centered.
 - Pill tab group: Tailwind equivalent of `bg-[#f0f0f2] rounded-[10px] p-[3px] flex gap-[2px]`
 - Active tab: `bg-white shadow-sm ring-1 ring-black/5 rounded-lg font-semibold text-foreground`
 - Inactive tab: `text-muted-foreground hover:text-foreground/70`
