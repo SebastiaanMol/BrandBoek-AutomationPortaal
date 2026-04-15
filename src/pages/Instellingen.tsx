@@ -210,7 +210,7 @@ function PortaalInstellingenCard() {
               {local.extraSystemen.map((s) => (
                 <span key={s} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
                   {s}
-                  <button onClick={() => setLocal({ ...local, extraSystemen: local.extraSystemen.filter((_, j) => j !== i) })} className="text-muted-foreground hover:text-foreground">×</button>
+                  <button onClick={() => setLocal({ ...local, extraSystemen: local.extraSystemen.filter((item) => item !== s) })} className="text-muted-foreground hover:text-foreground">×</button>
                 </span>
               ))}
             </div>
@@ -235,7 +235,7 @@ function PortaalInstellingenCard() {
               {local.extraCategorieen.map((c) => (
                 <span key={c} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
                   {c}
-                  <button onClick={() => setLocal({ ...local, extraCategorieen: local.extraCategorieen.filter((_, j) => j !== i) })} className="text-muted-foreground hover:text-foreground">×</button>
+                  <button onClick={() => setLocal({ ...local, extraCategorieen: local.extraCategorieen.filter((item) => item !== c) })} className="text-muted-foreground hover:text-foreground">×</button>
                 </span>
               ))}
             </div>
