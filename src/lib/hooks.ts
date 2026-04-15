@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync } from "./supabaseStorage";
-import { Automatisering } from "./types";
+import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings } from "./supabaseStorage";
+import { Automatisering, PortalSettings } from "./types";
 
 export function useAutomatiseringen() {
   return useQuery({
@@ -125,5 +125,20 @@ export function useGitlabSync() {
       queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
       queryClient.invalidateQueries({ queryKey: ["integration", "gitlab"] });
     },
+  });
+}
+
+export function usePortalSettings() {
+  return useQuery({
+    queryKey: ["portal_settings"],
+    queryFn: fetchPortalSettings,
+  });
+}
+
+export function useSavePortalSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: PortalSettings) => savePortalSettings(settings),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["portal_settings"] }),
   });
 }
