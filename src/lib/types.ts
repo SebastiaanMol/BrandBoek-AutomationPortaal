@@ -75,11 +75,11 @@ export interface Integration {
 
 export type VerificatieStatus = "geverifieerd" | "verouderd" | "nooit";
 
-export function getVerificatieStatus(a: Automatisering): VerificatieStatus {
+export function getVerificatieStatus(a: Automatisering, periodeDagen = 90): VerificatieStatus {
   if (!a.laatstGeverifieerd) return "nooit";
   const diff = Date.now() - new Date(a.laatstGeverifieerd).getTime();
-  const days90 = 90 * 24 * 60 * 60 * 1000;
-  return diff <= days90 ? "geverifieerd" : "verouderd";
+  const threshold = periodeDagen * 24 * 60 * 60 * 1000;
+  return diff <= threshold ? "geverifieerd" : "verouderd";
 }
 
 export const CATEGORIEEN: Categorie[] = [
@@ -144,4 +144,44 @@ export function berekenImpact(a: Automatisering, alle: Automatisering[]): number
   const statusBonus = a.status === "Actief" ? 10 : 0;
 
   return Math.min(fasenScore + systemenScore + depScore + statusBonus, 100);
+}
+
+// ── Portal Settings ──────────────────────────────────────────────────────────
+
+export type VerplichtVeld =
+  | "doel"
+  | "trigger"
+  | "systemen"
+  | "stappen"
+  | "owner"
+  | "fasen"
+  | "afhankelijkheden";
+
+export interface PortalSettings {
+  verificatiePeriodeDagen: number;
+  beschikbareStatussen: Status[];
+  beschikbareCategorieen: Categorie[];
+  standaardStatusFilter: string;
+  standaardSortering: "created_at" | "naam" | "status";
+  verplichtVelden: VerplichtVeld[];
+  extraSystemen: string[];
+  extraCategorieen: string[];
+}
+
+export const DEFAULT_PORTAL_SETTINGS: PortalSettings = {
+  verificatiePeriodeDagen: 90,
+  beschikbareStatussen: ["Actief", "Verouderd", "In review", "Uitgeschakeld"],
+  beschikbareCategorieen: [
+    "HubSpot Workflow", "Zapier Zap", "Backend Script", "HubSpot + Zapier",
+    "Typeform", "SharePoint", "WeFact", "Docufy", "E-mail", "API", "Anders",
+  ],
+  standaardStatusFilter: "alle",
+  standaardSortering: "created_at",
+  verplichtVelden: [],
+  extraSystemen: [],
+  extraCategorieen: [],
+};
+
+export function getPortalSettings(raw: Partial<PortalSettings>): PortalSettings {
+  return { ...DEFAULT_PORTAL_SETTINGS, ...raw };
 }
