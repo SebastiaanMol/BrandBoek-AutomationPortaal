@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { Automatisering, Integration, Koppeling, KlantFase, Systeem, Categorie, Status } from "./types";
+import { Automatisering, Integration, Koppeling, KlantFase, Systeem, Categorie, Status, PortalSettings, getPortalSettings } from "./types";
 
 function toFriendlyDbError(error: any): Error {
   const message = String(error?.message || "").toLowerCase();
@@ -309,4 +309,26 @@ export function exportToCSV(data: Automatisering[]): string {
     a.systemen.join("; "), a.owner, a.status, (a.fasen || []).join("; "),
   ]);
   return [headers.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
+}
+
+// ─── Portal Settings ─────────────────────────────────────────────────────────
+
+export async function fetchPortalSettings(): Promise<PortalSettings> {
+  const { data, error } = await (supabase as any)
+    .from("portal_settings")
+    .select("settings")
+    .eq("id", "main")
+    .maybeSingle();
+  if (error) throw error;
+  return getPortalSettings((data?.settings ?? {}) as Partial<PortalSettings>);
+}
+
+export async function savePortalSettings(settings: PortalSettings): Promise<void> {
+  const { error } = await (supabase as any)
+    .from("portal_settings")
+    .upsert(
+      { id: "main", settings, updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+  if (error) throw error;
 }
