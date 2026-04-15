@@ -4,6 +4,7 @@ import { Integration, PortalSettings, DEFAULT_PORTAL_SETTINGS, STATUSSEN, CATEGO
 import { UseMutationResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw, Link2, Link2Off, AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
 
@@ -604,14 +605,25 @@ export default function Instellingen() {
     <div className="max-w-2xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Instellingen</h1>
-        <p className="text-sm text-muted-foreground mt-1">Beheer koppelingen met externe systemen</p>
+        <p className="text-sm text-muted-foreground mt-1">Beheer portaalinstellingen en koppelingen met externe systemen</p>
       </div>
 
-      <PortaalInstellingenCard />
+      <Tabs defaultValue="portaal">
+        <TabsList>
+          <TabsTrigger value="portaal">Portaalinstellingen</TabsTrigger>
+          <TabsTrigger value="koppelingen">Externe systemen</TabsTrigger>
+        </TabsList>
 
-      {cards.map((c) => (
-        <div key={c.key}>{c.node}</div>
-      ))}
+        <TabsContent value="portaal" className="mt-4">
+          <PortaalInstellingenCard />
+        </TabsContent>
+
+        <TabsContent value="koppelingen" className="mt-4 space-y-6">
+          {cards.map((c) => (
+            <div key={c.key}>{c.node}</div>
+          ))}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
