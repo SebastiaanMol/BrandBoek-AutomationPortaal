@@ -67,7 +67,7 @@ export default function Dashboard() {
             </div>
             <div>
               <span className="text-xl font-mono font-bold text-[hsl(var(--status-review))]">{vVerouderd}</span>
-              <p className="text-[10px] text-muted-foreground mt-0.5">🟡 &gt;90 days</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">🟡 &gt;{periodeDagen} days</p>
             </div>
             <div>
               <span className="text-xl font-mono font-bold text-[hsl(var(--status-outdated))]">{vNooit}</span>
