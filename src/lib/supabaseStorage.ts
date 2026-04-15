@@ -218,14 +218,17 @@ async function invokeEdgeFunction(
   const { data, error } = await supabase.functions.invoke(name);
 
   if (error) {
-    // FunctionsHttpError.context is a Response — must await .json() to read the body
     const context = (error as any)?.context;
+    // supabase-js v2.x passes the parsed JSON body as context directly
+    if (context && typeof context.error === "string") {
+      throw new Error(context.error);
+    }
+    // Older versions passed the Response object — keep as fallback
     if (context && typeof context.json === "function") {
       try {
         const body = await context.json();
         if (body?.error) throw new Error(body.error);
       } catch (e: any) {
-        // rethrow only if it's our own error with a real message
         if (e.message && e.message !== error.message) throw e;
       }
     }
