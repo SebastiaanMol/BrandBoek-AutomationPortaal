@@ -41,8 +41,10 @@ export default function AlleAutomatiseringen() {
       setSysFilter("alle");
       setStatusFilter("alle");
       setKoppelingFilter("alle");
+      setSortOrder(portalSettings?.standaardSortering ?? "created_at");
+      setSettingsApplied(false);
     }
-  }, [pendingOpen, data]);
+  }, [pendingOpen, data, portalSettings]);
 
   useEffect(() => {
     if (portalSettings && !settingsApplied) {
@@ -90,7 +92,7 @@ export default function AlleAutomatiseringen() {
   });
 
   const downloadCSV = () => {
-    const csv = exportToCSV(filtered);
+    const csv = exportToCSV(sorted);
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
