@@ -1,11 +1,258 @@
-import { useState } from "react";
-import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync } from "@/lib/hooks";
-import { Integration } from "@/lib/types";
+import { useState, useEffect } from "react";
+import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync, usePortalSettings, useSavePortalSettings } from "@/lib/hooks";
+import { Integration, PortalSettings, DEFAULT_PORTAL_SETTINGS, STATUSSEN, CATEGORIEEN, VerplichtVeld } from "@/lib/types";
 import { UseMutationResult } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RefreshCw, Link2, Link2Off, AlertCircle, CheckCircle2 } from "lucide-react";
+import { RefreshCw, Link2, Link2Off, AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
+
+function PortaalInstellingenCard() {
+  const { data: saved, isLoading } = usePortalSettings();
+  const save = useSavePortalSettings();
+  const [local, setLocal] = useState<PortalSettings>(DEFAULT_PORTAL_SETTINGS);
+  const [newSysteem, setNewSysteem] = useState("");
+  const [newCategorie, setNewCategorie] = useState("");
+
+  useEffect(() => {
+    if (saved) setLocal(saved);
+  }, [saved]);
+
+  function toggleStatus(s: typeof STATUSSEN[number]) {
+    const next = local.beschikbareStatussen.includes(s)
+      ? local.beschikbareStatussen.filter((x) => x !== s)
+      : [...local.beschikbareStatussen, s];
+    if (next.length === 0) return; // minimaal één
+    setLocal({ ...local, beschikbareStatussen: next });
+  }
+
+  function toggleCategorie(c: typeof CATEGORIEEN[number]) {
+    const next = local.beschikbareCategorieen.includes(c)
+      ? local.beschikbareCategorieen.filter((x) => x !== c)
+      : [...local.beschikbareCategorieen, c];
+    if (next.length === 0) return;
+    setLocal({ ...local, beschikbareCategorieen: next });
+  }
+
+  function toggleVerplicht(v: VerplichtVeld) {
+    const next = local.verplichtVelden.includes(v)
+      ? local.verplichtVelden.filter((x) => x !== v)
+      : [...local.verplichtVelden, v];
+    setLocal({ ...local, verplichtVelden: next });
+  }
+
+  function addSysteem() {
+    const val = newSysteem.trim();
+    if (!val || local.extraSystemen.includes(val)) return;
+    setLocal({ ...local, extraSystemen: [...local.extraSystemen, val] });
+    setNewSysteem("");
+  }
+
+  function addCategorie() {
+    const val = newCategorie.trim();
+    if (!val || local.extraCategorieen.includes(val)) return;
+    setLocal({ ...local, extraCategorieen: [...local.extraCategorieen, val] });
+    setNewCategorie("");
+  }
+
+  async function handleSave() {
+    try {
+      await save.mutateAsync(local);
+      toast.success("Instellingen opgeslagen");
+    } catch (e: any) {
+      toast.error(e.message || "Opslaan mislukt");
+    }
+  }
+
+  const labelClass = "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-3";
+  const rowClass = "flex items-start gap-3 mb-3";
+  const fieldLabelClass = "w-40 shrink-0 text-sm text-foreground pt-0.5";
+
+  if (isLoading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-6 flex items-center gap-2 text-muted-foreground text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" /> Portaalinstellingen laden...
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-6 space-y-5">
+      <h2 className="font-medium text-sm">Portaalinstellingen</h2>
+
+      {/* BEDRIJFSREGELS */}
+      <div>
+        <p className={labelClass}>Bedrijfsregels</p>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Verificatieperiode</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={local.verificatiePeriodeDagen}
+              onChange={(e) => setLocal({ ...local, verificatiePeriodeDagen: Math.max(1, Number(e.target.value)) })}
+              className="w-16 rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <span className="text-sm text-muted-foreground">dagen</span>
+          </div>
+        </div>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Actieve statussen</span>
+          <div className="flex flex-wrap gap-2">
+            {STATUSSEN.map((s) => (
+              <label key={s} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={local.beschikbareStatussen.includes(s)}
+                  onChange={() => toggleStatus(s)}
+                  className="rounded"
+                />
+                <span className="text-sm">{s}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Actieve categorieën</span>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIEEN.map((c) => (
+              <label key={c} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={local.beschikbareCategorieen.includes(c)}
+                  onChange={() => toggleCategorie(c)}
+                  className="rounded"
+                />
+                <span className="text-sm">{c}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* WEERGAVE-STANDAARDEN */}
+      <div>
+        <p className={labelClass}>Weergave-standaarden</p>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Standaard statusfilter</span>
+          <select
+            value={local.standaardStatusFilter}
+            onChange={(e) => setLocal({ ...local, standaardStatusFilter: e.target.value })}
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="alle">Alle statussen</option>
+            {STATUSSEN.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Standaard sortering</span>
+          <select
+            value={local.standaardSortering}
+            onChange={(e) => setLocal({ ...local, standaardSortering: e.target.value as PortalSettings["standaardSortering"] })}
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="created_at">Aanmaakdatum</option>
+            <option value="naam">Naam (A–Z)</option>
+            <option value="status">Status</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* DATAVELDEN */}
+      <div>
+        <p className={labelClass}>Datavelden</p>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Verplichte velden</span>
+          <div className="flex flex-wrap gap-2">
+            {(["doel", "trigger", "systemen", "stappen", "owner", "fasen", "afhankelijkheden"] as VerplichtVeld[]).map((v) => (
+              <label key={v} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={local.verplichtVelden.includes(v)}
+                  onChange={() => toggleVerplicht(v)}
+                  className="rounded"
+                />
+                <span className="text-sm capitalize">{v}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Extra systemen</span>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newSysteem}
+                onChange={(e) => setNewSysteem(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addSysteem()}
+                placeholder="Systeem toevoegen..."
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button onClick={addSysteem} className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-secondary transition-colors">+</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {local.extraSystemen.map((s, i) => (
+                <span key={i} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
+                  {s}
+                  <button onClick={() => setLocal({ ...local, extraSystemen: local.extraSystemen.filter((_, j) => j !== i) })} className="text-muted-foreground hover:text-foreground">×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className={rowClass}>
+          <span className={fieldLabelClass}>Extra categorieën</span>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newCategorie}
+                onChange={(e) => setNewCategorie(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addCategorie()}
+                placeholder="Categorie toevoegen..."
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button onClick={addCategorie} className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-secondary transition-colors">+</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {local.extraCategorieen.map((c, i) => (
+                <span key={i} className="flex items-center gap-1 bg-secondary px-2 py-0.5 rounded text-xs">
+                  {c}
+                  <button onClick={() => setLocal({ ...local, extraCategorieen: local.extraCategorieen.filter((_, j) => j !== i) })} className="text-muted-foreground hover:text-foreground">×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end pt-1">
+        <button
+          onClick={handleSave}
+          disabled={save.isPending}
+          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          <Save className="h-3.5 w-3.5" />
+          {save.isPending ? "Opslaan..." : "Instellingen opslaan"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface IntegrationCardProps {
   type: string;
@@ -229,7 +476,7 @@ function GitLabCard() {
                 {showPat ? "Verberg" : "Toon"}
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">Maak een token aan in GitLab → Profile → Access Tokens met <code className="bg-muted px-1 rounded">read_repository</code> scope.</p>
+            <p className="text-xs text-muted-foreground">Maak een <strong>legacy Personal Access Token</strong> aan via GitLab → Profile → Access Tokens. Vink <strong>alleen</strong> <code className="bg-muted px-1 rounded">read_api</code> aan. Gebruik geen Duo/AI-token en geen fine-grained token.</p>
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">Project ID</label>
@@ -286,6 +533,70 @@ export default function Instellingen() {
   const zapierSync = useZapierSync();
   const typeformSync = useTypeformSync();
 
+  const { data: hubspotInt } = useIntegration("hubspot");
+  const { data: zapierInt } = useIntegration("zapier");
+  const { data: typeformInt } = useIntegration("typeform");
+  const { data: gitlabInt } = useIntegration("gitlab");
+
+  const cards = [
+    {
+      key: "hubspot",
+      connected: !!hubspotInt,
+      node: (
+        <IntegrationCard
+          type="hubspot"
+          label="HubSpot"
+          description="Importeer workflows automatisch via de HubSpot API"
+          badge="HS"
+          badgeClass="bg-orange-50 border border-orange-100 text-orange-600"
+          tokenLabel="Private App Token"
+          tokenPlaceholder="pat-eu1-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          tokenHint='Maak een Private App aan in HubSpot met de <code class="bg-muted px-1 rounded">automation</code> scope.'
+          syncMutation={hubspotSync}
+        />
+      ),
+    },
+    {
+      key: "zapier",
+      connected: !!zapierInt,
+      node: (
+        <IntegrationCard
+          type="zapier"
+          label="Zapier"
+          description="Importeer Zaps automatisch via de Zapier API"
+          badge="ZP"
+          badgeClass="bg-orange-50 border border-orange-100 text-orange-500"
+          tokenLabel="API Key"
+          tokenPlaceholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          tokenHint='Ga naar <strong>zapier.com</strong> → Developer Platform → je app → API Key.'
+          syncMutation={zapierSync}
+        />
+      ),
+    },
+    {
+      key: "typeform",
+      connected: !!typeformInt,
+      node: (
+        <IntegrationCard
+          type="typeform"
+          label="Typeform"
+          description="Importeer formulieren automatisch via de Typeform API"
+          badge="TF"
+          badgeClass="bg-blue-50 border border-blue-100 text-blue-600"
+          tokenLabel="Personal Access Token"
+          tokenPlaceholder="tfp_xxxxxxxxxxxxxxxxxxxxxxxx"
+          tokenHint='Ga naar <strong>typeform.com</strong> → Account → Developer apps → Personal tokens.'
+          syncMutation={typeformSync}
+        />
+      ),
+    },
+    {
+      key: "gitlab",
+      connected: !!gitlabInt,
+      node: <GitLabCard />,
+    },
+  ].sort((a, b) => Number(b.connected) - Number(a.connected));
+
   return (
     <div className="max-w-2xl space-y-6">
       <div>
@@ -293,43 +604,11 @@ export default function Instellingen() {
         <p className="text-sm text-muted-foreground mt-1">Beheer koppelingen met externe systemen</p>
       </div>
 
-      <IntegrationCard
-        type="hubspot"
-        label="HubSpot"
-        description="Importeer workflows automatisch via de HubSpot API"
-        badge="HS"
-        badgeClass="bg-orange-50 border border-orange-100 text-orange-600"
-        tokenLabel="Private App Token"
-        tokenPlaceholder="pat-eu1-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-        tokenHint='Maak een Private App aan in HubSpot met de <code class="bg-muted px-1 rounded">automation</code> scope.'
-        syncMutation={hubspotSync}
-      />
+      <PortaalInstellingenCard />
 
-      <IntegrationCard
-        type="zapier"
-        label="Zapier"
-        description="Importeer Zaps automatisch via de Zapier API"
-        badge="ZP"
-        badgeClass="bg-orange-50 border border-orange-100 text-orange-500"
-        tokenLabel="API Key"
-        tokenPlaceholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        tokenHint='Ga naar <strong>zapier.com</strong> → Developer Platform → je app → API Key.'
-        syncMutation={zapierSync}
-      />
-
-      <IntegrationCard
-        type="typeform"
-        label="Typeform"
-        description="Importeer formulieren automatisch via de Typeform API"
-        badge="TF"
-        badgeClass="bg-blue-50 border border-blue-100 text-blue-600"
-        tokenLabel="Personal Access Token"
-        tokenPlaceholder="tfp_xxxxxxxxxxxxxxxxxxxxxxxx"
-        tokenHint='Ga naar <strong>typeform.com</strong> → Account → Developer apps → Personal tokens.'
-        syncMutation={typeformSync}
-      />
-
-      <GitLabCard />
+      {cards.map((c) => (
+        <div key={c.key}>{c.node}</div>
+      ))}
     </div>
   );
 }
