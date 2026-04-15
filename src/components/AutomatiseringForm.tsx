@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Automatisering, CATEGORIEEN, SYSTEMEN, STATUSSEN, KLANT_FASEN, Systeem, Categorie, Status, KlantFase, Koppeling } from "@/lib/types";
 import { useAutomatiseringen, useSaveAutomatisering, useUpdateAutomatisering, useNextId, usePortalSettings } from "@/lib/hooks";
@@ -24,14 +24,14 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
   const updateMutation = useUpdateAutomatisering();
 
   const { data: portalSettings } = usePortalSettings();
-  const effectiveSystemen = [
-    ...SYSTEMEN,
-    ...(portalSettings?.extraSystemen ?? []),
-  ] as string[];
-  const effectiveCategorieen = [
-    ...CATEGORIEEN,
-    ...(portalSettings?.extraCategorieen ?? []),
-  ] as string[];
+  const effectiveSystemen = useMemo(
+    () => Array.from(new Set([...SYSTEMEN, ...(portalSettings?.extraSystemen ?? [])])) as string[],
+    [portalSettings?.extraSystemen]
+  );
+  const effectiveCategorieen = useMemo(
+    () => Array.from(new Set([...CATEGORIEEN, ...(portalSettings?.extraCategorieen ?? [])])) as string[],
+    [portalSettings?.extraCategorieen]
+  );
 
   const [form, setForm] = useState<Partial<Automatisering>>({
     naam: "",
@@ -52,7 +52,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
 
   const set = (key: string, value: unknown) => setForm((f) => ({ ...f, [key]: value }));
 
-  const toggleSysteem = (s: Systeem) => {
+  const toggleSysteem = (s: string) => {
     const curr = form.systemen || [];
     set("systemen", curr.includes(s) ? curr.filter((x) => x !== s) : [...curr, s]);
   };
@@ -192,7 +192,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         <div className="flex flex-wrap gap-3">
           {effectiveSystemen.map((s) => (
             <label key={s} className="flex items-center gap-2 text-sm">
-              <Checkbox checked={form.systemen?.includes(s as Systeem)} onCheckedChange={() => toggleSysteem(s as Systeem)} />
+              <Checkbox checked={form.systemen?.includes(s as Systeem)} onCheckedChange={() => toggleSysteem(s)} />
               {s}
             </label>
           ))}
