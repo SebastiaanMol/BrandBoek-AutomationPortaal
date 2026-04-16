@@ -8,15 +8,15 @@ Gesyncde automations doorlopen een review-fase voor ze zichtbaar worden in Alle 
 
 **Inbegrepen:**
 - Nieuwe `enrich-automation` Supabase edge function
-- `ai_enrichment` JSONB kolom op `automatiseringen`
+- `ai_enrichment` en `reviewer_overrides` JSONB kolommen op `automatiseringen`
 - Automatische aanroep na hubspot-sync, gitlab-sync en bij nieuwe inserts
 - Vervangen van de huidige Imports-pagina door een nieuw Review dashboard
 - Per-veld bewerkbare AI-suggesties (naam, doel, beschrijving, systemen, fasen)
-- Goedkeuren / Afwijzen flow
+- Goedkeuren / Afwijzen flow (soft delete)
 
 **Niet inbegrepen:**
 - Handmatig herstarten van enrichment via de UI (toekomstig)
-- Batch goedkeuren (toekomstig)
+- Batch goedkeuren (toekomstig — prioriteit verhogen als instroom groot blijkt)
 - Enrichment voor Zapier-automations met Zapier API-data (alleen naam/beschrijving via workflow-data)
 
 ---
@@ -25,14 +25,15 @@ Gesyncde automations doorlopen een review-fase voor ze zichtbaar worden in Alle 
 
 ### 1. Database
 
-Eén nieuwe kolom:
+Twee nieuwe kolommen:
 
 ```sql
 ALTER TABLE automatiseringen
-  ADD COLUMN IF NOT EXISTS ai_enrichment JSONB;
+  ADD COLUMN IF NOT EXISTS ai_enrichment      JSONB,
+  ADD COLUMN IF NOT EXISTS reviewer_overrides JSONB;
 ```
 
-Structuur van de waarde:
+**`ai_enrichment`** — gevuld door de `enrich-automation` edge function:
 
 ```json
 {
@@ -42,12 +43,26 @@ Structuur van de waarde:
   "trigger_moment": "Wanneer start de automatisering?",
   "end_result": "Wat is het eindresultaat?",
   "data_flow": "Welke data stroomt van HubSpot naar de backend?",
-  "generated_at": "2026-04-16T12:00:00Z",
-  "matched_with": "AUTO-044"
+  "phases": ["Onboarding", "Sales"],
+  "generated_at": "2026-04-16T12:00:00Z"
 }
 ```
 
-`matched_with` is null als er geen GitLab-koppeling is. `ai_enrichment` blijft null zolang Gemini nog niet gedraaid heeft.
+`ai_enrichment` blijft null zolang Gemini nog niet gedraaid heeft. Wordt overschreven bij nieuwe enrichment-runs (bijv. als GitLab-code wijzigt).
+
+**`reviewer_overrides`** — gevuld door de reviewer in het dashboard, nooit overschreven door enrichment:
+
+```json
+{
+  "summary": "Handmatig aangepaste versie",
+  "systems": ["HubSpot", "WeFact"]
+}
+```
+
+Bij weergave en bij goedkeuren geldt altijd: `reviewer_overrides` wint van `ai_enrichment`. Velden die niet in `reviewer_overrides` staan vallen terug op `ai_enrichment`.
+
+**Soft delete bij afwijzen:**
+`import_status = 'rejected'` in plaats van verwijderen. Een achtergrondtaak (of handmatige SQL) ruimt `rejected` automations op na 30 dagen. Dit voorkomt dataverlies bij een misklun.
 
 ---
 
@@ -65,9 +80,11 @@ Structuur van de waarde:
 6. Vul het prompt-template in met alle beschikbare data (zie prompt hieronder)
 7. Stuur naar Gemini 2.5 Flash (zelfde API-setup als gitlab-sync)
 8. Parse de JSON-response
-9. Sla op in `ai_enrichment` op de automation
+9. Sla op in `ai_enrichment` op de automation — `reviewer_overrides` wordt nooit aangeraakt
 
 **Fallback:** als GitLab-fetch of Gemini mislukt → `ai_enrichment` blijft null, geen crash. De reviewer kan dan handmatig invullen.
+
+**Rate limiting:** aanroepen worden sequentieel gedaan vanuit de sync-functies (niet parallel) om Gemini-limieten te respecteren. Een korte pauze van 500ms tussen aanroepen voorkomt 429-errors bij grote syncs.
 
 **Prompt template:**
 
@@ -110,12 +127,14 @@ Geef je antwoord in dit JSON-formaat:
   "systems": ["lijst", "van", "betrokken", "systemen"],
   "trigger_moment": "Wanneer start deze automatisering?",
   "end_result": "Wat is het eindresultaat?",
-  "data_flow": "Welke data wordt doorgegeven van HubSpot naar de backend?"
+  "data_flow": "Welke data wordt doorgegeven van HubSpot naar de backend?",
+  "phases": ["lijst", "van", "klantfasen"]
 }
 
 Schrijf alsof je uitlegt aan een niet-technische collega.
 Gebruik geen jargon. Wees concreet en kort.
 Als de testcode extra inzicht geeft, verwerk dat dan in de beschrijving.
+Geldige waarden voor phases: Onboarding, Marketing, Sales, Boekhouding, Offboarding.
 ```
 
 Als er geen GitLab-match is, worden de GitLab-secties weggelaten en vraagt het prompt om een beschrijving op basis van de beschikbare bron alleen.
@@ -125,15 +144,15 @@ Als er geen GitLab-match is, worden de GitLab-secties weggelaten en vraagt het p
 ### 3. Trigger-logica
 
 **Trigger 1 — Na hubspot-sync matching pass:**
-Voor elke nieuw aangemaakte `automation_links` rij: roep `enrich-automation` aan met het HubSpot-automation ID. Automations met bestaand `ai_enrichment` worden overgeslagen tenzij de GitLab-code gewijzigd is.
+Voor elke nieuw aangemaakte `automation_links` rij: roep `enrich-automation` aan met het HubSpot-automation ID. Automations met bestaand `ai_enrichment` worden overgeslagen tenzij er nog geen `matched_with` link was (nieuwe koppeling = nieuwe enrichment).
 
 **Trigger 2 — Na gitlab-sync:**
-Voor elke GitLab-automation met endpoints én een bestaande `automation_links` rij: roep `enrich-automation` aan (GitLab-code kan veranderd zijn).
+Voor elke GitLab-automation met endpoints én een bestaande `automation_links` rij: roep `enrich-automation` aan op de HubSpot-kant (GitLab-code kan veranderd zijn).
 
 **Trigger 3 — Na nieuwe automation insert (alle bronnen):**
 Elke nieuw gesyncde automation krijgt een `enrich-automation` aanroep zodat ook niet-gematchte automations een AI-beschrijving krijgen voor het Review dashboard.
 
-**Uitvoering:** fire-and-forget — de sync wacht niet op enrichment. Enrichment-fouten blokkeren de sync niet.
+**Uitvoering:** sequentieel, fire-and-forget — de sync wacht niet op enrichment. Enrichment-fouten blokkeren de sync niet.
 
 ---
 
@@ -150,7 +169,7 @@ Vervangt de huidige Imports-pagina op `/imports`.
 
 **Review-kaart (uitgeklapt):**
 
-Bewerkbare velden met AI-suggesties als vooringevulde waarden:
+Bewerkbare velden tonen de effectieve waarde: `reviewer_overrides[veld] ?? ai_enrichment[veld]`. Aanpassingen worden direct in `reviewer_overrides` opgeslagen.
 
 | Veld | Bewerkbaar | Bron |
 |---|---|---|
@@ -158,14 +177,14 @@ Bewerkbare velden met AI-suggesties als vooringevulde waarden:
 | Doel | ja | `ai_enrichment.summary` |
 | Beschrijving | ja | `ai_enrichment.description` |
 | Systemen | ja (checkboxes) | `ai_enrichment.systems` |
-| Fasen | ja (checkboxes) | AI-suggestie |
+| Fasen | ja (checkboxes) | `ai_enrichment.phases` |
 | Trigger | readonly | HubSpot/sync data |
 | Data flow | readonly | `ai_enrichment.data_flow` |
 | Eindresultaat | readonly | `ai_enrichment.end_result` |
 
 **Acties:**
-- **Goedkeuren** → bevestigde veldwaarden worden opgeslagen op de automation, `import_status = 'approved'`, automation verschijnt in Alle Automatiseringen
-- **Afwijzen** → automation wordt verwijderd inclusief bijbehorende `automation_links`
+- **Goedkeuren** → effectieve veldwaarden (`reviewer_overrides` over `ai_enrichment`) worden opgeslagen als definitieve velden op de automation, `import_status = 'approved'`, automation verschijnt in Alle Automatiseringen
+- **Afwijzen** → `import_status = 'rejected'`, automation verdwijnt uit de reviewlijst maar blijft in de database. Wordt na 30 dagen automatisch opgeruimd.
 
 ---
 
@@ -176,10 +195,11 @@ Bewerkbare velden met AI-suggesties als vooringevulde waarden:
 | Nieuwe HubSpot-sync met match | `enrich-automation` aangeroepen, `ai_enrichment` gevuld |
 | Gemini faalt | `ai_enrichment` blijft null, reviewer vult handmatig in |
 | Geen GitLab-match | Beschrijving op basis van HubSpot-data alleen |
-| GitLab-code gewijzigd | Nieuwe enrichment overschrijft oude `ai_enrichment` |
-| Reviewer past veld aan voor goedkeuring | Aangepaste waarde opgeslagen, AI-suggestie genegeerd |
-| Afwijzen | Automation + links verwijderd |
+| GitLab-code gewijzigd | `ai_enrichment` overschreven, `reviewer_overrides` onaangetast |
+| Reviewer past veld aan | Opgeslagen in `reviewer_overrides`, wint altijd van AI |
+| Afwijzen | `import_status = 'rejected'`, soft delete |
 | Al goedgekeurd, sync draait opnieuw | `import_status = 'approved'` — niet opnieuw in review |
+| Per ongeluk afgewezen | Automation terug te vinden via SQL, nog niet hard-deleted |
 
 ## Wat er niet verandert
 
