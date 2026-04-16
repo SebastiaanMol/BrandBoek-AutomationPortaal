@@ -289,7 +289,7 @@ serve(async (req) => {
             const content = await fetchFileContent(projectId, filePath, branch, pat);
             const filename = filePath.split("/").pop() ?? filePath;
             const metadata = await extractMetadata(filename, content, GEMINI_API_KEY);
-            const systemen = Array.from(new Set(["GitLab", ...(metadata.systemen ?? [])]));
+            const systemen = [...new Set(["GitLab", ...(metadata.systemen ?? [])])];
             const fasen = getFasen(filePath);
 
             if (existingMap[filePath]) {

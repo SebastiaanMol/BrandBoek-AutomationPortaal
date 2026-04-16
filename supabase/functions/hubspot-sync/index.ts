@@ -397,7 +397,7 @@ function generateSimpeleTaal(wf: any, actions: any[], trigger: string, enrollmen
 function mapWorkflow(wf: any) {
   const actions = flattenActions(wf.actions ?? []);
   const stappen   = extractStappen(actions);
-  const systemen = Array.from(new Set(["HubSpot", ...extractSystemen(actions)]));
+  const systemen = [...new Set(["HubSpot", ...extractSystemen(actions)])] as string[];
   const branches  = extractBranches(actions);
   const trigger   = extractTrigger(wf);
   const categorie = inferCategorie(actions);

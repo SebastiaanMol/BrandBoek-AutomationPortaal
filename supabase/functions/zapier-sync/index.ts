@@ -68,7 +68,7 @@ serve(async (req) => {
       const status = zap.is_enabled ? "Actief" : "Uitgeschakeld";
       const now = new Date().toISOString();
       const rawSystemen = [...new Set((zap.steps || []).map((s: any) => s.app?.name).filter(Boolean))] as string[];
-      const systemen = Array.from(new Set(["Zapier", ...rawSystemen]));
+      const systemen = [...new Set(["Zapier", ...rawSystemen])];
 
       if (existingByExternalId[externalId]) {
         await db.from("automatiseringen").update({ naam: zap.title, status, last_synced_at: now }).eq("id", existingByExternalId[externalId].id);
