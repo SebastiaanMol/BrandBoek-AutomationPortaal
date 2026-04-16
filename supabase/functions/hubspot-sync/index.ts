@@ -394,6 +394,15 @@ function generateSimpeleTaal(wf: any, actions: any[], trigger: string, enrollmen
   return sentences;
 }
 
+function extractWebhookPaths(actions: any[]): string[] {
+  return actions
+    .filter((a) => (a.type ?? a.actionType) === "WEBHOOK")
+    .flatMap((a) => {
+      const raw: string = a.url ?? a.webhookUrl ?? "";
+      try { return [new URL(raw).pathname]; } catch { return []; }
+    });
+}
+
 function mapWorkflow(wf: any) {
   const actions = flattenActions(wf.actions ?? []);
   const stappen   = extractStappen(actions);
@@ -445,6 +454,7 @@ function mapWorkflow(wf: any) {
     enrollment,
     beschrijving_in_simpele_taal: beschrijvingInSimpeleTaal,
     confidence,
+    webhookPaths:                 extractWebhookPaths(actions),
   };
 }
 
@@ -571,6 +581,7 @@ serve(async (req) => {
           stappen:              mapped.stappen,
           branches:             mapped.branches,
           categorie:            mapped.categorie,
+          webhook_paths:        mapped.webhookPaths,
           import_proposal:      { ...mapped },
           raw_payload:          wf,
           last_synced_at:       now,
@@ -596,6 +607,7 @@ serve(async (req) => {
           verbeterideeen:  "",
           mermaid_diagram: "",
           fasen:           mapped.fasen,
+          webhook_paths:   mapped.webhookPaths,
           external_id:     externalId,
           source:          "hubspot",
           import_source:   "hubspot",
@@ -616,6 +628,52 @@ serve(async (req) => {
         deactivated++;
       }
     }
+
+    // ── Endpoint matching pass ────────────────────────────────────────────────
+    const { data: hsAutos } = await db
+      .from("automatiseringen")
+      .select("id, webhook_paths")
+      .eq("source", "hubspot");
+
+    const { data: glAutos } = await db
+      .from("automatiseringen")
+      .select("id, endpoints")
+      .eq("source", "gitlab");
+
+    const newMatches: Array<{ source_id: string; target_id: string; match_type: string; confirmed: boolean }> = [];
+    for (const hs of (hsAutos ?? [])) {
+      const hsPaths: string[] = hs.webhook_paths ?? [];
+      if (hsPaths.length === 0) continue;
+      for (const gl of (glAutos ?? [])) {
+        const glEndpoints: string[] = gl.endpoints ?? [];
+        if (hsPaths.some((p: string) => glEndpoints.includes(p))) {
+          newMatches.push({ source_id: hs.id, target_id: gl.id, match_type: "exact", confirmed: false });
+        }
+      }
+    }
+
+    if (newMatches.length > 0) {
+      await db.from("automation_links").upsert(newMatches, { onConflict: "source_id,target_id", ignoreDuplicates: true });
+    }
+
+    const matchedKeys = new Set(newMatches.map((m) => `${m.source_id}:${m.target_id}`));
+    const hsIds = (hsAutos ?? []).map((r: any) => r.id);
+    if (hsIds.length > 0) {
+      const { data: existingLinks } = await db
+        .from("automation_links")
+        .select("id, source_id, target_id")
+        .in("source_id", hsIds)
+        .eq("confirmed", false);
+
+      const staleIds = (existingLinks ?? [])
+        .filter((l: any) => !matchedKeys.has(`${l.source_id}:${l.target_id}`))
+        .map((l: any) => l.id);
+
+      if (staleIds.length > 0) {
+        await db.from("automation_links").delete().in("id", staleIds);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     await db.from("integrations").update({
       last_synced_at: new Date().toISOString(),
