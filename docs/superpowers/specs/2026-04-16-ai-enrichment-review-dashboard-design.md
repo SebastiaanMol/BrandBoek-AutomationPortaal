@@ -144,7 +144,7 @@ Als er geen GitLab-match is, worden de GitLab-secties weggelaten en vraagt het p
 ### 3. Trigger-logica
 
 **Trigger 1 — Na hubspot-sync matching pass:**
-Voor elke nieuw aangemaakte `automation_links` rij: roep `enrich-automation` aan met het HubSpot-automation ID. Automations met bestaand `ai_enrichment` worden overgeslagen tenzij er nog geen `matched_with` link was (nieuwe koppeling = nieuwe enrichment).
+Voor elke `automation_links` rij waarvan `created_at >= now() - interval '1 minute'` (d.w.z. nieuw aangemaakt in deze sync-run): roep `enrich-automation` aan met het HubSpot-automation ID. Bestaande links met al een `ai_enrichment` worden niet opnieuw getriggerd.
 
 **Trigger 2 — Na gitlab-sync:**
 Voor elke GitLab-automation met endpoints én een bestaande `automation_links` rij: roep `enrich-automation` aan op de HubSpot-kant (GitLab-code kan veranderd zijn).
@@ -171,20 +171,23 @@ Vervangt de huidige Imports-pagina op `/imports`.
 
 Bewerkbare velden tonen de effectieve waarde: `reviewer_overrides[veld] ?? ai_enrichment[veld]`. Aanpassingen worden direct in `reviewer_overrides` opgeslagen.
 
-| Veld | Bewerkbaar | Bron |
+| Veld | Bewerkbaar | Doelkolom bij goedkeuren |
 |---|---|---|
-| Naam | ja | sync-data / AI |
-| Doel | ja | `ai_enrichment.summary` |
-| Beschrijving | ja | `ai_enrichment.description` |
-| Systemen | ja (checkboxes) | `ai_enrichment.systems` |
-| Fasen | ja (checkboxes) | `ai_enrichment.phases` |
-| Trigger | readonly | HubSpot/sync data |
-| Data flow | readonly | `ai_enrichment.data_flow` |
-| Eindresultaat | readonly | `ai_enrichment.end_result` |
+| Naam | ja | `naam` |
+| Doel | ja | `doel` |
+| Beschrijving | ja | `beschrijving_in_simpele_taal[0]` |
+| Systemen | ja (checkboxes) | `systemen` |
+| Fasen | ja (checkboxes) | `fasen` |
+| Trigger | readonly | — |
+| Data flow | ja | `afhankelijkheden` |
+| Eindresultaat | ja | `verbeterideeen` (tijdelijk, tot apart veld beschikbaar) |
+
+**Goedkeuren — schrijflogica:**
+Bij goedkeuren worden de effectieve waarden (`reviewer_overrides[veld] ?? ai_enrichment[veld]`) weggeschreven naar de bestaande kolommen van `automatiseringen`. De rest van de app (Alle Automatiseringen, detailpaneel) leest gewoon de bestaande kolommen — geen merge-logica nodig buiten het review-dashboard.
 
 **Acties:**
-- **Goedkeuren** → effectieve veldwaarden (`reviewer_overrides` over `ai_enrichment`) worden opgeslagen als definitieve velden op de automation, `import_status = 'approved'`, automation verschijnt in Alle Automatiseringen
-- **Afwijzen** → `import_status = 'rejected'`, automation verdwijnt uit de reviewlijst maar blijft in de database. Wordt na 30 dagen automatisch opgeruimd.
+- **Goedkeuren** → effectieve waarden weggeschreven naar bestaande kolommen (zie tabel), `import_status = 'approved'`, automation verschijnt in Alle Automatiseringen
+- **Afwijzen** → `import_status = 'rejected'`, automation verdwijnt uit de reviewlijst maar blijft in de database. Wordt na 30 dagen opgeruimd via een Supabase cron job die dagelijks draait en rijen verwijdert waar `import_status = 'rejected' AND last_synced_at < now() - interval '30 days'`.
 
 ---
 
