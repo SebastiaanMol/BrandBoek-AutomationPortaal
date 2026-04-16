@@ -67,7 +67,8 @@ serve(async (req) => {
       syncedIds.add(externalId);
       const status = zap.is_enabled ? "Actief" : "Uitgeschakeld";
       const now = new Date().toISOString();
-      const systemen = [...new Set((zap.steps || []).map((s: any) => s.app?.name).filter(Boolean))] as string[];
+      const rawSystemen = [...new Set((zap.steps || []).map((s: any) => s.app?.name).filter(Boolean))] as string[];
+      const systemen = Array.from(new Set(["Zapier", ...rawSystemen]));
 
       if (existingByExternalId[externalId]) {
         await db.from("automatiseringen").update({ naam: zap.title, status, last_synced_at: now }).eq("id", existingByExternalId[externalId].id);
@@ -78,7 +79,7 @@ serve(async (req) => {
           id: newId || `AUTO-ZP-${externalId}`,
           naam: zap.title, categorie: "Zapier Zap", doel: "",
           trigger_beschrijving: zap.steps?.[0]?.app?.name || "",
-          systemen: systemen.length ? systemen : ["Zapier"],
+          systemen: systemen,
           stappen: (zap.steps || []).map((s: any) => s.app?.name || "Stap"),
           afhankelijkheden: "", owner: "", status, verbeterideeen: "", mermaid_diagram: "", fasen: [],
           external_id: externalId, source: "zapier", last_synced_at: now,
