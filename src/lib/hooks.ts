@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings } from "./supabaseStorage";
+import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings, fetchAutomationLinks, confirmAutomationLink } from "./supabaseStorage";
 import { Automatisering, PortalSettings } from "./types";
 
 export function useAutomatiseringen() {
@@ -141,5 +141,21 @@ export function useSavePortalSettings() {
   return useMutation({
     mutationFn: (settings: PortalSettings) => savePortalSettings(settings),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["portal_settings"] }),
+  });
+}
+
+export function useAutomationLinks(id: string) {
+  return useQuery({
+    queryKey: ["automation_links", id],
+    queryFn: () => fetchAutomationLinks(id),
+    enabled: !!id,
+  });
+}
+
+export function useConfirmLink() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (linkId: string) => confirmAutomationLink(linkId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["automation_links"] }),
   });
 }

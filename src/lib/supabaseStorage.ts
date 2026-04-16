@@ -332,3 +332,49 @@ export async function savePortalSettings(settings: PortalSettings): Promise<void
     );
   if (error) throw error;
 }
+
+// ─── Automation Links ─────────────────────────────────────────────────────────
+
+export type AutomationLinkWithTarget = {
+  id: string;
+  source_id: string;
+  target_id: string;
+  match_type: string;
+  confirmed: boolean;
+  target: { id: string; naam: string; gitlab_file_path: string | null } | null;
+};
+
+export type AutomationLinkWithSource = {
+  id: string;
+  source_id: string;
+  target_id: string;
+  match_type: string;
+  confirmed: boolean;
+  source: { id: string; naam: string } | null;
+};
+
+export async function fetchAutomationLinks(id: string): Promise<{
+  asSource: AutomationLinkWithTarget[];
+  asTarget: AutomationLinkWithSource[];
+}> {
+  const db = supabase as any;
+  const [{ data: asSource }, { data: asTarget }] = await Promise.all([
+    db
+      .from("automation_links")
+      .select("id, source_id, target_id, match_type, confirmed, target:automatiseringen!target_id(id, naam, gitlab_file_path)")
+      .eq("source_id", id),
+    db
+      .from("automation_links")
+      .select("id, source_id, target_id, match_type, confirmed, source:automatiseringen!source_id(id, naam)")
+      .eq("target_id", id),
+  ]);
+  return { asSource: asSource ?? [], asTarget: asTarget ?? [] };
+}
+
+export async function confirmAutomationLink(linkId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from("automation_links")
+    .update({ confirmed: true })
+    .eq("id", linkId);
+  if (error) throw error;
+}
