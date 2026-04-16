@@ -53,6 +53,16 @@ async function fetchGitlabTree(
 
     if (!res.ok) {
       const body = await res.text();
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed.error === "insufficient_scope") {
+          throw new Error(
+            `GitLab token heeft onvoldoende rechten. Maak een legacy Personal Access Token aan met 'read_api' scope (niet read_repository, niet via AI/Duo-instellingen).`,
+          );
+        }
+      } catch (e) {
+        if ((e as Error).message.startsWith("GitLab token")) throw e;
+      }
       throw new Error(`GitLab Tree API fout (${res.status}): ${body.slice(0, 200)}`);
     }
 
@@ -264,67 +274,80 @@ serve(async (req) => {
       if (row.external_id) existingMap[row.external_id] = row;
     }
 
-    const syncedPaths = new Set<string>();
+    const syncedPaths = new Set<string>(automationFiles); // mark all upfront
     let inserted = 0, updated = 0;
     const now = new Date().toISOString();
+    const fileErrors: string[] = [];
 
-    // Step 3: Fetch content + extract metadata + upsert
-    for (const filePath of automationFiles) {
-      syncedPaths.add(filePath);
-      try {
-        const content = await fetchFileContent(projectId, filePath, branch, pat);
-        const filename = filePath.split("/").pop() ?? filePath;
-        const metadata = await extractMetadata(filename, content, GEMINI_API_KEY);
-        const fasen = getFasen(filePath);
+    // Step 3: Fetch content + extract metadata + upsert — parallel batches of 5
+    const BATCH = 5;
+    for (let i = 0; i < automationFiles.length; i += BATCH) {
+      const batch = automationFiles.slice(i, i + BATCH);
+      await Promise.allSettled(
+        batch.map(async (filePath) => {
+          try {
+            const content = await fetchFileContent(projectId, filePath, branch, pat);
+            const filename = filePath.split("/").pop() ?? filePath;
+            const metadata = await extractMetadata(filename, content, GEMINI_API_KEY);
+            const systemen = Array.from(new Set(["GitLab", ...(metadata.systemen ?? [])]));
+            const fasen = getFasen(filePath);
 
-        if (existingMap[filePath]) {
-          // Update existing record — preserve status and other user-edited fields
-          const { error: updateError } = await db
-            .from("automatiseringen")
-            .update({
-              naam:                 metadata.naam,
-              doel:                 metadata.doel,
-              trigger_beschrijving: metadata.trigger,
-              stappen:              metadata.stappen,
-              systemen:             metadata.systemen,
-              fasen,
-              gitlab_file_path:     filePath,
-              last_synced_at:       now,
-            })
-            .eq("id", existingMap[filePath].id);
-          if (updateError) throw updateError;
-          updated++;
-        } else {
-          // New record — auto-approved, no review queue
-          const { data: newId } = await db.rpc("generate_auto_id");
-          const { error: insertError } = await db.from("automatiseringen").insert({
-            id:                   newId || `AUTO-GL-${Date.now()}`,
-            naam:                 metadata.naam,
-            doel:                 metadata.doel,
-            trigger_beschrijving: metadata.trigger,
-            stappen:              metadata.stappen,
-            systemen:             metadata.systemen,
-            fasen,
-            categorie:            "Backend Script",
-            status:               "Actief",
-            afhankelijkheden:     "",
-            owner:                "",
-            verbeterideeen:       "",
-            mermaid_diagram:      "",
-            external_id:          filePath,
-            source:               "gitlab",
-            import_status:        null,
-            gitlab_file_path:     filePath,
-            last_synced_at:       now,
-          });
-          if (insertError) throw insertError;
-          inserted++;
-        }
-      } catch (e) {
-        console.warn(
-          `gitlab-sync: bestand mislukt — ${filePath}: ${(e as Error).message}`,
-        );
-      }
+            if (existingMap[filePath]) {
+              const { error: updateError } = await db
+                .from("automatiseringen")
+                .update({
+                  naam:                 metadata.naam,
+                  doel:                 metadata.doel,
+                  trigger_beschrijving: metadata.trigger,
+                  stappen:              metadata.stappen,
+                  systemen:             systemen,
+                  fasen,
+                  gitlab_file_path:     filePath,
+                  last_synced_at:       now,
+                })
+                .eq("id", existingMap[filePath].id);
+              if (updateError) throw updateError;
+              updated++;
+            } else {
+              const { data: newId } = await db.rpc("generate_auto_id");
+              const { error: insertError } = await db.from("automatiseringen").insert({
+                id:                   newId || `AUTO-GL-${Date.now()}`,
+                naam:                 metadata.naam,
+                doel:                 metadata.doel,
+                trigger_beschrijving: metadata.trigger,
+                stappen:              metadata.stappen,
+                systemen:             systemen,
+                fasen,
+                categorie:            "Backend Script",
+                status:               "Actief",
+                afhankelijkheden:     "",
+                owner:                "",
+                verbeterideeen:       "",
+                mermaid_diagram:      "",
+                external_id:          filePath,
+                source:               "gitlab",
+                import_status:        "approved",
+                gitlab_file_path:     filePath,
+                last_synced_at:       now,
+              });
+              if (insertError) throw insertError;
+              inserted++;
+            }
+          } catch (e) {
+            const msg = `${filePath}: ${(e as Error).message}`;
+            console.warn(`gitlab-sync: bestand mislukt — ${msg}`);
+            fileErrors.push(msg);
+          }
+        }),
+      );
+    }
+
+    // If every single file failed, surface the first error instead of returning 0/0/0
+    if (fileErrors.length > 0 && inserted + updated === 0) {
+      return new Response(
+        JSON.stringify({ error: `Alle bestanden mislukt. Eerste fout: ${fileErrors[0]}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     // Step 4: Deactivate files no longer in the repo
