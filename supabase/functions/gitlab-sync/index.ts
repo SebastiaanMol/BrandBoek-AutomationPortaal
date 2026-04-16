@@ -35,6 +35,19 @@ function getFasen(filePath: string): string[] {
   return FASEN_MAP[parentDir] ?? [];
 }
 
+// ── Endpoint extraction: regex on FastAPI APIRouter patterns ─────────────────
+function extractEndpoints(content: string): string[] {
+  const prefixMatch = content.match(/APIRouter\s*\(\s*prefix\s*=\s*["']([^"']+)["']/);
+  const prefix = prefixMatch?.[1] ?? "";
+  const routeRe = /@router\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["']/g;
+  const endpoints: string[] = [];
+  let m;
+  while ((m = routeRe.exec(content)) !== null) {
+    endpoints.push(`${prefix}${m[2]}`);
+  }
+  return endpoints;
+}
+
 // ── GitLab Tree API: returns all .py file paths under app/ ───────────────────
 async function fetchGitlabTree(
   projectId: string,
@@ -291,6 +304,7 @@ serve(async (req) => {
             const metadata = await extractMetadata(filename, content, GEMINI_API_KEY);
             const systemen = [...new Set(["GitLab", ...(metadata.systemen ?? [])])];
             const fasen = getFasen(filePath);
+            const endpoints = extractEndpoints(content);
 
             if (existingMap[filePath]) {
               const { error: updateError } = await db
@@ -302,6 +316,7 @@ serve(async (req) => {
                   stappen:              metadata.stappen,
                   systemen:             systemen,
                   fasen,
+                  endpoints,
                   gitlab_file_path:     filePath,
                   last_synced_at:       now,
                 })
@@ -318,6 +333,7 @@ serve(async (req) => {
                 stappen:              metadata.stappen,
                 systemen:             systemen,
                 fasen,
+                endpoints,
                 categorie:            "Backend Script",
                 status:               "Actief",
                 afhankelijkheden:     "",
