@@ -39,3 +39,6 @@ CREATE POLICY "authenticated users can delete automation_links"
 CREATE POLICY "service role can manage automation_links"
   ON automation_links FOR ALL
   TO service_role USING (true) WITH CHECK (true);
+
+CREATE INDEX idx_automation_links_source_id ON automation_links(source_id);
+CREATE INDEX idx_automation_links_target_id ON automation_links(target_id);
