@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { useAutomatiseringen, useDeleteAutomatisering, usePortalSettings } from "@/lib/hooks";
+import { useAutomatiseringen, useDeleteAutomatisering, usePortalSettings, useAutomationLinks, useConfirmLink } from "@/lib/hooks";
 import { exportToCSV } from "@/lib/supabaseStorage";
 import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem, Automatisering } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
@@ -195,131 +195,11 @@ export default function AlleAutomatiseringen() {
                   transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   className="overflow-hidden"
                 >
-                  <div className="px-5 pb-5 pt-3 border-t border-border space-y-5">
-                    {/* Actions */}
-                    <div className="flex justify-end gap-3">
-                      <button
-                        onClick={() => navigate(`/brandy?context=${a.id}&naam=${encodeURIComponent(a.naam)}`)}
-                        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" /> Vraag Brandy
-                      </button>
-                      <button
-                        onClick={() => navigate(`/bewerk/${a.id}`)}
-                        className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-                      >
-                        <Pencil className="h-3.5 w-3.5" /> Edit
-                      </button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button className="inline-flex items-center gap-1.5 text-sm text-destructive hover:underline">
-                            <Trash2 className="h-3.5 w-3.5" /> Delete
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete automation?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete <strong>{a.id} — {a.naam}</strong>? This also removes all links. This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Keep Automation</AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              onClick={async () => {
-                                try {
-                                  await deleteMutation.mutateAsync(a.id);
-                                  setOpenId(null);
-                                  toast.success(`${a.id} deleted`);
-                                } catch (err: any) {
-                                  toast.error(err.message || "Delete failed");
-                                }
-                              }}
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-
-                    {/* Plain-language description */}
-                    {a.beschrijvingInSimpeleTaal && a.beschrijvingInSimpeleTaal.length > 0 ? (
-                      <div className="bg-secondary/40 rounded-md px-4 py-3 space-y-1.5">
-                        <p className="label-uppercase mb-2">Wat doet deze automatisering?</p>
-                        {a.beschrijvingInSimpeleTaal.map((line, i) => (
-                          <p key={i} className="text-sm text-foreground leading-relaxed">{line}</p>
-                        ))}
-                      </div>
-                    ) : a.doel ? (
-                      <div className="bg-secondary/40 rounded-md px-4 py-3">
-                        <p className="label-uppercase mb-1">Wat doet deze automatisering?</p>
-                        <p className="text-sm text-foreground leading-relaxed">{a.doel}</p>
-                      </div>
-                    ) : null}
-
-                    {/* Trigger */}
-                    {a.trigger && (
-                      <div className="flex items-start gap-2">
-                        <Zap className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                        <div>
-                          <p className="label-uppercase mb-0.5">Wordt gestart door</p>
-                          <p className="text-sm text-foreground">{a.trigger}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Flow steps */}
-                    {a.stappen.length > 0 && (
-                      <div>
-                        <p className="label-uppercase mb-2">Hoe werkt het?</p>
-                        <div className="flex flex-col gap-1.5">
-                          {a.stappen.map((s, i) => (
-                            <div key={i} className="flex items-start gap-2.5">
-                              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center mt-0.5">
-                                {i + 1}
-                              </span>
-                              <p className="text-sm text-foreground leading-snug pt-0.5">{s}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Phase + meta row */}
-                    <div className="grid md:grid-cols-2 gap-4 pt-1 border-t border-border">
-                      {a.fasen && a.fasen.length > 0 && (
-                        <div>
-                          <p className="label-uppercase mb-1.5">Bedrijfsfasen</p>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {a.fasen.map((f) => (
-                              <span key={f} className="px-2 py-0.5 rounded-full text-[11px] bg-secondary text-foreground border border-border">{f}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {a.owner && <Detail label="Owner" value={a.owner} />}
-                      {a.afhankelijkheden && <Detail label="Dependencies" value={a.afhankelijkheden} />}
-                    </div>
-
-                    {/* Systems */}
-                    <div>
-                      <p className="label-uppercase mb-1">Systemen</p>
-                      <div className="flex gap-1.5 flex-wrap">
-                        {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
-                      </div>
-                    </div>
-
-                    {a.verbeterideeën && <Detail label="Improvement Ideas" value={a.verbeterideeën} />}
-
-                    {a.mermaidDiagram && (
-                      <div>
-                        <p className="label-uppercase mb-2">Flow Diagram</p>
-                        <MermaidDiagram chart={a.mermaidDiagram} />
-                      </div>
-                    )}
-                  </div>
+                  <AutomatiseringDetailPanel
+                    a={a}
+                    onDeleted={() => setOpenId(null)}
+                    deleteMutation={deleteMutation}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -336,6 +216,215 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div>
       <p className="label-uppercase mb-0.5">{label}</p>
       <p className="text-sm text-foreground">{value || "—"}</p>
+    </div>
+  );
+}
+
+function AutomatiseringDetailPanel({
+  a,
+  onDeleted,
+  deleteMutation,
+}: {
+  a: Automatisering;
+  onDeleted: () => void;
+  deleteMutation: ReturnType<typeof useDeleteAutomatisering>;
+}) {
+  const navigate = useNavigate();
+  const { data: links } = useAutomationLinks(a.id);
+  const confirmMutation = useConfirmLink();
+
+  return (
+    <div className="px-5 pb-5 pt-3 border-t border-border space-y-5">
+      {/* Actions */}
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={() => navigate(`/brandy?context=${a.id}&naam=${encodeURIComponent(a.naam)}`)}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Sparkles className="h-3.5 w-3.5" /> Vraag Brandy
+        </button>
+        <button
+          onClick={() => navigate(`/bewerk/${a.id}`)}
+          className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+        >
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button className="inline-flex items-center gap-1.5 text-sm text-destructive hover:underline">
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete automation?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete <strong>{a.id} — {a.naam}</strong>? This also removes all links. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep Automation</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={async () => {
+                  try {
+                    await deleteMutation.mutateAsync(a.id);
+                    onDeleted();
+                    toast.success(`${a.id} deleted`);
+                  } catch (err: any) {
+                    toast.error(err.message || "Delete failed");
+                  }
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
+      {/* Plain-language description */}
+      {a.beschrijvingInSimpeleTaal && a.beschrijvingInSimpeleTaal.length > 0 ? (
+        <div className="bg-secondary/40 rounded-md px-4 py-3 space-y-1.5">
+          <p className="label-uppercase mb-2">Wat doet deze automatisering?</p>
+          {a.beschrijvingInSimpeleTaal.map((line, i) => (
+            <p key={i} className="text-sm text-foreground leading-relaxed">{line}</p>
+          ))}
+        </div>
+      ) : a.doel ? (
+        <div className="bg-secondary/40 rounded-md px-4 py-3">
+          <p className="label-uppercase mb-1">Wat doet deze automatisering?</p>
+          <p className="text-sm text-foreground leading-relaxed">{a.doel}</p>
+        </div>
+      ) : null}
+
+      {/* Trigger */}
+      {a.trigger && (
+        <div className="flex items-start gap-2">
+          <Zap className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+          <div>
+            <p className="label-uppercase mb-0.5">Wordt gestart door</p>
+            <p className="text-sm text-foreground">{a.trigger}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Flow steps */}
+      {a.stappen.length > 0 && (
+        <div>
+          <p className="label-uppercase mb-2">Hoe werkt het?</p>
+          <div className="flex flex-col gap-1.5">
+            {a.stappen.map((s, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center mt-0.5">
+                  {i + 1}
+                </span>
+                <p className="text-sm text-foreground leading-snug pt-0.5">{s}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Phase + meta row */}
+      <div className="grid md:grid-cols-2 gap-4 pt-1 border-t border-border">
+        {a.fasen && a.fasen.length > 0 && (
+          <div>
+            <p className="label-uppercase mb-1.5">Bedrijfsfasen</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {a.fasen.map((f) => (
+                <span key={f} className="px-2 py-0.5 rounded-full text-[11px] bg-secondary text-foreground border border-border">{f}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {a.owner && <Detail label="Owner" value={a.owner} />}
+        {a.afhankelijkheden && <Detail label="Dependencies" value={a.afhankelijkheden} />}
+      </div>
+
+      {/* Systems */}
+      <div>
+        <p className="label-uppercase mb-1">Systemen</p>
+        <div className="flex gap-1.5 flex-wrap">
+          {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+        </div>
+      </div>
+
+      {a.verbeterideeën && <Detail label="Improvement Ideas" value={a.verbeterideeën} />}
+
+      {a.mermaidDiagram && (
+        <div>
+          <p className="label-uppercase mb-2">Flow Diagram</p>
+          <MermaidDiagram chart={a.mermaidDiagram} />
+        </div>
+      )}
+
+      {/* Backend Script (shown on HubSpot automations with matched GitLab links) */}
+      {links && links.asSource.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <p className="label-uppercase mb-2">Backend Script</p>
+          <div className="space-y-2">
+            {links.asSource.map((link) => (
+              <div key={link.id} className="bg-secondary rounded-[var(--radius-inner)] p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground shrink-0">{link.target?.id}</span>
+                    <span className="text-sm font-medium truncate">{link.target?.naam}</span>
+                  </div>
+                  {link.target?.gitlab_file_path && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">{link.target.gitlab_file_path}</p>
+                  )}
+                </div>
+                {link.confirmed ? (
+                  <span className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Gekoppeld</span>
+                ) : (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Suggestie</span>
+                    <button
+                      onClick={() => confirmMutation.mutate(link.id)}
+                      disabled={confirmMutation.isPending}
+                      className="text-xs text-primary hover:underline disabled:opacity-50"
+                    >
+                      Bevestig
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* HubSpot Workflows (shown on GitLab automations called by HubSpot workflows) */}
+      {links && links.asTarget.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <p className="label-uppercase mb-2">HubSpot Workflows</p>
+          <div className="space-y-2">
+            {links.asTarget.map((link) => (
+              <div key={link.id} className="bg-secondary rounded-[var(--radius-inner)] p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0 flex items-center gap-2">
+                  <span className="font-mono text-xs text-muted-foreground shrink-0">{link.source?.id}</span>
+                  <span className="text-sm font-medium truncate">{link.source?.naam}</span>
+                </div>
+                {link.confirmed ? (
+                  <span className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Gekoppeld</span>
+                ) : (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Suggestie</span>
+                    <button
+                      onClick={() => confirmMutation.mutate(link.id)}
+                      disabled={confirmMutation.isPending}
+                      className="text-xs text-primary hover:underline disabled:opacity-50"
+                    >
+                      Bevestig
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
