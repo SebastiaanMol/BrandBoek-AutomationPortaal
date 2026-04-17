@@ -123,7 +123,6 @@ function SourceBadge({ source }: { source: string }) {
 // ── ReviewCard ─────────────────────────────────────────────────────────────────
 
 function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => void }) {
-  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [partnerNaam, setPartnerNaam] = useState<string | null>(null);
 
@@ -148,8 +147,8 @@ function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => vo
       .eq("source_id", item.id)
       .maybeSingle();
     if (link?.target_id) {
-      const naam = await fetchPartnerNaam(link.target_id);
-      setPartnerNaam(naam);
+      const partnerName = await fetchPartnerNaam(link.target_id);
+      setPartnerNaam(partnerName);
     }
   };
 
@@ -170,7 +169,6 @@ function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => vo
     mutationFn: () => approveReview(item, currentOverrides(), naam),
     onSuccess: () => {
       toast.success(`${item.id} goedgekeurd`);
-      queryClient.invalidateQueries({ queryKey: ["pending-review"] });
       onDone();
     },
     onError: (e: any) => toast.error(e.message || "Goedkeuren mislukt"),
@@ -180,7 +178,6 @@ function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => vo
     mutationFn: () => rejectReview(item.id),
     onSuccess: () => {
       toast.success(`${item.id} afgewezen`);
-      queryClient.invalidateQueries({ queryKey: ["pending-review"] });
       onDone();
     },
     onError: (e: any) => toast.error(e.message || "Afwijzen mislukt"),
@@ -267,6 +264,7 @@ function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => vo
                     onCheckedChange={() => {
                       const next = systemen.includes(s) ? systemen.filter(x => x !== s) : [...systemen, s];
                       setSystemen(next);
+                      saveOverrides(item.id, { ...currentOverrides(), systems: next }).catch(() => {});
                     }}
                   />
                   {s}
@@ -286,6 +284,7 @@ function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => vo
                     onCheckedChange={() => {
                       const next = fasen.includes(f) ? fasen.filter(x => x !== f) : [...fasen, f];
                       setFasen(next);
+                      saveOverrides(item.id, { ...currentOverrides(), phases: next }).catch(() => {});
                     }}
                   />
                   {f}
