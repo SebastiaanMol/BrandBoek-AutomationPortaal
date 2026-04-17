@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync, usePortalSettings, useSavePortalSettings } from "@/lib/hooks";
+import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync, usePortalSettings, useSavePortalSettings, useHubSpotPipelinesSync } from "@/lib/hooks";
 import { Integration, PortalSettings, DEFAULT_PORTAL_SETTINGS, STATUSSEN, CATEGORIEEN, VerplichtVeld, VERPLICHTE_VELDEN } from "@/lib/types";
 import { UseMutationResult } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -534,6 +534,7 @@ function GitLabCard() {
 
 export default function Instellingen() {
   const hubspotSync = useHubSpotSync();
+  const hubspotPipelinesSync = useHubSpotPipelinesSync();
   const zapierSync = useZapierSync();
   const typeformSync = useTypeformSync();
 
@@ -547,17 +548,36 @@ export default function Instellingen() {
       key: "hubspot",
       connected: !!hubspotInt,
       node: (
-        <IntegrationCard
-          type="hubspot"
-          label="HubSpot"
-          description="Importeer workflows automatisch via de HubSpot API"
-          badge="HS"
-          badgeClass="bg-orange-50 border border-orange-100 text-orange-600"
-          tokenLabel="Private App Token"
-          tokenPlaceholder="pat-eu1-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          tokenHint='Maak een Private App aan in HubSpot met de <code class="bg-muted px-1 rounded">automation</code> scope.'
-          syncMutation={hubspotSync}
-        />
+        <>
+          <IntegrationCard
+            type="hubspot"
+            label="HubSpot"
+            description="Importeer workflows automatisch via de HubSpot API"
+            badge="HS"
+            badgeClass="bg-orange-50 border border-orange-100 text-orange-600"
+            tokenLabel="Private App Token"
+            tokenPlaceholder="pat-eu1-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            tokenHint='Maak een Private App aan in HubSpot met de <code class="bg-muted px-1 rounded">automation</code> scope.'
+            syncMutation={hubspotSync}
+          />
+          {!!hubspotInt && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    const result = await hubspotPipelinesSync.mutateAsync();
+                    toast.success(`Pipelines gesynchroniseerd — ${result.upserted} pipeline(s) bijgewerkt`);
+                  } catch (e: any) { toast.error(e.message || "Sync mislukt"); }
+                }}
+                disabled={hubspotPipelinesSync.isPending}
+                className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw className={`h-3 w-3 ${hubspotPipelinesSync.isPending ? "animate-spin" : ""}`} />
+                {hubspotPipelinesSync.isPending ? "Pipelines synchroniseren..." : "Synchroniseer pipelines"}
+              </button>
+            </div>
+          )}
+        </>
       ),
     },
     {

@@ -715,10 +715,10 @@ serve(async (req) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // ── Enrich gematchte en nieuwe automations ────────────────────────────────
+    // Step 4.5: Trigger enrichment + pipeline sync (fire-and-forget)
     {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
       const matchedSourceIds = new Set(newMatches.map((m) => m.source_id));
 
@@ -739,16 +739,14 @@ serve(async (req) => {
           body: JSON.stringify({ automation_id: id }),
         }).catch((e) => console.warn(`enrich-automation fout voor ${id}:`, e));
       }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
 
-    // Trigger pipeline sync (fire-and-forget)
-    {
+      // Trigger pipeline sync
       fetch(`${supabaseUrl}/functions/v1/hubspot-pipelines`, {
         method: "POST",
         headers: { Authorization: `Bearer ${serviceKey}` },
       }).catch((e) => console.warn("hubspot-pipelines fout:", e));
     }
+    // ─────────────────────────────────────────────────────────────────────────
 
     await db.from("integrations").update({
       last_synced_at: new Date().toISOString(),
