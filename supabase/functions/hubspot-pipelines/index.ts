@@ -41,12 +41,21 @@ serve(async (req) => {
     );
 
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`HubSpot Pipelines API fout (${res.status}): ${body.slice(0, 200)}`);
+      const errBody = await res.text();
+      const msg = res.status === 401
+        ? "Ongeldige HubSpot token — sla de verbinding opnieuw op via Instellingen."
+        : `HubSpot Pipelines API fout (${res.status}): ${errBody.slice(0, 200)}`;
+      await db.from("integrations")
+        .update({ status: "error", error_message: msg })
+        .eq("id", integration.id);
+      return new Response(
+        JSON.stringify({ error: msg }),
+        { status: res.status === 401 ? 401 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    const body = await res.json();
-    const pipelines: any[] = body.results ?? [];
+    const pipelinesBody = await res.json();
+    const pipelines: any[] = pipelinesBody.results ?? [];
     const now = new Date().toISOString();
     let upserted = 0;
 
