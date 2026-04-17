@@ -378,6 +378,28 @@ serve(async (req) => {
       }
     }
 
+    // Step 4.5: Trigger enrichment voor alle gematchte HubSpot automations
+    {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+      const { data: links } = await (db as any)
+        .from("automation_links")
+        .select("source_id");
+
+      for (const link of (links ?? [])) {
+        try {
+          const res = await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ automation_id: link.source_id }),
+          });
+          if (!res.ok) console.warn(`enrich-automation mislukt voor ${link.source_id}: ${res.status}`);
+        } catch (e) { console.warn(`enrich-automation fout voor ${link.source_id}:`, e); }
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
     // Step 5: Update integration timestamp
     await db
       .from("integrations")
