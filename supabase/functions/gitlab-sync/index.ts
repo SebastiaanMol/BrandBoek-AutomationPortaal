@@ -388,15 +388,11 @@ serve(async (req) => {
         .select("source_id");
 
       for (const link of (links ?? [])) {
-        try {
-          const res = await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ automation_id: link.source_id }),
-          });
-          if (!res.ok) console.warn(`enrich-automation mislukt voor ${link.source_id}: ${res.status}`);
-        } catch (e) { console.warn(`enrich-automation fout voor ${link.source_id}:`, e); }
-        await new Promise(r => setTimeout(r, 500));
+        fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ automation_id: link.source_id }),
+        }).catch((e) => console.warn(`enrich-automation fout voor ${link.source_id}:`, e));
       }
     }
 

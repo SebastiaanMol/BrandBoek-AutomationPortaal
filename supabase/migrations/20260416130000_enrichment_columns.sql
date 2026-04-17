@@ -5,6 +5,10 @@ ALTER TABLE automatiseringen
   ADD COLUMN IF NOT EXISTS reviewer_overrides JSONB,
   ADD COLUMN IF NOT EXISTS rejected_at        TIMESTAMPTZ;
 
+ALTER TABLE automatiseringen
+  ADD COLUMN IF NOT EXISTS approved_at  TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS approved_by  TEXT;
+
 ALTER TABLE automation_links
   ADD COLUMN IF NOT EXISTS sync_run_id TEXT;
 

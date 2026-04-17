@@ -688,29 +688,21 @@ serve(async (req) => {
       const matchedSourceIds = new Set(newMatches.map((m) => m.source_id));
 
       for (const sourceId of matchedSourceIds) {
-        try {
-          const res = await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ automation_id: sourceId }),
-          });
-          if (!res.ok) console.warn(`enrich-automation mislukt voor ${sourceId}: ${res.status}`);
-        } catch (e) { console.warn(`enrich-automation fout voor ${sourceId}:`, e); }
-        await new Promise(r => setTimeout(r, 500));
+        fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ automation_id: sourceId }),
+        }).catch((e) => console.warn(`enrich-automation fout voor ${sourceId}:`, e));
       }
 
       // Enrich nieuw gesyncde automations zonder match
       for (const id of insertedIds) {
         if (matchedSourceIds.has(id)) continue;
-        try {
-          const res = await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ automation_id: id }),
-          });
-          if (!res.ok) console.warn(`enrich-automation mislukt voor ${id}: ${res.status}`);
-        } catch (e) { console.warn(`enrich-automation fout voor ${id}:`, e); }
-        await new Promise(r => setTimeout(r, 500));
+        fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ automation_id: id }),
+        }).catch((e) => console.warn(`enrich-automation fout voor ${id}:`, e));
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
