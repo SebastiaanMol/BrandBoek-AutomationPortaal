@@ -214,9 +214,9 @@ export async function deleteIntegration(type: string): Promise<void> {
 }
 
 // ─── Helper: call an Edge Function and throw on error ────────────────────────
-async function invokeEdgeFunction(
+async function invokeEdgeFunction<T = { inserted: number; updated: number; deactivated: number; total: number }>(
   name: string
-): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
+): Promise<T> {
   const { data, error } = await supabase.functions.invoke(name);
 
   if (error) {
@@ -237,7 +237,7 @@ async function invokeEdgeFunction(
     throw new Error(error.message);
   }
 
-  return data as { inserted: number; updated: number; deactivated: number; total: number };
+  return data as T;
 }
 
 export async function triggerHubSpotSync(): Promise<{ inserted: number; updated: number; deactivated: number; total: number }> {
@@ -398,11 +398,5 @@ export async function fetchPipelines(): Promise<Pipeline[]> {
 }
 
 export async function triggerHubSpotPipelinesSync(): Promise<{ upserted: number }> {
-  const { data, error } = await supabase.functions.invoke("hubspot-pipelines");
-  if (error) {
-    const context = (error as any)?.context;
-    if (context && typeof context.error === "string") throw new Error(context.error);
-    throw new Error(error.message);
-  }
-  return data as { upserted: number };
+  return invokeEdgeFunction<{ upserted: number }>("hubspot-pipelines");
 }
