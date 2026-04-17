@@ -71,6 +71,35 @@ const WORKFLOW_TYPE_TRIGGER_MAP: Record<string, string> = {
   DEAL_PROPERTY_ANCHOR:          "Deal-eigenschap gewijzigd",
 };
 
+// ── Pipeline + stage extraction from trigger conditions ───────────────────────
+function extractPipelineStage(wf: any): { pipelineId: string | null; stageId: string | null } {
+  const PIPELINE_PROPS = new Set(["pipeline", "hs_pipeline"]);
+  const STAGE_PROPS    = new Set(["dealstage", "hs_pipeline_stage"]);
+
+  let pipelineId: string | null = null;
+  let stageId:    string | null = null;
+
+  function checkFilter(f: any) {
+    const prop = (f.property ?? f.propertyName ?? "").toLowerCase();
+    const val  = String(f.value ?? f.propertyValue ?? "");
+    if (!val || val === "null" || val === "undefined") return;
+    if (PIPELINE_PROPS.has(prop)) pipelineId = val;
+    if (STAGE_PROPS.has(prop))    stageId    = val;
+  }
+
+  for (const sources of [wf.triggerSets ?? [], wf.reEnrollmentTriggerSets ?? []]) {
+    for (const ts of sources) {
+      for (const f of ts.filters ?? []) checkFilter(f);
+    }
+  }
+  for (const group of wf.segmentCriteria ?? []) {
+    const filters = Array.isArray(group) ? group : [group];
+    for (const f of filters) checkFilter(f);
+  }
+
+  return { pipelineId, stageId };
+}
+
 function msToHuman(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60)    return `${s} seconden`;
@@ -567,6 +596,7 @@ serve(async (req) => {
       const externalId = String(wf.id);
       syncedIds.add(externalId);
       const now = new Date().toISOString();
+      const { pipelineId, stageId } = extractPipelineStage(wf);
 
       if (existingMap[externalId]) {
         const mapped = mapWorkflow(wf);
@@ -585,6 +615,8 @@ serve(async (req) => {
           webhook_paths:        mapped.webhookPaths,
           import_proposal:      { ...mapped },
           raw_payload:          wf,
+          pipeline_id:          pipelineId,
+          stage_id:             stageId,
           last_synced_at:       now,
         }).eq("id", existingRow.id);
         updated++;
@@ -617,6 +649,8 @@ serve(async (req) => {
           import_status:   "pending_approval",
           import_proposal: { ...mapped },
           raw_payload:     wf,
+          pipeline_id:     pipelineId,
+          stage_id:        stageId,
           last_synced_at:  now,
         });
         inserted++;
@@ -706,6 +740,16 @@ serve(async (req) => {
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
+
+    // Trigger pipeline sync (fire-and-forget)
+    {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      fetch(`${supabaseUrl}/functions/v1/hubspot-pipelines`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceKey}` },
+      }).catch((e) => console.warn("hubspot-pipelines fout:", e));
+    }
 
     await db.from("integrations").update({
       last_synced_at: new Date().toISOString(),
