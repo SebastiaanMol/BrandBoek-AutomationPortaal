@@ -680,26 +680,22 @@ serve(async (req) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // ── Enrich nieuw gematchte automations ───────────────────────────────────
+    // ── Enrich gematchte en nieuwe automations ────────────────────────────────
     {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-      const { data: newLinks } = await db
-        .from("automation_links")
-        .select("source_id")
-        .eq("sync_run_id", syncRunId);
+      const matchedSourceIds = new Set(newMatches.map((m) => m.source_id));
 
-      const matchedSourceIds = new Set((newLinks ?? []).map((l: any) => l.source_id));
-
-      for (const link of (newLinks ?? [])) {
+      for (const sourceId of matchedSourceIds) {
         try {
-          await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+          const res = await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
             method: "POST",
             headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ automation_id: link.source_id }),
+            body: JSON.stringify({ automation_id: sourceId }),
           });
-        } catch { /* negeer fouten */ }
+          if (!res.ok) console.warn(`enrich-automation mislukt voor ${sourceId}: ${res.status}`);
+        } catch (e) { console.warn(`enrich-automation fout voor ${sourceId}:`, e); }
         await new Promise(r => setTimeout(r, 500));
       }
 
@@ -707,12 +703,13 @@ serve(async (req) => {
       for (const id of insertedIds) {
         if (matchedSourceIds.has(id)) continue;
         try {
-          await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+          const res = await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
             method: "POST",
             headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({ automation_id: id }),
           });
-        } catch { /* negeer fouten */ }
+          if (!res.ok) console.warn(`enrich-automation mislukt voor ${id}: ${res.status}`);
+        } catch (e) { console.warn(`enrich-automation fout voor ${id}:`, e); }
         await new Promise(r => setTimeout(r, 500));
       }
     }
