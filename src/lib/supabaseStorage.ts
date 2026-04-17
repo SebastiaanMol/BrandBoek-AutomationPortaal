@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { Automatisering, Integration, Koppeling, KlantFase, Systeem, Categorie, Status, PortalSettings, getPortalSettings } from "./types";
+import { Automatisering, Integration, Koppeling, KlantFase, Systeem, Categorie, Status, PortalSettings, getPortalSettings, Pipeline, PipelineStage } from "./types";
 
 function toFriendlyDbError(error: any): Error {
   const message = String(error?.message || "").toLowerCase();
@@ -65,6 +65,8 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
     gitlabLastCommit: r.gitlab_last_commit ?? undefined,
     aiDescription: r.ai_description ?? undefined,
     aiDescriptionUpdatedAt: r.ai_description_updated_at ?? undefined,
+    pipelineId:            r.pipeline_id ?? undefined,
+    stageId:               r.stage_id ?? undefined,
   }));
 }
 
@@ -377,4 +379,30 @@ export async function confirmAutomationLink(linkId: string): Promise<void> {
     .update({ confirmed: true })
     .eq("id", linkId);
   if (error) throw error;
+}
+
+// ─── Pipelines ────────────────────────────────────────────────────────────────
+
+export async function fetchPipelines(): Promise<Pipeline[]> {
+  const { data, error } = await (supabase as any)
+    .from("pipelines")
+    .select("*")
+    .order("naam", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((r: any) => ({
+    pipelineId: r.pipeline_id,
+    naam:       r.naam,
+    stages:     (r.stages as PipelineStage[]) || [],
+    syncedAt:   r.synced_at,
+  }));
+}
+
+export async function triggerHubSpotPipelinesSync(): Promise<{ upserted: number }> {
+  const { data, error } = await supabase.functions.invoke("hubspot-pipelines");
+  if (error) {
+    const context = (error as any)?.context;
+    if (context && typeof context.error === "string") throw new Error(context.error);
+    throw new Error(error.message);
+  }
+  return data as { upserted: number };
 }
