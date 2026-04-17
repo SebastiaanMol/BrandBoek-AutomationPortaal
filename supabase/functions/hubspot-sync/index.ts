@@ -561,6 +561,7 @@ serve(async (req) => {
 
     const syncedIds = new Set<string>();
     let inserted = 0, updated = 0;
+    const insertedIds: string[] = [];
 
     for (const wf of workflows) {
       const externalId = String(wf.id);
@@ -592,8 +593,10 @@ serve(async (req) => {
         const mapped = mapWorkflow(wf);
         const { data: newId } = await db.rpc("generate_auto_id");
 
+        const actualId = newId || `AUTO-HS-${externalId}`;
+        insertedIds.push(actualId);
         await db.from("automatiseringen").insert({
-          id:              newId || `AUTO-HS-${externalId}`,
+          id:              actualId,
           naam:            mapped.naam,
           status:          mapped.status,
           doel:            "",              // leeg laten — moet gekeurd worden
@@ -629,6 +632,8 @@ serve(async (req) => {
       }
     }
 
+    const syncRunId = crypto.randomUUID();
+
     // ── Endpoint matching pass ────────────────────────────────────────────────
     const { data: hsAutos } = await db
       .from("automatiseringen")
@@ -640,14 +645,14 @@ serve(async (req) => {
       .select("id, endpoints")
       .eq("source", "gitlab");
 
-    const newMatches: Array<{ source_id: string; target_id: string; match_type: string; confirmed: boolean }> = [];
+    const newMatches: Array<{ source_id: string; target_id: string; match_type: string; confirmed: boolean; sync_run_id: string }> = [];
     for (const hs of (hsAutos ?? [])) {
       const hsPaths: string[] = hs.webhook_paths ?? [];
       if (hsPaths.length === 0) continue;
       for (const gl of (glAutos ?? [])) {
         const glEndpoints: string[] = gl.endpoints ?? [];
         if (hsPaths.some((p: string) => glEndpoints.includes(p))) {
-          newMatches.push({ source_id: hs.id, target_id: gl.id, match_type: "exact", confirmed: false });
+          newMatches.push({ source_id: hs.id, target_id: gl.id, match_type: "exact", confirmed: false, sync_run_id: syncRunId });
         }
       }
     }
@@ -671,6 +676,44 @@ serve(async (req) => {
 
       if (staleIds.length > 0) {
         await db.from("automation_links").delete().in("id", staleIds);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── Enrich nieuw gematchte automations ───────────────────────────────────
+    {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+      const { data: newLinks } = await db
+        .from("automation_links")
+        .select("source_id")
+        .eq("sync_run_id", syncRunId);
+
+      const matchedSourceIds = new Set((newLinks ?? []).map((l: any) => l.source_id));
+
+      for (const link of (newLinks ?? [])) {
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ automation_id: link.source_id }),
+          });
+        } catch { /* negeer fouten */ }
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      // Enrich nieuw gesyncde automations zonder match
+      for (const id of insertedIds) {
+        if (matchedSourceIds.has(id)) continue;
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ automation_id: id }),
+          });
+        } catch { /* negeer fouten */ }
+        await new Promise(r => setTimeout(r, 500));
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
