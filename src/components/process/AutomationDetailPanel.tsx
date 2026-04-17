@@ -1,11 +1,12 @@
 import { Link } from "react-router-dom";
+import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Zap, ExternalLink, Unlink, ArrowRight, User, Clock, Layers, Lightbulb } from "lucide-react";
 import type { Automation, Connection } from "@/data/processData";
 import { TEAM_CONFIG } from "@/data/processData";
 import type { Automatisering } from "@/lib/types";
-import { useAutomatiseringen } from "@/lib/hooks";
+import { useAutomatiseringen, usePipelines } from "@/lib/hooks";
 
 interface AutomationDetailPanelProps {
   automation: Automation | null;
@@ -44,6 +45,12 @@ export function AutomationDetailPanel({
 }: AutomationDetailPanelProps) {
 
   const { data: allAutomations } = useAutomatiseringen();
+
+  const { data: pipelines } = usePipelines();
+
+  const pipeline = (fullData?.pipelineId && pipelines)
+    ? pipelines.find((p) => p.pipelineId === fullData.pipelineId)
+    : undefined;
 
   if (!automation) return null;
 
@@ -137,6 +144,36 @@ export function AutomationDetailPanel({
         {fullData?.trigger && (
           <Section label="Trigger">
             <p className="text-sm text-foreground leading-relaxed">{fullData.trigger}</p>
+          </Section>
+        )}
+
+        {/* Pipeline stages */}
+        {pipeline && pipeline.stages.length > 0 && (
+          <Section label="Pipeline stages">
+            <div className="flex items-center gap-1 flex-nowrap overflow-x-auto pb-1">
+              {[...pipeline.stages]
+                .sort((a, b) => a.display_order - b.display_order)
+                .map((stage, i, arr) => {
+                  const isActive = stage.stage_id === fullData?.stageId;
+                  return (
+                    <Fragment key={stage.stage_id}>
+                      <div
+                        className={`shrink-0 rounded px-2 py-1 text-[10px] font-medium border transition-colors ${
+                          isActive
+                            ? "bg-primary/10 text-primary border-primary/40"
+                            : "bg-secondary text-muted-foreground border-border"
+                        }`}
+                      >
+                        {isActive && <span className="mr-0.5">▶</span>}
+                        {stage.label}
+                      </div>
+                      {i < arr.length - 1 && (
+                        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      )}
+                    </Fragment>
+                  );
+                })}
+            </div>
           </Section>
         )}
 
