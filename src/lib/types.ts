@@ -33,11 +33,13 @@ export interface AutomationBranch {
 
 // ── Pipeline stages ──────────────────────────────────────────────────────────
 
+// PipelineStage represents the JSONB document shape as stored in the `pipelines.stages` column.
+// snake_case field names match the stored JSON keys (no column-name mapping applied).
 export interface PipelineStage {
   stage_id:      string;
   label:         string;
   display_order: number;
-  metadata:      Record<string, string>;
+  metadata:      Record<string, unknown>;
 }
 
 export interface Pipeline {
