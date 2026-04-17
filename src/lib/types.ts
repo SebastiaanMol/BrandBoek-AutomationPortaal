@@ -31,6 +31,22 @@ export interface AutomationBranch {
   description?: string; // optionele toelichting (plain text)
 }
 
+// ── Pipeline stages ──────────────────────────────────────────────────────────
+
+export interface PipelineStage {
+  stage_id:      string;
+  label:         string;
+  display_order: number;
+  metadata:      Record<string, string>;
+}
+
+export interface Pipeline {
+  pipelineId: string;
+  naam:       string;
+  stages:     PipelineStage[];
+  syncedAt:   string;
+}
+
 // ── Automatisering ───────────────────────────────────────────────────────────
 
 export interface Automatisering {
@@ -60,6 +76,8 @@ export interface Automatisering {
   gitlabLastCommit?: string;
   aiDescription?: string;
   aiDescriptionUpdatedAt?: string | null;
+  pipelineId?:            string;
+  stageId?:               string;
 }
 
 export interface Integration {
