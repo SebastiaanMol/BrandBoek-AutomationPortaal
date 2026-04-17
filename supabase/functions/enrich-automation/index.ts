@@ -27,7 +27,7 @@ serve(async (req) => {
     // 1. Haal de automation op
     const { data: automation } = await db
       .from("automatiseringen")
-      .select("id, naam, status, trigger_beschrijving, stappen, systemen, source, raw_payload")
+      .select("id, naam, status, trigger_beschrijving, stappen, source")
       .eq("id", automation_id)
       .maybeSingle();
 
@@ -71,7 +71,12 @@ serve(async (req) => {
           .maybeSingle();
 
         if (integration?.token) {
-          const { pat, projectId, branch = "main" } = JSON.parse(integration.token);
+          let pat: string, projectId: string, branch = "main";
+          try {
+            ({ pat, projectId, branch = "main" } = JSON.parse(integration.token));
+          } catch {
+            throw new Error("GitLab integratie: ongeldige token-opslag — sla de verbinding opnieuw op");
+          }
 
           // 4. Fetch productie-code
           const encodedPath = encodeURIComponent(gl.gitlab_file_path);
@@ -79,7 +84,11 @@ serve(async (req) => {
             `https://gitlab.com/api/v4/projects/${projectId}/repository/files/${encodedPath}/raw?ref=${branch}`,
             { headers: { "PRIVATE-TOKEN": pat } },
           );
-          if (codeRes.ok) productieCode = (await codeRes.text()).slice(0, 4000);
+          if (codeRes.ok) {
+            productieCode = (await codeRes.text()).slice(0, 4000);
+          } else {
+            console.warn(`GitLab fetch mislukt (${codeRes.status}): ${gitlabFile}`);
+          }
 
           // 5. Fetch testbestand (gitlabtest/<zelfde bestandsnaam>)
           const filename = gl.gitlab_file_path.split("/").pop() ?? "";
@@ -89,7 +98,11 @@ serve(async (req) => {
             `https://gitlab.com/api/v4/projects/${projectId}/repository/files/${encodedTestPath}/raw?ref=${branch}`,
             { headers: { "PRIVATE-TOKEN": pat } },
           );
-          if (testRes.ok) testCode = (await testRes.text()).slice(0, 2000);
+          if (testRes.ok) {
+            testCode = (await testRes.text()).slice(0, 2000);
+          } else {
+            console.warn(`GitLab test fetch mislukt (${testRes.status}): ${testFile}`);
+          }
         }
       }
     }
@@ -98,7 +111,7 @@ serve(async (req) => {
     const workflowName = automation.naam ?? "";
     const workflowStatus = automation.status ?? "";
     const triggerType = automation.trigger_beschrijving ?? "";
-    const workflowActions = (automation.stappen ?? []).join("; ");
+    const workflowActions = Array.isArray(automation.stappen) ? automation.stappen.join("; ") : "";
     const hasGitlab = productieCode.length > 0;
 
     const jsonSchema = `{
@@ -188,15 +201,22 @@ Geldige waarden voor phases: Onboarding, Marketing, Sales, Boekhouding, Offboard
     const content = geminiResult.choices?.[0]?.message?.content;
     if (!content) throw new Error("Gemini: leeg antwoord");
 
-    const enrichment = JSON.parse(content);
+    const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    let enrichment: Record<string, unknown>;
+    try {
+      enrichment = JSON.parse(cleaned);
+    } catch {
+      throw new Error(`Gemini: ongeldige JSON in antwoord: ${cleaned.slice(0, 100)}`);
+    }
 
     // 8. Sla op in ai_enrichment
-    await db
+    const { error: updateError } = await db
       .from("automatiseringen")
       .update({
         ai_enrichment: { ...enrichment, generated_at: new Date().toISOString() },
       })
       .eq("id", automation_id);
+    if (updateError) throw new Error(`DB update mislukt: ${updateError.message}`);
 
     return new Response(
       JSON.stringify({ success: true, automation_id }),
