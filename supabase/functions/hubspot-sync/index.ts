@@ -81,7 +81,8 @@ function extractPipelineStage(wf: any): { pipelineId: string | null; stageId: st
 
   function checkFilter(f: any) {
     const prop = (f.property ?? f.propertyName ?? "").toLowerCase();
-    const val  = String(f.value ?? f.propertyValue ?? "");
+    const raw = f.value ?? f.propertyValue;
+    const val = (raw == null) ? "" : String(raw);
     if (!val || val === "null" || val === "undefined") return;
     if (PIPELINE_PROPS.has(prop)) pipelineId = val;
     if (STAGE_PROPS.has(prop))    stageId    = val;
@@ -743,8 +744,6 @@ serve(async (req) => {
 
     // Trigger pipeline sync (fire-and-forget)
     {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
       fetch(`${supabaseUrl}/functions/v1/hubspot-pipelines`, {
         method: "POST",
         headers: { Authorization: `Bearer ${serviceKey}` },
