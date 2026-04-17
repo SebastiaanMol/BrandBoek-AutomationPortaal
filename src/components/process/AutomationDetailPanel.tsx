@@ -150,7 +150,7 @@ export function AutomationDetailPanel({
         {/* Pipeline stages */}
         {pipeline && pipeline.stages.length > 0 && (
           <Section label="Pipeline stages">
-            <div className="flex items-center gap-1 flex-nowrap overflow-x-auto pb-1">
+            <div className="flex items-center gap-1 flex-nowrap overflow-x-auto pb-1 min-w-0">
               {[...pipeline.stages]
                 .sort((a, b) => a.display_order - b.display_order)
                 .map((stage, i, arr) => {
