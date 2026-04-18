@@ -1,29 +1,45 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, ChevronDown, ChevronUp, RefreshCw, Sparkles, Link2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { triggerHubSpotSync } from "@/lib/supabaseStorage";
-import { KLANT_FASEN, SYSTEMEN } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  CheckCircle2, XCircle, ChevronDown, ChevronUp,
+  RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight,
+} from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { triggerHubSpotSync } from "@/lib/supabaseStorage";
+import { KLANT_FASEN } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface AiEnrichment {
-  summary?: string;
-  description?: string;
-  systems?: string[];
-  trigger_moment?: string;
-  end_result?: string;
-  data_flow?: string;
-  phases?: string[];
-  generated_at?: string;
+interface Confidence {
+  naam: string; status: string; trigger: string;
+  systemen: string; stappen: string; branches: string;
+  categorie: string; doel: string;
+  beschrijving_in_simpele_taal?: string;
+  fasen?: string;    // from edge function inferFasen confidence
 }
 
-interface ReviewAutomation {
+interface ImportProposal {
+  confidence: Confidence;
+  trigger?: string;
+  beschrijving?: string;
+  beschrijving_in_simpele_taal?: string[];
+  enrollment?: {
+    isSegmentBased?: boolean;
+    allowContactToTriggerMultipleTimes?: boolean;
+    workflowType?: string;
+  };
+}
+
+interface PendingAutomation {
   id: string;
   naam: string;
   status: string;
@@ -31,286 +47,160 @@ interface ReviewAutomation {
   trigger_beschrijving: string;
   systemen: string[];
   stappen: string[];
+  branches: { id: string; label: string; toStepId: string }[];
   categorie: string;
   import_source: string;
   import_status: string;
-  import_proposal: Record<string, unknown>;
+  import_proposal: ImportProposal;
   created_at: string;
-  fasen: string[];
-  source: string;
-  ai_enrichment: AiEnrichment | null;
-  reviewer_overrides: Partial<AiEnrichment> | null;
+  fasen: string[];    // lifecycle phases
+  owner: string;      // responsible person
 }
 
-// ── Data functions ─────────────────────────────────────────────────────────────
+// ── Data fetching ─────────────────────────────────────────────────────────────
 
-async function fetchPendingReview(): Promise<ReviewAutomation[]> {
+async function fetchPending(): Promise<PendingAutomation[]> {
   const { data, error } = await (supabase as any)
     .from("automatiseringen")
-    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,categorie,import_source,import_status,import_proposal,created_at,fasen,source,ai_enrichment,reviewer_overrides")
+    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,fasen,owner")
     .eq("import_status", "pending_approval")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
 }
 
-async function saveOverrides(id: string, overrides: Partial<AiEnrichment>): Promise<void> {
-  const { error } = await (supabase as any)
-    .from("automatiseringen")
-    .update({ reviewer_overrides: overrides })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-async function approveReview(item: ReviewAutomation, overrides: Partial<AiEnrichment>, naam: string): Promise<void> {
-  const merge = <T,>(field: keyof AiEnrichment): T | undefined =>
-    (overrides[field] ?? item.ai_enrichment?.[field]) as T | undefined;
-
+async function approveAutomation(id: string) {
   const { error } = await (supabase as any)
     .from("automatiseringen")
     .update({
-      naam,
-      doel:             merge<string>("summary")   ?? item.doel ?? "",
-      systemen:         merge<string[]>("systems") ?? item.systemen ?? [],
-      fasen:            merge<string[]>("phases")  ?? item.fasen ?? [],
-      afhankelijkheden: merge<string>("data_flow") ?? "",
-      import_proposal: {
-        ...(item.import_proposal ?? {}),
-        beschrijving_in_simpele_taal: [merge<string>("description") ?? ""].filter(Boolean),
-      },
-      reviewer_overrides: overrides,
       import_status: "approved",
-      approved_at:   new Date().toISOString(),
       approved_by:   "portaal-gebruiker",
+      approved_at:   new Date().toISOString(),
     })
-    .eq("id", item.id);
-  if (error) throw error;
-}
-
-async function rejectReview(id: string): Promise<void> {
-  const { error } = await (supabase as any)
-    .from("automatiseringen")
-    .update({ import_status: "rejected", rejected_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
 }
 
-async function fetchPartnerNaam(targetId: string): Promise<string | null> {
-  const { data } = await (supabase as any)
+async function rejectAutomation(id: string, reason: string) {
+  const { error } = await (supabase as any)
     .from("automatiseringen")
-    .select("naam")
-    .eq("id", targetId)
-    .maybeSingle();
-  return data?.naam ?? null;
+    .update({ import_status: "rejected", rejection_reason: reason })
+    .eq("id", id);
+  if (error) throw error;
 }
 
-// ── Source badge ───────────────────────────────────────────────────────────────
+async function updateField(id: string, patch: Record<string, unknown>) {
+  const { error } = await (supabase as any)
+    .from("automatiseringen")
+    .update(patch)
+    .eq("id", id);
+  if (error) throw error;
+}
 
-function SourceBadge({ source }: { source: string }) {
-  const map: Record<string, { label: string; className: string }> = {
-    hubspot: { label: "HubSpot",  className: "bg-orange-50 border border-orange-100 text-orange-600" },
-    zapier:  { label: "Zapier",   className: "bg-orange-50 border border-orange-100 text-orange-500" },
-    gitlab:  { label: "GitLab",   className: "bg-purple-50 border border-purple-100 text-purple-600" },
-  };
-  const cfg = map[source] ?? { label: source, className: "bg-secondary text-muted-foreground" };
+// ── Confidence badge ──────────────────────────────────────────────────────────
+
+function ConfBadge({ level }: { level?: string }) {
+  if (level === "high")   return <span className="text-[10px] text-emerald-600 font-medium">✓ zeker</span>;
+  if (level === "medium") return <span className="text-[10px] text-amber-500 font-medium">~ nakijken</span>;
+  return <span className="text-[10px] text-red-500 font-medium">⚠ invullen</span>;
+}
+
+function FieldLabel({ label, conf }: { label: string; conf?: string }) {
   return (
-    <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide", cfg.className)}>
-      {cfg.label}
-    </span>
+    <div className="flex items-center gap-2 mb-1">
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+      {conf && <ConfBadge level={conf} />}
+    </div>
   );
 }
 
-// ── ReviewCard ─────────────────────────────────────────────────────────────────
+function Field({ label, conf, children, className = "" }: {
+  label: string; conf?: string; children: React.ReactNode; className?: string;
+}) {
+  return (
+    <div className={className}>
+      <FieldLabel label={label} conf={conf} />
+      {children}
+    </div>
+  );
+}
 
-function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [partnerNaam, setPartnerNaam] = useState<string | null>(null);
+// ── Plain-language story block ─────────────────────────────────────────────────
 
-  // Form state — initieel: reviewer_overrides ?? ai_enrichment ?? bestaande waarden
-  const ro = item.reviewer_overrides ?? {};
-  const ai = item.ai_enrichment ?? {};
+function SimpeleTaalBlock({ sentences }: { sentences: string[] }) {
+  const [open, setOpen] = useState(true);
 
-  const [naam, setNaam]             = useState(item.naam);
-  const [doel, setDoel]             = useState<string>(ro.summary    ?? ai.summary    ?? item.doel              ?? "");
-  const [beschrijving, setBeschrijving] = useState<string>(ro.description ?? ai.description ?? "");
-  const [dataFlow, setDataFlow]     = useState<string>(ro.data_flow  ?? ai.data_flow  ?? "");
-  const [endResult, setEndResult]   = useState<string>(ro.end_result ?? ai.end_result ?? "");
-  const [systemen, setSystemen]     = useState<string[]>(ro.systems  ?? ai.systems    ?? item.systemen ?? []);
-  const [fasen, setFasen]           = useState<string[]>(ro.phases   ?? ai.phases     ?? item.fasen    ?? []);
+  if (!sentences || sentences.length === 0) return null;
 
-  // Fetch partner badge
-  const loadPartner = async () => {
-    if (partnerNaam !== null) return;
-    const { data: link } = await (supabase as any)
-      .from("automation_links")
-      .select("target_id")
-      .eq("source_id", item.id)
-      .maybeSingle();
-    if (link?.target_id) {
-      const partnerName = await fetchPartnerNaam(link.target_id);
-      setPartnerNaam(partnerName);
-    }
-  };
-
-  const currentOverrides = (): Partial<AiEnrichment> => ({
-    summary:     doel,
-    description: beschrijving,
-    data_flow:   dataFlow,
-    end_result:  endResult,
-    systems:     systemen,
-    phases:      fasen,
-  });
-
-  const handleBlur = async () => {
-    try { await saveOverrides(item.id, currentOverrides()); } catch { /* negeer */ }
-  };
-
-  const approveMutation = useMutation({
-    mutationFn: () => approveReview(item, currentOverrides(), naam),
-    onSuccess: () => {
-      toast.success(`${item.id} goedgekeurd`);
-      onDone();
-    },
-    onError: (e: any) => toast.error(e.message || "Goedkeuren mislukt"),
-  });
-
-  const rejectMutation = useMutation({
-    mutationFn: () => rejectReview(item.id),
-    onSuccess: () => {
-      toast.success(`${item.id} afgewezen`);
-      onDone();
-    },
-    onError: (e: any) => toast.error(e.message || "Afwijzen mislukt"),
-  });
-
-  const hasAi = !!item.ai_enrichment;
-  const isPending = approveMutation.isPending || rejectMutation.isPending;
+  // First sentence is the intro (no step number), rest are numbered steps
+  const [intro, ...steps] = sentences;
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <div className="rounded-lg border border-blue-100 bg-blue-50/60 overflow-hidden">
       {/* Header */}
       <button
-        className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-secondary/50 transition-colors"
-        onClick={() => { setOpen(v => !v); if (!open) loadPartner(); }}
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-blue-50 transition-colors"
       >
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <SourceBadge source={item.source ?? item.import_source} />
-            {hasAi
-              ? <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1"><Sparkles className="h-3 w-3" />AI beschikbaar</span>
-              : <span className="text-[10px] text-muted-foreground">Geen AI beschrijving</span>
-            }
-            {partnerNaam && (
-              <span className="text-[10px] text-blue-600 font-medium flex items-center gap-1"><Link2 className="h-3 w-3" />{partnerNaam}</span>
-            )}
-          </div>
-          <p className="text-sm font-semibold text-foreground truncate">{item.naam}</p>
-          {hasAi && item.ai_enrichment?.summary && (
-            <p className="text-xs text-muted-foreground line-clamp-1">{item.ai_enrichment.summary}</p>
-          )}
-        </div>
-        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />}
+        <BookOpen className="h-4 w-4 text-blue-500 shrink-0" />
+        <span className="text-sm font-semibold text-blue-800 flex-1">
+          Wat doet deze automatisering?
+        </span>
+        <span className="text-[10px] text-blue-400 font-medium mr-1">
+          {sentences.length} stap{sentences.length !== 1 ? "pen" : ""}
+        </span>
+        {open
+          ? <ChevronUp className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+          : <ChevronDown className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+        }
       </button>
 
-      {/* Review form */}
       {open && (
-        <div className="px-4 pb-4 pt-2 space-y-4 border-t border-border">
-          {/* Naam */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Naam</label>
-            <Input value={naam} onChange={e => setNaam(e.target.value)} onBlur={handleBlur} className="text-sm" />
-          </div>
+        <div className="px-4 pb-4 pt-1 space-y-2.5">
+          {/* Intro sentence */}
+          <p className="text-sm text-blue-700 italic border-b border-blue-100 pb-2.5">
+            {intro}
+          </p>
 
-          {/* Doel (summary) */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Doel</label>
-            <Input value={doel} onChange={e => setDoel(e.target.value)} onBlur={handleBlur} className="text-sm" placeholder="AI-suggestie nog niet beschikbaar" />
-          </div>
+          {/* Numbered steps */}
+          <div className="space-y-2">
+            {steps.map((sentence, i) => {
+              // Detect "Let op:" lines → show as warning
+              const isWarning = sentence.startsWith("Let op:");
+              const isNote    = !sentence.match(/^Stap \d+:/i) && !isWarning;
 
-          {/* Beschrijving */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Beschrijving</label>
-            <Textarea value={beschrijving} onChange={e => setBeschrijving(e.target.value)} onBlur={handleBlur} rows={3} className="text-sm" placeholder="AI-suggestie nog niet beschikbaar" />
-          </div>
+              if (isWarning) {
+                return (
+                  <div key={i} className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    <span className="text-base shrink-0 mt-0.5">⚠️</span>
+                    <p className="text-xs text-amber-800 leading-relaxed">{sentence}</p>
+                  </div>
+                );
+              }
 
-          {/* Data flow */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Data flow</label>
-            <Input value={dataFlow} onChange={e => setDataFlow(e.target.value)} onBlur={handleBlur} className="text-sm" placeholder="Welke data stroomt van HubSpot naar de backend?" />
-          </div>
+              if (isNote) {
+                return (
+                  <div key={i} className="flex items-start gap-2.5 bg-white/70 rounded-md px-3 py-2 border border-blue-100">
+                    <ChevronRight className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-blue-700 leading-relaxed">{sentence}</p>
+                  </div>
+                );
+              }
 
-          {/* Eindresultaat */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Eindresultaat</label>
-            <Input value={endResult} onChange={e => setEndResult(e.target.value)} onBlur={handleBlur} className="text-sm" placeholder="Wat is het eindresultaat?" />
-          </div>
+              // Regular "Stap X:" lines
+              const stepMatch = sentence.match(/^(Stap \d+): (.+)$/s);
+              const stepLabel = stepMatch?.[1] ?? `Stap ${i + 1}`;
+              const stepText  = stepMatch?.[2] ?? sentence;
 
-          {/* Trigger (readonly) */}
-          {item.trigger_beschrijving && (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Trigger <span className="normal-case font-normal">(alleen lezen)</span></label>
-              <p className="text-xs text-muted-foreground bg-secondary rounded px-3 py-2">{item.trigger_beschrijving}</p>
-            </div>
-          )}
-
-          {/* Systemen */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Systemen</label>
-            <div className="flex flex-wrap gap-3">
-              {SYSTEMEN.map(s => (
-                <label key={s} className="flex items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={systemen.includes(s)}
-                    onCheckedChange={() => {
-                      const next = systemen.includes(s) ? systemen.filter(x => x !== s) : [...systemen, s];
-                      setSystemen(next);
-                      saveOverrides(item.id, { ...currentOverrides(), systems: next }).catch(() => {});
-                    }}
-                  />
-                  {s}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Fasen */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Fasen</label>
-            <div className="flex flex-wrap gap-3">
-              {KLANT_FASEN.map(f => (
-                <label key={f} className="flex items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={fasen.includes(f)}
-                    onCheckedChange={() => {
-                      const next = fasen.includes(f) ? fasen.filter(x => x !== f) : [...fasen, f];
-                      setFasen(next);
-                      saveOverrides(item.id, { ...currentOverrides(), phases: next }).catch(() => {});
-                    }}
-                  />
-                  {f}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Acties */}
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={() => approveMutation.mutate()}
-              disabled={isPending}
-              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {approveMutation.isPending ? "Goedkeuren..." : "Goedkeuren"}
-            </button>
-            <button
-              onClick={() => rejectMutation.mutate()}
-              disabled={isPending}
-              className="flex items-center gap-2 rounded-md border border-destructive/30 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/5 disabled:opacity-50"
-            >
-              <XCircle className="h-4 w-4" />
-              {rejectMutation.isPending ? "Afwijzen..." : "Afwijzen"}
-            </button>
+              return (
+                <div key={i} className="flex items-start gap-2.5">
+                  <span className="shrink-0 mt-0.5 min-w-[52px] text-[10px] font-bold text-blue-500 uppercase tracking-wide pt-0.5">
+                    {stepLabel}
+                  </span>
+                  <p className="text-xs text-blue-900 leading-relaxed">{stepText}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -318,89 +208,347 @@ function ReviewCard({ item, onDone }: { item: ReviewAutomation; onDone: () => vo
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────────
+// ── Proposal card ─────────────────────────────────────────────────────────────
 
-export default function Imports() {
-  const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<string>("alle");
+function ProposalCard({ item }: { item: PendingAutomation }) {
+  const conf    = item.import_proposal?.confidence ?? {};
+  const trigger = item.import_proposal?.trigger ?? item.trigger_beschrijving ?? "";
+  const simpeleTaal: string[] = item.import_proposal?.beschrijving_in_simpele_taal ?? [];
 
-  const { data: pending = [], isLoading } = useQuery({
-    queryKey: ["pending-review"],
-    queryFn: fetchPendingReview,
+  const [expanded,     setExpanded]     = useState(false);
+  const [editing,      setEditing]      = useState(false);
+  const [draft,        setDraft]        = useState({
+    naam: item.naam,
+    doel: item.doel,
+    trigger,
+    categorie: item.categorie,
+    fasen: item.fasen ?? [],
+    owner: item.owner ?? "",
+  });
+  const [rejectOpen,   setRejectOpen]   = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [stappenWarnOpen, setStappenWarnOpen] = useState(false);
+
+  const qc      = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["pending"] });
+    qc.invalidateQueries({ queryKey: ["automatiseringen"] });
+  };
+
+  const approve = useMutation({
+    mutationFn: () => approveAutomation(item.id),
+    onSuccess:  () => { toast.success(`"${item.naam}" goedgekeurd`); refresh(); },
+    onError:    () => toast.error("Goedkeuren mislukt"),
   });
 
-  const syncMutation = useMutation({
-    mutationFn: triggerHubSpotSync,
-    onSuccess: () => {
-      toast.success("HubSpot sync gestart");
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["pending-review"] }), 3000);
-    },
-    onError: (e: any) => toast.error(e.message || "Sync mislukt"),
+  const reject = useMutation({
+    mutationFn: () => rejectAutomation(item.id, rejectReason),
+    onSuccess:  () => { toast.success("Voorstel afgewezen"); setRejectOpen(false); refresh(); },
+    onError:    () => toast.error("Afwijzen mislukt"),
   });
 
-  const filtered = filter === "alle"
-    ? pending
-    : pending.filter(a => (a.source ?? a.import_source) === filter);
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await updateField(item.id, {
+        naam:                 draft.naam,
+        doel:                 draft.doel,
+        trigger_beschrijving: draft.trigger,
+        categorie:            draft.categorie,
+        fasen:                draft.fasen,
+        owner:                draft.owner,
+      });
+      toast.success("Wijzigingen opgeslagen");
+      refresh();
+      setEditing(false);
+    } catch {
+      toast.error("Opslaan mislukt");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const sources = Array.from(new Set(pending.map(a => a.source ?? a.import_source))).filter(Boolean);
+  function handleApproveClick() {
+    if (!item.stappen || item.stappen.length === 0) {
+      setStappenWarnOpen(true);
+      return;
+    }
+    approve.mutate();
+  }
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Review</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {pending.length} automatisering{pending.length !== 1 ? "en" : ""} wacht{pending.length === 1 ? "" : "en"} op goedkeuring
-          </p>
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4">
+        <div className="w-9 h-9 rounded-full bg-amber-50 border-2 border-amber-400 flex items-center justify-center shrink-0">
+          <Zap className="h-4 w-4 text-amber-500" />
         </div>
-        <button
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", syncMutation.isPending && "animate-spin")} />
-          HubSpot sync
-        </button>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm truncate">{item.naam}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{item.import_source}</Badge>
+            <span className="text-xs text-muted-foreground">
+              {new Date(item.created_at).toLocaleDateString("nl-NL")}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => setExpanded(v => !v)}>
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {expanded ? "Inklappen" : "Bekijken"}
+          </Button>
+          <Button size="sm" variant="outline"
+            className="h-8 text-xs gap-1 text-destructive border-destructive/30 hover:text-destructive"
+            onClick={() => setRejectOpen(true)}>
+            <XCircle className="h-3.5 w-3.5" /> Afwijzen
+          </Button>
+          <Button size="sm" className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
+            onClick={handleApproveClick}
+            disabled={approve.isPending}>
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {approve.isPending ? "Bezig…" : "Goedkeuren"}
+          </Button>
+        </div>
       </div>
 
-      {/* Filter */}
-      {sources.length > 1 && (
-        <div className="flex gap-2">
-          {["alle", ...sources].map(s => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={cn(
-                "rounded-md px-3 py-1 text-xs font-medium border transition-colors",
-                filter === s
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border text-muted-foreground hover:text-foreground"
-              )}
+      {/* Body */}
+      {expanded && (
+        <div className="border-t border-border px-5 py-4 space-y-5">
+
+          {/* ── Plain-language story (always shown first) ── */}
+          {simpeleTaal.length > 0 && (
+            <SimpeleTaalBlock sentences={simpeleTaal} />
+          )}
+
+          {/* ── Technical proposal ── */}
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Technisch voorstel</p>
+            {editing ? (
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditing(false)}>Annuleren</Button>
+                <Button size="sm" className="h-7 text-xs" onClick={handleSave} disabled={saving}>
+                  {saving ? "Opslaan…" : "Opslaan"}
+                </Button>
+              </div>
+            ) : (
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditing(true)}>Bewerken</Button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Naam" conf={conf.naam}>
+              {editing
+                ? <Input value={draft.naam} onChange={e => setDraft(d => ({ ...d, naam: e.target.value }))} className="h-8 text-sm" />
+                : <p className="text-sm font-medium">{item.naam}</p>}
+            </Field>
+            <Field label="Status" conf={conf.status}>
+              <p className="text-sm">{item.status}</p>
+            </Field>
+            <Field label="Trigger" conf={conf.trigger}>
+              {editing
+                ? <Input value={draft.trigger} onChange={e => setDraft(d => ({ ...d, trigger: e.target.value }))} className="h-8 text-sm" />
+                : <p className="text-sm">{trigger || "—"}</p>}
+            </Field>
+            <Field label="Categorie" conf={conf.categorie}>
+              {editing
+                ? <Input value={draft.categorie} onChange={e => setDraft(d => ({ ...d, categorie: e.target.value }))} className="h-8 text-sm" />
+                : <p className="text-sm">{item.categorie || "—"}</p>}
+            </Field>
+            <Field label="Doel" conf={item.doel ? undefined : "low"} className="col-span-2">
+              {editing
+                ? <Textarea value={draft.doel} onChange={e => setDraft(d => ({ ...d, doel: e.target.value }))} className="text-sm resize-none" rows={2} />
+                : <p className="text-sm text-muted-foreground">
+                    {item.doel || <span className="italic">Nog niet ingevuld — verplicht nakijken</span>}
+                  </p>}
+            </Field>
+          </div>
+
+          {/* Fasen multi-select (per D-02, D-03) */}
+          <Field label="Fasen" conf={(editing ? draft.fasen.length > 0 : item.fasen && item.fasen.length > 0) ? undefined : "low"}>
+            {editing ? (
+              <div className="flex flex-wrap gap-1.5">
+                {KLANT_FASEN.map(fase => (
+                  <button
+                    key={fase}
+                    type="button"
+                    onClick={() => setDraft(d => ({
+                      ...d,
+                      fasen: d.fasen.includes(fase)
+                        ? d.fasen.filter(f => f !== fase)
+                        : [...d.fasen, fase],
+                    }))}
+                    className={cn(
+                      "text-xs px-2 py-0.5 rounded-full border transition-colors",
+                      draft.fasen.includes(fase)
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-secondary text-muted-foreground border-border hover:border-primary/50",
+                    )}
+                  >
+                    {fase}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {item.fasen && item.fasen.length > 0
+                  ? item.fasen.map(f => <Badge key={f} variant="secondary" className="text-xs">{f}</Badge>)
+                  : <span className="text-xs text-muted-foreground italic">Geen fase toegewezen</span>}
+              </div>
+            )}
+          </Field>
+
+          {/* Owner input (per D-04, D-05) */}
+          <Field label="Verantwoordelijke" conf={item.owner ? undefined : "low"}>
+            {editing ? (
+              <Input
+                value={draft.owner}
+                onChange={e => setDraft(d => ({ ...d, owner: e.target.value }))}
+                placeholder="Naam verantwoordelijke"
+                className="h-8 text-sm"
+              />
+            ) : (
+              <p className="text-sm">
+                {item.owner || <span className="italic text-muted-foreground">Nog niet ingevuld</span>}
+              </p>
+            )}
+          </Field>
+
+          {item.systemen?.length > 0 && (
+            <div>
+              <FieldLabel label="Gekoppelde systemen" conf={conf.systemen} />
+              <div className="flex flex-wrap gap-1.5">
+                {item.systemen.map(s => <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>)}
+              </div>
+            </div>
+          )}
+
+          {item.stappen?.length > 0 && (
+            <div>
+              <FieldLabel label="Technische stappen" conf={conf.stappen} />
+              <ol className="space-y-1">
+                {item.stappen.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <span className="shrink-0 w-5 h-5 rounded-full bg-secondary text-[10px] font-semibold flex items-center justify-center mt-0.5">{i + 1}</span>
+                    <span className="text-muted-foreground">{s}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {item.branches?.length > 0 && (
+            <div>
+              <FieldLabel label="Uitgaande paden" conf={conf.branches} />
+              <div className="space-y-1.5 mt-1">
+                {item.branches.map((b, i) => (
+                  <div key={b.id} className="flex items-center gap-2 text-xs bg-secondary rounded-md px-2.5 py-1.5">
+                    <span className="text-muted-foreground w-4 shrink-0">{i + 1}.</span>
+                    <span className="font-medium text-amber-700 flex-1">{b.label}</span>
+                    <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground italic">{b.toStepId || "koppel in proceskaart"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Reject dialog */}
+      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Voorstel afwijzen</DialogTitle></DialogHeader>
+          <Textarea placeholder="Optionele toelichting…" value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)} className="resize-none" rows={3} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectOpen(false)}>Annuleren</Button>
+            <Button variant="destructive" onClick={() => reject.mutate()} disabled={reject.isPending}>Afwijzen</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stappen warning dialog (per D-06) */}
+      <Dialog open={stappenWarnOpen} onOpenChange={setStappenWarnOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Geen stappen gevonden</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Deze automatisering heeft nog geen stappen. Wil je toch goedkeuren?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStappenWarnOpen(false)}>Annuleren</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => { setStappenWarnOpen(false); approve.mutate(); }}
+              disabled={approve.isPending}
             >
-              {s === "alle" ? "Alle" : s}
-            </button>
-          ))}
+              Toch goedkeuren
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function Imports() {
+  const qc = useQueryClient();
+  const [syncing, setSyncing] = useState(false);
+
+  const { data: pending = [], isLoading } = useQuery({
+    queryKey: ["pending"],
+    queryFn:  fetchPending,
+  });
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const result = await triggerHubSpotSync();
+      toast.success(`Sync klaar — ${result.inserted} nieuw, ${result.updated} bijgewerkt`);
+      qc.invalidateQueries({ queryKey: ["pending"] });
+    } catch {
+      toast.error("Synchronisatie mislukt. Controleer je HubSpot token via Instellingen.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Imports</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Nieuwe HubSpot workflows wachten hier op goedkeuring voordat ze actief worden.
+          </p>
         </div>
-      )}
+        <Button onClick={handleSync} disabled={syncing} className="gap-2 shrink-0">
+          <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Bezig…" : "HubSpot synchroniseren"}
+        </Button>
+      </div>
 
-      {isLoading && (
-        <p className="text-sm text-muted-foreground">Laden...</p>
-      )}
-
-      {!isLoading && filtered.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">Geen automations wachten op goedkeuring.</p>
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <p className="text-sm font-semibold">Wachten op goedkeuring</p>
+          {pending.length > 0 && <Badge variant="secondary" className="text-xs">{pending.length}</Badge>}
         </div>
-      )}
 
-      <div className="space-y-3">
-        {filtered.map(item => (
-          <ReviewCard
-            key={item.id}
-            item={item}
-            onDone={() => queryClient.invalidateQueries({ queryKey: ["pending-review"] })}
-          />
-        ))}
+        {isLoading && <p className="text-sm text-muted-foreground py-8 text-center">Laden…</p>}
+
+        {!isLoading && pending.length === 0 && (
+          <p className="text-sm text-muted-foreground py-10 text-center border border-dashed border-border rounded-lg">
+            Geen voorstellen wachten op goedkeuring. Klik "HubSpot synchroniseren" om te vernieuwen.
+          </p>
+        )}
+
+        <div className="space-y-3">
+          {pending.map(item => <ProposalCard key={item.id} item={item} />)}
+        </div>
       </div>
     </div>
   );

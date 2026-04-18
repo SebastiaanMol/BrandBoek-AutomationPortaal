@@ -20,9 +20,9 @@ BEGIN
     PERFORM cron.schedule(
       'cleanup-rejected-automations',
       '0 2 * * *',
-      $$DELETE FROM automatiseringen
+      $cron$DELETE FROM automatiseringen
         WHERE import_status = 'rejected'
-        AND rejected_at < now() - interval '30 days'$$
+        AND rejected_at < now() - interval '30 days'$cron$
     );
   END IF;
 END

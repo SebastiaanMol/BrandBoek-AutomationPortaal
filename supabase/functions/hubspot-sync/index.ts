@@ -429,7 +429,10 @@ function extractWebhookPaths(actions: any[]): string[] {
     .filter((a) => (a.type ?? a.actionType) === "WEBHOOK")
     .flatMap((a) => {
       const raw: string = a.url ?? a.webhookUrl ?? "";
-      try { return [new URL(raw).pathname]; } catch { return []; }
+      try {
+        const path = new URL(raw).pathname;
+        return path && path !== "/" ? [path] : [];
+      } catch { return []; }
     });
 }
 

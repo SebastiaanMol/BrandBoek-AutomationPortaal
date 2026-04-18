@@ -314,13 +314,24 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         />
       </Field>
 
-      <button
-        onClick={submit}
-        disabled={isPending}
-        className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-      >
-        {isPending ? "Saving..." : editMode ? "Save Changes" : "Save Automation"}
-      </button>
+      <div className="flex gap-3">
+        <button
+          onClick={submit}
+          disabled={isPending}
+          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {isPending ? "Saving..." : editMode ? "Save Changes" : "Save Automation"}
+        </button>
+        {editMode && (
+          <button
+            onClick={() => navigate(`/alle?open=${editId}`)}
+            disabled={isPending}
+            className="px-6 py-2.5 rounded-md text-sm font-medium border border-border hover:bg-secondary transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
     </div>
   );
 }
