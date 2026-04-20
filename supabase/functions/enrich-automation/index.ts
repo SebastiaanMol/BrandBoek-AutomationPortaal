@@ -108,19 +108,19 @@ serve(async (req) => {
           if (routerContent) {
             productieCode = routerContent.slice(0, 3000);
 
-            // 5. Trace service-imports: haal de service-bestanden op die de router aanroept
+            // 5. Trace service-imports: haal alle service-bestanden op die de router aanroept
             const importedPaths = parseServiceImports(routerContent);
             // Sla schemas/ over — die bevatten alleen Pydantic-modellen, geen logica
             const logicPaths = importedPaths.filter((p) => !p.startsWith("app/schemas/"));
 
-            for (const servicePath of logicPaths.slice(0, 4)) {
-              const code = await fetchGitlabFile(projectId, servicePath, branch, pat);
-              if (code) {
-                serviceFiles.push({ path: servicePath, code: code.slice(0, 3000) });
-              } else {
-                console.warn(`Service-bestand niet gevonden: ${servicePath}`);
-              }
-            }
+            const results = await Promise.all(
+              logicPaths.map(async (servicePath) => {
+                const code = await fetchGitlabFile(projectId, servicePath, branch, pat);
+                if (!code) console.warn(`Service-bestand niet gevonden: ${servicePath}`);
+                return code ? { path: servicePath, code: code.slice(0, 3000) } : null;
+              }),
+            );
+            for (const r of results) { if (r) serviceFiles.push(r); }
           } else {
             console.warn(`GitLab fetch mislukt: ${gitlabFile}`);
           }
