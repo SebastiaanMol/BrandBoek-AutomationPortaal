@@ -552,10 +552,10 @@ serve(async (req) => {
       return r.json();
     }
 
-    // Fetch details in batches of 5 to avoid rate limiting
+    // Fetch details in batches of 15 to avoid rate limiting
     const workflows: any[] = [];
-    for (let i = 0; i < workflowList.length; i += 5) {
-      const batch = workflowList.slice(i, i + 5);
+    for (let i = 0; i < workflowList.length; i += 15) {
+      const batch = workflowList.slice(i, i + 15);
       const details = await Promise.all(batch.map((wf) => fetchDetail(wf.id)));
       for (let j = 0; j < batch.length; j++) {
         // Merge list metadata with detail (detail may be null if fetch failed)
@@ -593,82 +593,99 @@ serve(async (req) => {
     }
 
     const syncedIds = new Set<string>();
-    let inserted = 0, updated = 0;
     const insertedIds: string[] = [];
+
+    // Build insert/update batches — no sequential awaits per workflow
+    const toInsert: any[] = [];
+    const toUpdate: Array<{ id: string; data: Record<string, any> }> = [];
+    const now = new Date().toISOString();
 
     for (const wf of workflows) {
       const externalId = String(wf.id);
       syncedIds.add(externalId);
-      const now = new Date().toISOString();
       const { pipelineId, stageId } = extractPipelineStage(wf);
+      const mapped = mapWorkflow(wf);
 
       if (existingMap[externalId]) {
-        const mapped = mapWorkflow(wf);
-        const existingRow = existingMap[externalId];
-        // Always re-apply full mapping so fields like stappen/systemen get filled in.
-        // Only skip doel if it was already manually filled in.
-        // NOTE: fasen intentionally excluded from update — preserves reviewer edits (per D-09)
-        await db.from("automatiseringen").update({
-          naam:                 wf.name,
-          status:               wf.enabled ? "Actief" : "Uitgeschakeld",
+        // NOTE: fasen intentionally excluded — preserves reviewer edits (per D-09)
+        toUpdate.push({
+          id: existingMap[externalId].id,
+          data: {
+            naam:                 wf.name,
+            status:               wf.enabled ? "Actief" : "Uitgeschakeld",
+            trigger_beschrijving: mapped.trigger,
+            systemen:             mapped.systemen,
+            stappen:              mapped.stappen,
+            branches:             mapped.branches,
+            categorie:            mapped.categorie,
+            webhook_paths:        mapped.webhookPaths,
+            import_proposal:      { ...mapped },
+            raw_payload:          wf,
+            pipeline_id:          pipelineId,
+            stage_id:             stageId,
+            last_synced_at:       now,
+          },
+        });
+      } else {
+        const actualId = `AUTO-HS-${externalId}`;
+        insertedIds.push(actualId);
+        toInsert.push({
+          id:                   actualId,
+          naam:                 mapped.naam,
+          status:               mapped.status,
+          doel:                 "",
           trigger_beschrijving: mapped.trigger,
           systemen:             mapped.systemen,
           stappen:              mapped.stappen,
           branches:             mapped.branches,
           categorie:            mapped.categorie,
+          afhankelijkheden:     "",
+          owner:                "",
+          verbeterideeen:       "",
+          mermaid_diagram:      "",
+          fasen:                mapped.fasen,
           webhook_paths:        mapped.webhookPaths,
+          external_id:          externalId,
+          source:               "hubspot",
+          import_source:        "hubspot",
+          import_status:        "pending_approval",
           import_proposal:      { ...mapped },
           raw_payload:          wf,
           pipeline_id:          pipelineId,
           stage_id:             stageId,
           last_synced_at:       now,
-        }).eq("id", existingRow.id);
-        updated++;
-      } else {
-        // New — apply full mapping, set pending_approval
-        const mapped = mapWorkflow(wf);
-        const { data: newId } = await db.rpc("generate_auto_id");
-
-        const actualId = newId || `AUTO-HS-${externalId}`;
-        insertedIds.push(actualId);
-        await db.from("automatiseringen").insert({
-          id:              actualId,
-          naam:            mapped.naam,
-          status:          mapped.status,
-          doel:            "",              // leeg laten — moet gekeurd worden
-          trigger_beschrijving: mapped.trigger,
-          systemen:        mapped.systemen,
-          stappen:         mapped.stappen,
-          branches:        mapped.branches,
-          categorie:       mapped.categorie,
-          afhankelijkheden: "",
-          owner:           "",
-          verbeterideeen:  "",
-          mermaid_diagram: "",
-          fasen:           mapped.fasen,
-          webhook_paths:   mapped.webhookPaths,
-          external_id:     externalId,
-          source:          "hubspot",
-          import_source:   "hubspot",
-          import_status:   "pending_approval",
-          import_proposal: { ...mapped },
-          raw_payload:     wf,
-          pipeline_id:     pipelineId,
-          stage_id:        stageId,
-          last_synced_at:  now,
         });
-        inserted++;
       }
     }
 
-    // Deactivate removed workflows
-    let deactivated = 0;
-    for (const [extId, row] of Object.entries(existingMap)) {
-      if (!syncedIds.has(extId) && row.status !== "Uitgeschakeld") {
-        await db.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", row.id);
-        deactivated++;
-      }
+    // One bulk insert for all new automations
+    if (toInsert.length > 0) {
+      await db.from("automatiseringen").insert(toInsert);
     }
+
+    // Parallel updates in chunks of 20
+    for (let i = 0; i < toUpdate.length; i += 20) {
+      await Promise.all(
+        toUpdate.slice(i, i + 20).map(({ id, data }) =>
+          db.from("automatiseringen").update(data).eq("id", id),
+        ),
+      );
+    }
+
+    const inserted = toInsert.length;
+    const updated  = toUpdate.length;
+
+    // Deactivate removed workflows in parallel
+    const toDeactivate = Object.entries(existingMap)
+      .filter(([extId, row]) => !syncedIds.has(extId) && row.status !== "Uitgeschakeld")
+      .map(([, row]) => row.id);
+
+    if (toDeactivate.length > 0) {
+      await Promise.all(
+        toDeactivate.map((id) => db.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", id)),
+      );
+    }
+    const deactivated = toDeactivate.length;
 
     const syncRunId = crypto.randomUUID();
 
