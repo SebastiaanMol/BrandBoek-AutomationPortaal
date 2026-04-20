@@ -7,6 +7,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ── Parse `from app.service/schemas/repository.x.y import ...` → file paths ──
+function parseServiceImports(content: string): string[] {
+  const seen = new Set<string>();
+  const re = /^from\s+(app\.(?:service|schemas|repository)\.[a-zA-Z0-9_.]+)\s+import/gm;
+  let m;
+  while ((m = re.exec(content)) !== null) {
+    // app.service.operations.operations → app/service/operations/operations.py
+    const filePath = m[1].replace(/\./g, "/") + ".py";
+    seen.add(filePath);
+  }
+  return [...seen];
+}
+
+async function fetchGitlabFile(
+  projectId: string, filePath: string, branch: string, pat: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `https://gitlab.com/api/v4/projects/${encodeURIComponent(projectId)}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(branch)}`,
+    { headers: { "PRIVATE-TOKEN": pat } },
+  );
+  if (!res.ok) return null;
+  return res.text();
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -50,6 +74,7 @@ serve(async (req) => {
     let gitlabFile = "";
     let testFile = "";
     let endpointPath = "";
+    const serviceFiles: { path: string; code: string }[] = [];
 
     if (link?.target_id) {
       const { data: gl } = await db
@@ -78,30 +103,36 @@ serve(async (req) => {
             throw new Error("GitLab integratie: ongeldige token-opslag — sla de verbinding opnieuw op");
           }
 
-          // 4. Fetch productie-code
-          const encodedPath = encodeURIComponent(gl.gitlab_file_path);
-          const codeRes = await fetch(
-            `https://gitlab.com/api/v4/projects/${projectId}/repository/files/${encodedPath}/raw?ref=${branch}`,
-            { headers: { "PRIVATE-TOKEN": pat } },
-          );
-          if (codeRes.ok) {
-            productieCode = (await codeRes.text()).slice(0, 4000);
+          // 4. Fetch router-bestand (API-laag)
+          const routerContent = await fetchGitlabFile(projectId, gl.gitlab_file_path, branch, pat);
+          if (routerContent) {
+            productieCode = routerContent.slice(0, 3000);
+
+            // 5. Trace service-imports: haal de service-bestanden op die de router aanroept
+            const importedPaths = parseServiceImports(routerContent);
+            // Sla schemas/ over — die bevatten alleen Pydantic-modellen, geen logica
+            const logicPaths = importedPaths.filter((p) => !p.startsWith("app/schemas/"));
+
+            for (const servicePath of logicPaths.slice(0, 4)) {
+              const code = await fetchGitlabFile(projectId, servicePath, branch, pat);
+              if (code) {
+                serviceFiles.push({ path: servicePath, code: code.slice(0, 3000) });
+              } else {
+                console.warn(`Service-bestand niet gevonden: ${servicePath}`);
+              }
+            }
           } else {
-            console.warn(`GitLab fetch mislukt (${codeRes.status}): ${gitlabFile}`);
+            console.warn(`GitLab fetch mislukt: ${gitlabFile}`);
           }
 
-          // 5. Fetch testbestand (gitlabtest/<zelfde bestandsnaam>)
+          // 6. Fetch testbestand (gitlabtest/<zelfde bestandsnaam>)
           const filename = gl.gitlab_file_path.split("/").pop() ?? "";
           testFile = `gitlabtest/${filename}`;
-          const encodedTestPath = encodeURIComponent(testFile);
-          const testRes = await fetch(
-            `https://gitlab.com/api/v4/projects/${projectId}/repository/files/${encodedTestPath}/raw?ref=${branch}`,
-            { headers: { "PRIVATE-TOKEN": pat } },
-          );
-          if (testRes.ok) {
-            testCode = (await testRes.text()).slice(0, 2000);
+          const testContent = await fetchGitlabFile(projectId, testFile, branch, pat);
+          if (testContent) {
+            testCode = testContent.slice(0, 2000);
           } else {
-            console.warn(`GitLab test fetch mislukt (${testRes.status}): ${testFile}`);
+            console.warn(`GitLab test fetch mislukt: ${testFile}`);
           }
         }
       }
@@ -124,16 +155,21 @@ serve(async (req) => {
   "phases": ["lijst", "van", "klantfasen"]
 }`;
 
+    const serviceSection = serviceFiles.length > 0
+      ? serviceFiles.map((sf) => `### Service: ${sf.path}\n${sf.code}`).join("\n\n")
+      : "";
+
     const prompt = hasGitlab
       ? `Je krijgt twee databronnen van één automatisering:
 1. De trigger-configuratie vanuit HubSpot
-2. De bijbehorende backend-code vanuit GitLab
+2. De volledige backend-code vanuit GitLab (router + service-laag)
 
 Jouw taak: schrijf een samengestelde beschrijving als één geheel — van trigger tot eindresultaat.
 
 ## Context over de backend-architectuur
-De backend is een interne Python API (FastAPI) die draait op Railway.
-HubSpot workflows sturen via webhooks data naar de API. De API verwerkt de logica en koppelt terug naar HubSpot, Clockify, WeFact, SharePoint of andere systemen.
+De backend is een interne Python API (FastAPI) op Railway.
+Structuur: app/API/ (dunne HTTP-laag) → app/service/ (bedrijfslogica) → app/repository/ (externe API-wrappers).
+HubSpot workflows sturen webhooks naar de API. De API koppelt terug naar HubSpot, Clockify, WeFact, SharePoint of andere systemen.
 
 ## HubSpot Workflow
 Naam: ${workflowName}
@@ -143,20 +179,17 @@ Acties: ${workflowActions}
 
 ## GitLab Backend
 
-### Productie-code
+### Router (API-laag)
 Endpoint: POST ${endpointPath}
 Bestand: ${gitlabFile}
 ${productieCode}
-
-### Testcode (gitlabtest/)
-Bestand: ${testFile}
-${testCode}
+${serviceSection ? `\n${serviceSection}` : ""}
+${testCode ? `\n### Testcode\nBestand: ${testFile}\n${testCode}` : ""}
 
 Geef je antwoord in dit JSON-formaat:
 ${jsonSchema}
 
 Schrijf alsof je uitlegt aan een niet-technische collega. Gebruik geen jargon. Wees concreet en kort.
-Als de testcode extra inzicht geeft, verwerk dat dan in de beschrijving.
 Geldige waarden voor phases: Onboarding, Marketing, Sales, Boekhouding, Offboarding.`
       : `Je analyseert een automatisering. Schrijf een beschrijving van trigger tot eindresultaat.
 
