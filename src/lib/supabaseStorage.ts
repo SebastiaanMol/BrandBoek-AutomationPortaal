@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { Automatisering, Integration, Koppeling, KlantFase, Systeem, Categorie, Status, PortalSettings, getPortalSettings, Pipeline, PipelineStage } from "./types";
+import { Automatisering, Flow, Integration, Koppeling, KlantFase, Systeem, Categorie, Status, PortalSettings, getPortalSettings, Pipeline, PipelineStage } from "./types";
 
 function toFriendlyDbError(error: any): Error {
   const message = String(error?.message || "").toLowerCase();
@@ -215,9 +215,10 @@ export async function deleteIntegration(type: string): Promise<void> {
 
 // ─── Helper: call an Edge Function and throw on error ────────────────────────
 async function invokeEdgeFunction<T = { inserted: number; updated: number; deactivated: number; total: number }>(
-  name: string
+  name: string,
+  body?: Record<string, unknown>,
 ): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(name);
+  const { data, error } = await supabase.functions.invoke(name, body ? { body } : undefined);
 
   if (error) {
     const context = (error as any)?.context;
@@ -399,4 +400,96 @@ export async function fetchPipelines(): Promise<Pipeline[]> {
 
 export async function triggerHubSpotPipelinesSync(): Promise<{ upserted: number }> {
   return invokeEdgeFunction<{ upserted: number }>("hubspot-pipelines");
+}
+
+// ─── Flows ────────────────────────────────────────────────────────────────────
+
+export async function fetchFlows(): Promise<Flow[]> {
+  const { data, error } = await db
+    .from("flows")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    naam: r.naam,
+    beschrijving: r.beschrijving ?? "",
+    systemen: (r.systemen ?? []) as Systeem[],
+    automationIds: r.automation_ids ?? [],
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function insertFlow(
+  flow: Omit<Flow, "id" | "createdAt" | "updatedAt">,
+): Promise<Flow> {
+  const { data, error } = await db
+    .from("flows")
+    .insert({
+      naam: flow.naam,
+      beschrijving: flow.beschrijving,
+      systemen: flow.systemen,
+      automation_ids: flow.automationIds,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    naam: data.naam,
+    beschrijving: data.beschrijving ?? "",
+    systemen: (data.systemen ?? []) as Systeem[],
+    automationIds: data.automation_ids ?? [],
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function updateFlow(
+  id: string,
+  updates: Partial<Pick<Flow, "naam" | "beschrijving" | "systemen" | "automationIds">>,
+): Promise<void> {
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (updates.naam !== undefined) payload.naam = updates.naam;
+  if (updates.beschrijving !== undefined) payload.beschrijving = updates.beschrijving;
+  if (updates.systemen !== undefined) payload.systemen = updates.systemen;
+  if (updates.automationIds !== undefined) payload.automation_ids = updates.automationIds;
+  const { error } = await db.from("flows").update(payload).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteFlow(id: string): Promise<void> {
+  const { error } = await db.from("flows").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchAllConfirmedAutomationLinks(): Promise<
+  Array<{ sourceId: string; targetId: string }>
+> {
+  const { data, error } = await db
+    .from("automation_links")
+    .select("source_id, target_id")
+    .eq("confirmed", true);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ sourceId: r.source_id, targetId: r.target_id }));
+}
+
+export interface FlowNameResult {
+  naam: string;
+  beschrijving: string;
+}
+
+export async function nameFlow(
+  automations: Pick<Automatisering, "naam" | "doel" | "trigger" | "categorie" | "systemen">[],
+): Promise<FlowNameResult> {
+  return invokeEdgeFunction<FlowNameResult>("name-flow", {
+    automations: automations.map((a) => ({
+      naam: a.naam,
+      doel: a.doel,
+      trigger: a.trigger,
+      categorie: a.categorie,
+      systemen: a.systemen,
+    })),
+  });
 }
