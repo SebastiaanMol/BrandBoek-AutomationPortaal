@@ -49,6 +49,18 @@ export interface Pipeline {
   syncedAt:   string;
 }
 
+// ── Flow ─────────────────────────────────────────────────────────────────────
+
+export interface Flow {
+  id: string;
+  naam: string;
+  beschrijving: string;
+  systemen: Systeem[];
+  automationIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Automatisering ───────────────────────────────────────────────────────────
 
 export interface Automatisering {
