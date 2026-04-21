@@ -1,10 +1,12 @@
+import type { Koppeling } from "./types";
+
 export interface FlowCandidate {
   automationIds: string[];
 }
 
 interface AutomationInput {
   id: string;
-  koppelingen: { doelId: string }[];
+  koppelingen: Koppeling[];
 }
 
 interface ConfirmedLink {
@@ -60,6 +62,16 @@ export function detectFlows(
   // ── Topological sort (Kahn's algorithm) within each component ─────────────
   const autoMap = new Map(automations.map((a) => [a.id, a]));
 
+  // Pre-bucket confirmed links by component root to avoid O(components × links) inner loop
+  const linksByRoot = new Map<string, ConfirmedLink[]>();
+  for (const link of confirmedLinks) {
+    if (ids.has(link.sourceId) && ids.has(link.targetId)) {
+      const root = find(link.sourceId);
+      if (!linksByRoot.has(root)) linksByRoot.set(root, []);
+      linksByRoot.get(root)!.push(link);
+    }
+  }
+
   return multiNode.map((componentIds) => {
     const componentSet = new Set(componentIds);
     const adj: Record<string, string[]> = {};
@@ -81,7 +93,7 @@ export function detectFlows(
       }
     }
 
-    for (const link of confirmedLinks) {
+    for (const link of linksByRoot.get(find(componentIds[0])) ?? []) {
       if (componentSet.has(link.sourceId) && componentSet.has(link.targetId)) {
         adj[link.sourceId].push(link.targetId);
         inDegree[link.targetId]++;
@@ -100,7 +112,7 @@ export function detectFlows(
       }
     }
 
-    // Cycle detected: fall back to insertion order
+    // Cycle detected: fall back to the order automations were provided in the input array.
     return { automationIds: sorted.length === componentIds.length ? sorted : componentIds };
   });
 }
