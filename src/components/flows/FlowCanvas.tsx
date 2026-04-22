@@ -25,13 +25,16 @@ export function buildFlowEdges(
   const flowSet = new Set(automationIds);
   const edges: FlowEdge[] = [];
 
+  const seen = new Set<string>();
   for (const id of automationIds) {
     const auto = autoMap.get(id);
     if (!auto) continue;
     for (const k of auto.koppelingen ?? []) {
-      if (flowSet.has(k.doelId)) {
-        edges.push({ from: id, to: k.doelId, label: k.label });
-      }
+      if (!flowSet.has(k.doelId)) continue;
+      const key = `${id}→${k.doelId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ from: id, to: k.doelId, label: k.label });
     }
   }
 
@@ -58,11 +61,18 @@ function layout(
   });
 
   const level: Record<string, number> = {};
+  const visiting = new Set<string>();
   const visit = (id: string): number => {
     if (level[id] !== undefined) return level[id];
+    if (visiting.has(id)) return (level[id] = 0); // cycle detected: pin to level 0
+    visiting.add(id);
     const ins = incoming[id];
-    if (!ins.length) return (level[id] = 0);
+    if (!ins.length) {
+      visiting.delete(id);
+      return (level[id] = 0);
+    }
     level[id] = Math.max(...ins.map(visit)) + 1;
+    visiting.delete(id);
     return level[id];
   };
   automationIds.forEach(visit);
@@ -98,10 +108,9 @@ interface FlowCanvasProps {
 }
 
 export const FlowCanvas = ({ flow, autoMap, allFlows, selectedId, onSelect }: FlowCanvasProps) => {
-  const { nodes, edges } = useMemo(() => {
+  const { baseNodes, edges } = useMemo(() => {
     const flowEdges = buildFlowEdges(flow.automationIds, autoMap);
     const positions = layout(flow.automationIds, flowEdges);
-
     const ns: Node[] = flow.automationIds.map((id, i) => {
       const auto = autoMap.get(id);
       const reusedCount = auto
@@ -112,10 +121,8 @@ export const FlowCanvas = ({ flow, autoMap, allFlows, selectedId, onSelect }: Fl
         type: "automation",
         position: positions[id] ?? { x: 0, y: i * 200 },
         data: { automation: auto, index: i, reusedCount },
-        selected: id === selectedId,
       };
     });
-
     const es: Edge[] = flowEdges.map((e) => ({
       id: `${e.from}-${e.to}`,
       source: e.from,
@@ -128,9 +135,13 @@ export const FlowCanvas = ({ flow, autoMap, allFlows, selectedId, onSelect }: Fl
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
     }));
+    return { baseNodes: ns, edges: es };
+  }, [flow, autoMap, allFlows]);
 
-    return { nodes: ns, edges: es };
-  }, [flow, autoMap, allFlows, selectedId]);
+  const nodes = useMemo(
+    () => baseNodes.map((n) => ({ ...n, selected: n.id === selectedId })),
+    [baseNodes, selectedId],
+  );
 
   return (
     <div className="h-full w-full rounded-xl border border-border overflow-hidden bg-[hsl(var(--surface-sunken))]">
