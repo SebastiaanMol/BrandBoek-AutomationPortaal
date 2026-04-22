@@ -5,6 +5,7 @@ import {
   PlusCircle,
   List,
   GitBranch,
+  GitMerge,
   BarChart3,
   Menu,
   LogOut,
@@ -45,6 +46,7 @@ const navGroups: NavGroup[] = [
     title: "Analysis",
     items: [
       { title: "Processes", url: "/processen", icon: GitBranch },
+      { title: "Flows", url: "/flows", icon: GitMerge },
       { title: "Analysis", url: "/analyse", icon: BarChart3 },
     ],
   },
