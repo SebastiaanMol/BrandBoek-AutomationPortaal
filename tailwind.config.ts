@@ -98,6 +98,7 @@ export default {
         "gradient-primary": "var(--gradient-primary)",
       },
       boxShadow: {
+        // Custom shadow scale — intentionally overrides Tailwind defaults for design consistency
         xs: "var(--shadow-xs)",
         sm: "var(--shadow-sm)",
         md: "var(--shadow-md)",
