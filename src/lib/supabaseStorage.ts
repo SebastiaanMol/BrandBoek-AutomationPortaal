@@ -229,8 +229,8 @@ async function invokeEdgeFunction<T = { inserted: number; updated: number; deact
     // Older versions passed the Response object — keep as fallback
     if (context && typeof context.json === "function") {
       try {
-        const body = await context.json();
-        if (body?.error) throw new Error(body.error);
+        const errBody = await (context as { json: () => Promise<Record<string, unknown>> }).json();
+        if (errBody?.error) throw new Error(errBody.error as string);
       } catch (e: any) {
         if (e.message && e.message !== error.message) throw e;
       }
