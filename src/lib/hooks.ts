@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings, fetchAutomationLinks, confirmAutomationLink, fetchPipelines, triggerHubSpotPipelinesSync } from "./supabaseStorage";
-import { Automatisering, PortalSettings } from "./types";
+import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings, fetchAutomationLinks, confirmAutomationLink, fetchPipelines, triggerHubSpotPipelinesSync, fetchFlows, insertFlow, updateFlow, deleteFlow, fetchAllConfirmedAutomationLinks } from "./supabaseStorage";
+import type { Automatisering, Flow, PortalSettings } from "./types";
 
 export function useAutomatiseringen() {
   return useQuery({
@@ -173,5 +173,55 @@ export function useHubSpotPipelinesSync() {
   return useMutation({
     mutationFn: triggerHubSpotPipelinesSync,
     onSuccess:  () => queryClient.invalidateQueries({ queryKey: ["pipelines"] }),
+  });
+}
+
+// ─── Flows ────────────────────────────────────────────────────────────────────
+
+export function useFlows() {
+  return useQuery({
+    queryKey: ["flows"],
+    queryFn: fetchFlows,
+  });
+}
+
+export function useCreateFlow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (flow: Omit<Flow, "id" | "createdAt" | "updatedAt">) => insertFlow(flow),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["flows"] });
+    },
+  });
+}
+
+export function useUpdateFlow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...updates
+    }: { id: string } & Partial<Pick<Flow, "naam" | "beschrijving" | "systemen" | "automationIds">>) =>
+      updateFlow(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["flows"] });
+    },
+  });
+}
+
+export function useDeleteFlow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteFlow(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["flows"] });
+    },
+  });
+}
+
+export function useAllConfirmedAutomationLinks() {
+  return useQuery({
+    queryKey: ["confirmedAutomationLinks"],
+    queryFn: fetchAllConfirmedAutomationLinks,
   });
 }
