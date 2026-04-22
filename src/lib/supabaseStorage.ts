@@ -1,8 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { Automatisering, Integration, Koppeling, KlantFase, Systeem, Categorie, Status, PortalSettings, getPortalSettings, Pipeline, PipelineStage } from "./types";
 
-function toFriendlyDbError(error: any): Error {
-  const message = String(error?.message || "").toLowerCase();
+function toFriendlyDbError(error: unknown): Error {
+  const message = String((error as { message?: string })?.message ?? "").toLowerCase();
   const isDuplicateName =
     error?.code === "23505" &&
     (message.includes("automatiseringen_naam") ||
@@ -16,20 +16,25 @@ function toFriendlyDbError(error: any): Error {
   return error instanceof Error ? error : new Error("Databasefout");
 }
 
+interface ImportProposalShape {
+  beschrijving_in_simpele_taal?: string[];
+}
+
 // --- Fetch all automatiseringen with their koppelingen ---
 export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
-  const { data: rows, error } = await supabase
-    .from("automatiseringen")
-    .select("*, import_proposal")
-    .or("source.is.null,import_status.is.null,import_status.eq.approved")
-    .order("created_at", { ascending: true });
+  const [
+    { data: rows, error },
+    { data: koppelingen, error: kopError },
+  ] = await Promise.all([
+    supabase
+      .from("automatiseringen")
+      .select("*, import_proposal")
+      .or("source.is.null,import_status.is.null,import_status.eq.approved")
+      .order("created_at", { ascending: true }),
+    supabase.from("koppelingen").select("*"),
+  ]);
 
   if (error) throw error;
-
-  const { data: koppelingen, error: kopError } = await supabase
-    .from("koppelingen")
-    .select("*");
-
   if (kopError) throw kopError;
 
   // Group koppelingen by bron_id
@@ -60,7 +65,7 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
     externalId: r.external_id ?? undefined,
     source: r.source ?? undefined,
     lastSyncedAt: r.last_synced_at ?? undefined,
-    beschrijvingInSimpeleTaal: (r.import_proposal as any)?.beschrijving_in_simpele_taal ?? undefined,
+    beschrijvingInSimpeleTaal: (r.import_proposal as ImportProposalShape | null)?.beschrijving_in_simpele_taal ?? undefined,
     gitlabFilePath: r.gitlab_file_path ?? undefined,
     gitlabLastCommit: r.gitlab_last_commit ?? undefined,
     aiDescription: r.ai_description ?? undefined,
@@ -104,24 +109,26 @@ export async function insertAutomatisering(item: Automatisering): Promise<void> 
 
 // --- Update existing automatisering + koppelingen ---
 export async function updateAutomatisering(item: Automatisering): Promise<void> {
-  const { error } = await supabase.from("automatiseringen").update({
-    naam: item.naam,
-    categorie: item.categorie,
-    doel: item.doel,
-    trigger_beschrijving: item.trigger,
-    systemen: item.systemen,
-    stappen: item.stappen,
-    afhankelijkheden: item.afhankelijkheden,
-    owner: item.owner,
-    status: item.status,
-    verbeterideeen: item.verbeterideeën,
-    mermaid_diagram: item.mermaidDiagram,
-    fasen: item.fasen,
-  }).eq("id", item.id);
-  if (error) throw toFriendlyDbError(error);
+  // Update and delete are independent — run in parallel
+  const [{ error }, { error: delError }] = await Promise.all([
+    supabase.from("automatiseringen").update({
+      naam: item.naam,
+      categorie: item.categorie,
+      doel: item.doel,
+      trigger_beschrijving: item.trigger,
+      systemen: item.systemen,
+      stappen: item.stappen,
+      afhankelijkheden: item.afhankelijkheden,
+      owner: item.owner,
+      status: item.status,
+      verbeterideeen: item.verbeterideeën,
+      mermaid_diagram: item.mermaidDiagram,
+      fasen: item.fasen,
+    }).eq("id", item.id),
+    supabase.from("koppelingen").delete().eq("bron_id", item.id),
+  ]);
 
-  // Delete existing koppelingen and re-insert
-  const { error: delError } = await supabase.from("koppelingen").delete().eq("bron_id", item.id);
+  if (error) throw toFriendlyDbError(error);
   if (delError) throw delError;
 
   if (item.koppelingen.length > 0) {
@@ -154,7 +161,7 @@ export async function deleteAutomatisering(id: string): Promise<void> {
 
 // --- Verify automatisering ---
 export async function verifieerAutomatisering(id: string, door: string, status?: string): Promise<void> {
-  const update: Record<string, any> = {
+  const update: { laatst_geverifieerd: string; geverifieerd_door: string; status?: string } = {
     laatst_geverifieerd: new Date().toISOString(),
     geverifieerd_door: door,
   };
@@ -220,18 +227,19 @@ async function invokeEdgeFunction<T = { inserted: number; updated: number; deact
   const { data, error } = await supabase.functions.invoke(name);
 
   if (error) {
-    const context = (error as any)?.context;
+    const context = (error as Record<string, unknown>)?.context;
     // supabase-js v2.x passes the parsed JSON body as context directly
-    if (context && typeof context.error === "string") {
-      throw new Error(context.error);
+    if (context && typeof (context as Record<string, unknown>).error === "string") {
+      throw new Error((context as Record<string, unknown>).error as string);
     }
     // Older versions passed the Response object — keep as fallback
-    if (context && typeof context.json === "function") {
+    if (context && typeof (context as Record<string, unknown>).json === "function") {
       try {
-        const body = await context.json();
-        if (body?.error) throw new Error(body.error);
-      } catch (e: any) {
-        if (e.message && e.message !== error.message) throw e;
+        const errBody = await (context as { json: () => Promise<Record<string, unknown>> }).json();
+        if (errBody?.error) throw new Error(errBody.error as string);
+      } catch (e: unknown) {
+        const eMsg = e instanceof Error ? e.message : undefined;
+        if (eMsg && eMsg !== error.message) throw e;
       }
     }
     throw new Error(error.message);
@@ -266,6 +274,8 @@ export interface SavedProcessState {
 
 const PROCESS_STATE_ID = "main";
 
+// Tables not yet in the generated Supabase types (process_state, portal_settings,
+// pipelines, automation_links) require a cast until `supabase gen types` is re-run.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 
@@ -316,7 +326,7 @@ export function exportToCSV(data: Automatisering[]): string {
 // ─── Portal Settings ─────────────────────────────────────────────────────────
 
 export async function fetchPortalSettings(): Promise<PortalSettings> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await db
     .from("portal_settings")
     .select("settings")
     .eq("id", "main")
@@ -326,7 +336,7 @@ export async function fetchPortalSettings(): Promise<PortalSettings> {
 }
 
 export async function savePortalSettings(settings: PortalSettings): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await db
     .from("portal_settings")
     .upsert(
       { id: "main", settings, updated_at: new Date().toISOString() },
@@ -359,7 +369,6 @@ export async function fetchAutomationLinks(id: string): Promise<{
   asSource: AutomationLinkWithTarget[];
   asTarget: AutomationLinkWithSource[];
 }> {
-  const db = supabase as any;
   const [{ data: asSource }, { data: asTarget }] = await Promise.all([
     db
       .from("automation_links")
@@ -374,7 +383,7 @@ export async function fetchAutomationLinks(id: string): Promise<{
 }
 
 export async function confirmAutomationLink(linkId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await db
     .from("automation_links")
     .update({ confirmed: true })
     .eq("id", linkId);
@@ -383,16 +392,23 @@ export async function confirmAutomationLink(linkId: string): Promise<void> {
 
 // ─── Pipelines ────────────────────────────────────────────────────────────────
 
+interface PipelineRow {
+  pipeline_id: string;
+  naam:        string;
+  stages:      PipelineStage[] | null;
+  synced_at:   string;
+}
+
 export async function fetchPipelines(): Promise<Pipeline[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await db
     .from("pipelines")
     .select("*")
     .order("naam", { ascending: true });
   if (error) throw error;
-  return (data || []).map((r: any) => ({
+  return (data as PipelineRow[] ?? []).map((r) => ({
     pipelineId: r.pipeline_id,
     naam:       r.naam,
-    stages:     (r.stages as PipelineStage[]) || [],
+    stages:     r.stages ?? [],
     syncedAt:   r.synced_at,
   }));
 }
@@ -400,3 +416,4 @@ export async function fetchPipelines(): Promise<Pipeline[]> {
 export async function triggerHubSpotPipelinesSync(): Promise<{ upserted: number }> {
   return invokeEdgeFunction<{ upserted: number }>("hubspot-pipelines");
 }
+
