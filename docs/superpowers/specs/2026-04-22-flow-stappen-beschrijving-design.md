@@ -83,8 +83,10 @@ Uitgevoerd in `src/pages/FlowDetail.tsx` bij het laden van de pagina.
 **Logica:**
 ```
 isStale = flow.stappenBijgewerktAt === null
-       || automations.some(a => a.updatedAt > flow.stappenBijgewerktAt)
+       || automations.some(a => a.aiDescriptionUpdatedAt > flow.stappenBijgewerktAt)
 ```
+
+`aiDescriptionUpdatedAt` is het tijdstip waarop `beschrijvingInSimpeleTaal` voor het laatst door `enrich-automation` is bijgewerkt — de primaire input voor Gemini. Als een automation verrijkt is na de laatste generatie, is de flow-beschrijving stale.
 
 Als `isStale === true`: roep de `describe-flow` edge function aan en herlaad daarna de flows query (via `queryClient.invalidateQueries`).
 
