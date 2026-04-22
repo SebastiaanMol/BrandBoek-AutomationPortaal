@@ -2,11 +2,12 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useFlows, useAutomatiseringen, useUpdateFlow, useDeleteFlow } from "@/lib/hooks";
+import type { Automatisering, Systeem } from "@/lib/types";
 
 export default function FlowDetail(): React.ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: flows = [] } = useFlows();
+  const { data: flows = [], isLoading: flowsLoading } = useFlows();
   const { data: automations = [] } = useAutomatiseringen();
   const updateFlow = useUpdateFlow();
   const deleteFlow = useDeleteFlow();
@@ -31,9 +32,8 @@ export default function FlowDetail(): React.ReactNode {
 
   const isDirty = flow && (naam !== flow.naam || beschrijving !== flow.beschrijving);
 
-  if (!flow) {
-    return <p className="text-muted-foreground text-sm">Flow niet gevonden.</p>;
-  }
+  if (flowsLoading) return <p className="text-sm text-muted-foreground">Laden...</p>;
+  if (!flow) return <p className="text-muted-foreground text-sm">Flow niet gevonden.</p>;
 
   async function handleSave(): Promise<void> {
     try {
@@ -56,8 +56,10 @@ export default function FlowDetail(): React.ReactNode {
 
   async function handleRemoveAutomation(autoId: string): Promise<void> {
     const newIds = flow!.automationIds.filter((i) => i !== autoId);
+    const remainingAutos = newIds.map((i) => autoMap.get(i)).filter((a): a is Automatisering => a !== undefined);
+    const newSystemen = [...new Set(remainingAutos.flatMap((a) => a.systemen))] as Systeem[];
     try {
-      await updateFlow.mutateAsync({ id: flow!.id, automationIds: newIds });
+      await updateFlow.mutateAsync({ id: flow!.id, automationIds: newIds, systemen: newSystemen });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Verwijderen mislukt");
     }
@@ -93,8 +95,9 @@ export default function FlowDetail(): React.ReactNode {
         </div>
         {isDirty && (
           <button
-            className="mt-3 text-sm px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            className="mt-3 text-sm px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
             onClick={handleSave}
+            disabled={updateFlow.isPending}
           >
             Opslaan
           </button>
@@ -186,8 +189,9 @@ export default function FlowDetail(): React.ReactNode {
           <div className="flex items-center gap-3">
             <p className="text-sm text-muted-foreground">Flow verwijderen?</p>
             <button
-              className="text-sm text-destructive font-medium hover:underline"
+              className="text-sm text-destructive font-medium hover:underline disabled:opacity-50"
               onClick={handleDelete}
+              disabled={deleteFlow.isPending}
             >
               Ja, verwijder
             </button>

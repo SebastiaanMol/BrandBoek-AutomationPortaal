@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Automatisering } from "@/lib/types";
 
 interface FlowConfirmDialogProps {
@@ -9,6 +9,7 @@ interface FlowConfirmDialogProps {
   onRetryAi: () => void;
   onSave: (naam: string, beschrijving: string) => void;
   onCancel: () => void;
+  saving?: boolean;
 }
 
 export function FlowConfirmDialog({
@@ -19,9 +20,15 @@ export function FlowConfirmDialog({
   onRetryAi,
   onSave,
   onCancel,
+  saving,
 }: FlowConfirmDialogProps): React.ReactNode {
   const [naam, setNaam] = useState(initialName);
   const [beschrijving, setBeschrijving] = useState(initialBeschrijving);
+
+  useEffect(() => {
+    setNaam(initialName);
+    setBeschrijving(initialBeschrijving);
+  }, [initialName, initialBeschrijving]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20">
@@ -86,9 +93,9 @@ export function FlowConfirmDialog({
           <button
             className="text-sm px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
             onClick={() => onSave(naam, beschrijving)}
-            disabled={!naam.trim()}
+            disabled={!naam.trim() || saving}
           >
-            Opslaan als Flow
+            {saving ? "Opslaan..." : "Opslaan als Flow"}
           </button>
         </div>
       </div>

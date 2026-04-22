@@ -16,7 +16,7 @@ interface ConfirmState {
 }
 
 export default function Flows(): React.ReactNode {
-  const { data: automations = [] } = useAutomatiseringen();
+  const { data: automations = [], refetch: refetchAutomations } = useAutomatiseringen();
   const { data: flows = [] } = useFlows();
   const { data: confirmedLinks = [] } = useAllConfirmedAutomationLinks();
   const createFlow = useCreateFlow();
@@ -125,6 +125,12 @@ export default function Flows(): React.ReactNode {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold">Flows</h1>
+        <button
+          className="text-sm px-3 py-1.5 border border-border rounded-lg hover:bg-secondary transition-colors"
+          onClick={() => refetchAutomations()}
+        >
+          Detecteer flows
+        </button>
       </div>
 
       {newProposals.length > 0 && (
@@ -180,6 +186,7 @@ export default function Flows(): React.ReactNode {
           onRetryAi={handleRetryAi}
           onSave={handleSave}
           onCancel={() => setConfirmState(null)}
+          saving={createFlow.isPending}
         />
       )}
 

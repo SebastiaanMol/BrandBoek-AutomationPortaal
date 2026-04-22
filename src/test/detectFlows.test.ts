@@ -3,7 +3,7 @@ import { detectFlows } from "@/lib/detectFlows";
 
 const auto = (id: string, targets: string[] = []) => ({
   id,
-  koppelingen: targets.map((t) => ({ doelId: t })),
+  koppelingen: targets.map((t) => ({ doelId: t, label: "" })),
 });
 
 describe("detectFlows", () => {
@@ -63,5 +63,15 @@ describe("detectFlows", () => {
     expect(result[0].automationIds[0]).toBe("a");
     expect(result[0].automationIds).toContain("b");
     expect(result[0].automationIds).toContain("c");
+  });
+
+  it("handles automation linked by both koppeling and confirmedLink (no duplicate edge)", () => {
+    // A→B exists in both koppelingen and confirmedLinks — should not break topo sort
+    const result = detectFlows(
+      [auto("a", ["b"]), auto("b")],
+      [{ sourceId: "a", targetId: "b" }],
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].automationIds).toEqual(["a", "b"]);
   });
 });

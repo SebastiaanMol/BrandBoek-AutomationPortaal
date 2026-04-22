@@ -82,22 +82,26 @@ export function detectFlows(
       inDegree[id] = 0;
     }
 
+    const seenEdges = new Set<string>();
+
+    function addEdge(from: string, to: string): void {
+      const key = `${from}→${to}`;
+      if (seenEdges.has(key)) return;
+      seenEdges.add(key);
+      adj[from].push(to);
+      inDegree[to]++;
+    }
+
     for (const id of componentIds) {
       const auto = autoMap.get(id);
       if (!auto) continue;
       for (const kop of auto.koppelingen ?? []) {
-        if (componentSet.has(kop.doelId)) {
-          adj[id].push(kop.doelId);
-          inDegree[kop.doelId]++;
-        }
+        if (componentSet.has(kop.doelId)) addEdge(id, kop.doelId);
       }
     }
 
     for (const link of linksByRoot.get(find(componentIds[0])) ?? []) {
-      if (componentSet.has(link.sourceId) && componentSet.has(link.targetId)) {
-        adj[link.sourceId].push(link.targetId);
-        inDegree[link.targetId]++;
-      }
+      addEdge(link.sourceId, link.targetId);
     }
 
     const queue = componentIds.filter((id) => inDegree[id] === 0);
