@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { Automatisering } from "@/lib/types";
 import { getSystemMeta } from "@/lib/systemMeta";
 
@@ -12,6 +13,8 @@ interface MiniFlowPreviewProps {
  * Shows up to 6 dots coloured by the automation's primary system.
  */
 export const MiniFlowPreview = ({ automationIds, autoMap, className = "" }: MiniFlowPreviewProps) => {
+  const id = useId();
+  const gradId = `line-grad-${id.replace(/:/g, "")}`;
   const ids = automationIds.slice(0, 6);
   const overflow = automationIds.length - ids.length;
 
@@ -23,7 +26,7 @@ export const MiniFlowPreview = ({ automationIds, autoMap, className = "" }: Mini
         preserveAspectRatio="none"
       >
         <defs>
-          <linearGradient id="line-grad" x1="0" x2="1" y1="0" y2="0">
+          <linearGradient id={gradId} x1="0" x2="1" y1="0" y2="0">
             <stop offset="0%" stopColor="hsl(var(--border))" />
             <stop offset="100%" stopColor="hsl(var(--border))" />
           </linearGradient>
@@ -31,7 +34,7 @@ export const MiniFlowPreview = ({ automationIds, autoMap, className = "" }: Mini
         <path
           d="M 16 28 Q 60 8 100 28 T 180 28 L 224 28"
           fill="none"
-          stroke="url(#line-grad)"
+          stroke={`url(#${gradId})`}
           strokeWidth="1.5"
           strokeDasharray="3 3"
         />

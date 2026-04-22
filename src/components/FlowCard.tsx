@@ -10,7 +10,7 @@ interface FlowCardProps {
   hasUpdate?: boolean;
 }
 
-export function FlowCard({ flow, autoMap, hasUpdate }: FlowCardProps): React.ReactNode {
+export function FlowCard({ flow, autoMap, hasUpdate }: FlowCardProps) {
   const uniqueSystems = [...new Set(flow.systemen)];
 
   return (
@@ -53,7 +53,7 @@ export function FlowCard({ flow, autoMap, hasUpdate }: FlowCardProps): React.Rea
         </div>
 
         <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center">
             {uniqueSystems.slice(0, 5).map((s) => {
               const meta = getSystemMeta(s);
               return (
