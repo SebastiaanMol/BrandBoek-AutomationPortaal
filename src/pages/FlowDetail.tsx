@@ -1,8 +1,20 @@
-import { useState, useMemo, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useFlows, useAutomatiseringen, useUpdateFlow, useDeleteFlow } from "@/lib/hooks";
+import { Info, LayoutGrid, ListOrdered } from "lucide-react";
+import {
+  useFlows,
+  useAutomatiseringen,
+  useUpdateFlow,
+  useDeleteFlow,
+} from "@/lib/hooks";
 import type { Automatisering, Systeem } from "@/lib/types";
+import { FlowHeader } from "@/components/flows/FlowHeader";
+import { FlowCanvas } from "@/components/flows/FlowCanvas";
+import { AutomationList } from "@/components/flows/AutomationList";
+import { AutomationDetail } from "@/components/flows/AutomationDetail";
+
+type View = "flow" | "steps";
 
 export default function FlowDetail(): React.ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -20,20 +32,37 @@ export default function FlowDetail(): React.ReactNode {
 
   const [naam, setNaam] = useState("");
   const [beschrijving, setBeschrijving] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<View>("flow");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const initializedRef = useRef<string | null>(null);
 
-  // Sync local state when flow loads from server (only when id changes, not on every re-render)
   useEffect(() => {
-    if (flow) {
+    if (flow && initializedRef.current !== flow.id) {
+      initializedRef.current = flow.id;
       setNaam(flow.naam);
       setBeschrijving(flow.beschrijving);
+      setSelectedId(flow.automationIds[0] ?? null);
     }
   }, [flow?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isDirty = flow && (naam !== flow.naam || beschrijving !== flow.beschrijving);
+  const isDirty = flow !== undefined && (naam !== flow.naam || beschrijving !== flow.beschrijving);
 
-  if (flowsLoading) return <p className="text-sm text-muted-foreground">Laden...</p>;
-  if (!flow) return <p className="text-muted-foreground text-sm">Flow niet gevonden.</p>;
+  if (flowsLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">Laden...</p>
+      </div>
+    );
+  }
+
+  if (!flow) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">Flow niet gevonden.</p>
+      </div>
+    );
+  }
 
   async function handleSave(): Promise<void> {
     try {
@@ -56,7 +85,9 @@ export default function FlowDetail(): React.ReactNode {
 
   async function handleRemoveAutomation(autoId: string): Promise<void> {
     const newIds = flow!.automationIds.filter((i) => i !== autoId);
-    const remainingAutos = newIds.map((i) => autoMap.get(i)).filter((a): a is Automatisering => a !== undefined);
+    const remainingAutos = newIds
+      .map((i) => autoMap.get(i))
+      .filter((a): a is Automatisering => a !== undefined);
     const newSystemen = [...new Set(remainingAutos.flatMap((a) => a.systemen))] as Systeem[];
     try {
       await updateFlow.mutateAsync({ id: flow!.id, automationIds: newIds, systemen: newSystemen });
@@ -65,152 +96,187 @@ export default function FlowDetail(): React.ReactNode {
     }
   }
 
-  const flowSet = new Set(flow.automationIds);
-
   return (
-    <div className="max-w-2xl">
-      {/* Header */}
-      <div className="mb-8">
-        <input
-          className="text-xl font-semibold w-full bg-transparent border-b border-transparent hover:border-border focus:border-border focus:outline-none pb-1 mb-3"
-          value={naam}
-          onChange={(e) => setNaam(e.target.value)}
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10 lg:py-10 space-y-6 animate-fade-in">
+        <FlowHeader
+          flow={flow}
+          automationCount={flow.automationIds.length}
+          naam={naam}
+          beschrijving={beschrijving}
+          setNaam={setNaam}
+          setBeschrijving={setBeschrijving}
+          isDirty={isDirty}
+          onSave={handleSave}
+          isSaving={updateFlow.isPending}
         />
-        <textarea
-          className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-border focus:outline-none resize-none text-sm text-muted-foreground"
-          rows={2}
-          value={beschrijving}
-          onChange={(e) => setBeschrijving(e.target.value)}
-          placeholder="Beschrijving..."
-        />
-        <div className="flex items-center gap-2 flex-wrap mt-3">
-          {flow.systemen.map((s) => (
-            <span
-              key={s}
-              className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground"
-            >
-              {s}
-            </span>
-          ))}
-        </div>
-        {isDirty && (
-          <button
-            className="mt-3 text-sm px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-            onClick={handleSave}
-            disabled={updateFlow.isPending}
-          >
-            Opslaan
-          </button>
-        )}
-      </div>
 
-      {/* Step list */}
-      <div className="mb-8">
-        {flow.automationIds.map((autoId, i) => {
-          const auto = autoMap.get(autoId);
-          const isLast = i === flow.automationIds.length - 1;
-
-          if (!auto) {
-            return (
-              <div key={autoId} className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="w-6 h-6 rounded-full bg-destructive/20 text-destructive text-[10px] font-bold flex items-center justify-center shrink-0">
-                    {i + 1}
-                  </div>
-                  {!isLast && <div className="w-px flex-1 min-h-[2rem] bg-border" />}
-                </div>
-                <div className="pb-6">
-                  <p className="text-sm text-muted-foreground">{autoId} — niet meer beschikbaar</p>
-                  <button
-                    className="text-xs text-destructive underline mt-1"
-                    onClick={() => handleRemoveAutomation(autoId)}
-                  >
-                    Verwijder uit flow
-                  </button>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
+          {/* Left: visual flow */}
+          <section className="space-y-4">
+            <div className="flex items-end justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                  Visuele flow
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {view === "flow"
+                    ? "Elke node is één losse automation. Klik om de interne stappen te zien."
+                    : "Alle automations in volgorde. Klik om te selecteren."}
+                </p>
               </div>
-            );
-          }
-
-          // Detect branches: outgoing koppelingen that point to other automations in this flow
-          const branches = (auto.koppelingen ?? []).filter((k) => flowSet.has(k.doelId));
-          const hasBranches = branches.length > 1;
-
-          return (
-            <div key={autoId} className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div
-                  className={`w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${
-                    isLast
-                      ? "bg-emerald-500 text-white"
-                      : "bg-primary text-primary-foreground"
-                  }`}
-                >
-                  {isLast ? "✓" : i + 1}
-                </div>
-                {!isLast && <div className="w-px flex-1 min-h-[2rem] bg-border" />}
-              </div>
-              <div className="pb-6 flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold truncate">{auto.naam}</p>
-                  <Link
-                    to={`/alle?open=${auto.id}`}
-                    className="text-xs text-primary hover:underline shrink-0"
-                  >
-                    ↗ open
-                  </Link>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{auto.trigger}</p>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground mt-1 inline-block">
-                  {auto.categorie}
-                </span>
-
-                {hasBranches && (
-                  <div className="mt-2 ml-2 space-y-1 border-l border-border pl-3">
-                    {branches.map((b) => {
-                      const target = autoMap.get(b.doelId);
-                      return (
-                        <p key={b.doelId} className="text-xs text-muted-foreground">
-                          ↳ {b.label}: {target?.naam ?? b.doelId}
-                        </p>
-                      );
-                    })}
-                  </div>
-                )}
+              <div className="inline-flex items-center p-0.5 rounded-lg bg-secondary border border-border">
+                <ToggleBtn
+                  active={view === "flow"}
+                  onClick={() => setView("flow")}
+                  icon={<LayoutGrid className="w-3.5 h-3.5" />}
+                  label="Flow"
+                />
+                <ToggleBtn
+                  active={view === "steps"}
+                  onClick={() => setView("steps")}
+                  icon={<ListOrdered className="w-3.5 h-3.5" />}
+                  label="Stappen"
+                />
               </div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* Footer */}
-      <div className="border-t border-border pt-4">
-        {showDeleteConfirm ? (
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-muted-foreground">Flow verwijderen?</p>
-            <button
-              className="text-sm text-destructive font-medium hover:underline disabled:opacity-50"
-              onClick={handleDelete}
-              disabled={deleteFlow.isPending}
-            >
-              Ja, verwijder
-            </button>
-            <button
-              className="text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => setShowDeleteConfirm(false)}
-            >
-              Annuleer
-            </button>
-          </div>
-        ) : (
-          <button
-            className="text-sm text-destructive hover:text-destructive/80 transition-colors"
-            onClick={() => setShowDeleteConfirm(true)}
-          >
-            Flow verwijderen
-          </button>
-        )}
+            <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg bg-primary-soft border border-primary/20 text-xs text-foreground/80 leading-relaxed">
+              <Info className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
+              <p>
+                {view === "flow"
+                  ? "Klik op een node voor de interne stappen. Zie aan de ↻ badge of een automation ook in andere flows wordt hergebruikt."
+                  : "Alle automations in volgorde. Klik op een stap om rechts de details te zien."}
+              </p>
+            </div>
+
+            <div className="card-elevated overflow-hidden h-[680px]">
+              {view === "flow" ? (
+                <FlowCanvas
+                  flow={flow}
+                  autoMap={autoMap}
+                  allFlows={flows}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                />
+              ) : (
+                <div className="h-full overflow-y-auto p-5">
+                  <AutomationList
+                    flow={flow}
+                    autoMap={autoMap}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Right: details */}
+          <aside className="space-y-4 lg:sticky lg:top-6 self-start">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                Geselecteerde automation
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Wat deze automation doet, in mensentaal.
+              </p>
+            </div>
+            <AutomationDetail
+              automationId={selectedId}
+              currentFlowId={flow.id}
+              autoMap={autoMap}
+              allFlows={flows}
+              onClose={() => setSelectedId(null)}
+            />
+
+            <div className="card-elevated p-4">
+              <p className="px-1 pb-2 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
+                Alle automations in deze flow
+              </p>
+              <AutomationList
+                flow={flow}
+                autoMap={autoMap}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
+              {flow.automationIds.some((id) => !autoMap.get(id)) && (
+                <div className="mt-3 pt-3 border-t border-border space-y-1">
+                  {flow.automationIds
+                    .filter((id) => !autoMap.get(id))
+                    .map((id) => (
+                      <div key={id} className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground truncate">{id} — niet meer beschikbaar</p>
+                        <button
+                          type="button"
+                          className="text-xs text-destructive hover:underline shrink-0"
+                          onClick={() => handleRemoveAutomation(id)}
+                        >
+                          Verwijder
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* Delete */}
+            <div className="card-elevated p-4">
+              {showDeleteConfirm ? (
+                <div className="flex items-center gap-3">
+                  <p className="text-sm text-muted-foreground">Flow verwijderen?</p>
+                  <button
+                    type="button"
+                    className="text-sm text-destructive font-medium hover:underline disabled:opacity-50"
+                    onClick={handleDelete}
+                    disabled={deleteFlow.isPending}
+                  >
+                    Ja, verwijder
+                  </button>
+                  <button
+                    type="button"
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowDeleteConfirm(false)}
+                  >
+                    Annuleer
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="text-sm text-destructive hover:text-destructive/80 transition-colors"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  Flow verwijderen
+                </button>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
   );
 }
+
+const ToggleBtn = ({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+      active ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+    }`}
+  >
+    {icon}
+    {label}
+  </button>
+);
