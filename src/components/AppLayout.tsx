@@ -156,7 +156,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-12 flex items-center border-b border-border px-4 bg-card sticky top-0 z-30">
+        <header className="h-12 flex items-center border-b border-border px-4 bg-card sticky top-0 z-30" style={{ boxShadow: "var(--shadow-xs)" }}>
           <button
             onClick={() => setMobileOpen(true)}
             className="lg:hidden p-1.5 rounded-md hover:bg-secondary transition-colors"
@@ -168,7 +168,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </span>
         </header>
         <main className={`flex-1 w-full ${
-          location.pathname === "/processen" || location.pathname === "/brandy" ? "p-0" : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
+          location.pathname === "/processen" ||
+          location.pathname === "/brandy" ||
+          location.pathname === "/flows" ||
+          location.pathname.startsWith("/flows/")
+            ? "p-0"
+            : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
         }`}>
           {children}
         </main>
