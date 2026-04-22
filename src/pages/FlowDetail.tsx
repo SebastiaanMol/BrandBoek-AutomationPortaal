@@ -36,15 +36,19 @@ export default function FlowDetail(): React.ReactNode {
   const [view, setView] = useState<View>("flow");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const initializedRef = useRef<string | null>(null);
+  const flowId = flow?.id;
+  const flowNaam = flow?.naam;
+  const flowBeschrijving = flow?.beschrijving;
+  const firstAutoId = flow?.automationIds[0] ?? null;
 
   useEffect(() => {
-    if (flow && initializedRef.current !== flow.id) {
-      initializedRef.current = flow.id;
-      setNaam(flow.naam);
-      setBeschrijving(flow.beschrijving);
-      setSelectedId(flow.automationIds[0] ?? null);
+    if (flowId && initializedRef.current !== flowId) {
+      initializedRef.current = flowId;
+      setNaam(flowNaam ?? "");
+      setBeschrijving(flowBeschrijving ?? "");
+      setSelectedId(firstAutoId);
     }
-  }, [flow?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [flowId, flowNaam, flowBeschrijving, firstAutoId]);
 
   const isDirty = flow !== undefined && (naam !== flow.naam || beschrijving !== flow.beschrijving);
 
@@ -95,6 +99,15 @@ export default function FlowDetail(): React.ReactNode {
       toast.error(e instanceof Error ? e.message : "Verwijderen mislukt");
     }
   }
+
+  const missingIds = flow.automationIds.filter((autoId) => !autoMap.get(autoId));
+
+  const sharedListProps = {
+    flow,
+    autoMap,
+    selectedId,
+    onSelect: setSelectedId,
+  } as const;
 
   return (
     <div className="min-h-screen bg-background">
@@ -161,12 +174,7 @@ export default function FlowDetail(): React.ReactNode {
                 />
               ) : (
                 <div className="h-full overflow-y-auto p-5">
-                  <AutomationList
-                    flow={flow}
-                    autoMap={autoMap}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                  />
+                  <AutomationList {...sharedListProps} />
                 </div>
               )}
             </div>
@@ -194,33 +202,25 @@ export default function FlowDetail(): React.ReactNode {
               <p className="px-1 pb-2 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
                 Alle automations in deze flow
               </p>
-              <AutomationList
-                flow={flow}
-                autoMap={autoMap}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-              />
-              {flow.automationIds.some((id) => !autoMap.get(id)) && (
+              <AutomationList {...sharedListProps} />
+              {missingIds.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-border space-y-1">
-                  {flow.automationIds
-                    .filter((id) => !autoMap.get(id))
-                    .map((id) => (
-                      <div key={id} className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-muted-foreground truncate">{id} — niet meer beschikbaar</p>
-                        <button
-                          type="button"
-                          className="text-xs text-destructive hover:underline shrink-0"
-                          onClick={() => handleRemoveAutomation(id)}
-                        >
-                          Verwijder
-                        </button>
-                      </div>
-                    ))}
+                  {missingIds.map((autoId) => (
+                    <div key={autoId} className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground truncate">{autoId} — niet meer beschikbaar</p>
+                      <button
+                        type="button"
+                        className="text-xs text-destructive hover:underline shrink-0"
+                        onClick={() => handleRemoveAutomation(autoId)}
+                      >
+                        Verwijder
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
-            {/* Delete */}
             <div className="card-elevated p-4">
               {showDeleteConfirm ? (
                 <div className="flex items-center gap-3">
