@@ -1,6 +1,6 @@
 import { useParams, Navigate } from "react-router-dom";
 import { useAutomatiseringen } from "@/lib/hooks";
-import AutomatiseringForm from "@/components/AutomatiseringForm";
+import { AutomatiseringForm } from "@/components/AutomatiseringForm";
 import { Loader2 } from "lucide-react";
 
 export default function BewerkAutomatisering() {

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Automatisering, CATEGORIEEN, SYSTEMEN, STATUSSEN, KLANT_FASEN, Systeem, Categorie, Status, KlantFase, Koppeling } from "@/lib/types";
+import type { Automatisering, Systeem, Categorie, Status, KlantFase } from "@/lib/types";
+import { CATEGORIEEN, SYSTEMEN, STATUSSEN, KLANT_FASEN } from "@/lib/types";
 import { useAutomatiseringen, useSaveAutomatisering, useUpdateAutomatisering, useNextId, usePortalSettings } from "@/lib/hooks";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +17,7 @@ interface AutomatiseringFormProps {
   editId?: string;
 }
 
-export default function AutomatiseringForm({ prefill, editMode, editId }: AutomatiseringFormProps) {
+export function AutomatiseringForm({ prefill, editMode, editId }: AutomatiseringFormProps): React.ReactNode {
   const navigate = useNavigate();
   const { data: allAutomatiseringen = [] } = useAutomatiseringen();
   const { data: nextId, isLoading: idLoading } = useNextId();
@@ -35,8 +36,10 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
   const activeCategorieen = useMemo(
     () => {
       const activeBeschikbaar = new Set(portalSettings?.beschikbareCategorieen ?? CATEGORIEEN);
+      const extraSet = new Set(portalSettings?.extraCategorieen ?? []);
+      // Extra categories are always shown even when not yet added to beschikbareCategorieen
       return effectiveCategorieen.filter(
-        (c) => activeBeschikbaar.has(c as any) || (portalSettings?.extraCategorieen ?? []).includes(c)
+        (c) => activeBeschikbaar.has(c as Categorie) || extraSet.has(c)
       );
     },
     [portalSettings?.beschikbareCategorieen, portalSettings?.extraCategorieen, effectiveCategorieen]
@@ -61,9 +64,14 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
 
   const set = (key: string, value: unknown) => setForm((f) => ({ ...f, [key]: value }));
 
-  const toggleSysteem = (s: string) => {
+  const toggleSysteem = (s: string): void => {
     const curr = form.systemen || [];
     set("systemen", curr.includes(s) ? curr.filter((x) => x !== s) : [...curr, s]);
+  };
+
+  const toggleFase = (f: KlantFase): void => {
+    const curr = form.fasen || [];
+    set("fasen", curr.includes(f) ? curr.filter((x) => x !== f) : [...curr, f]);
   };
 
   const updateStap = (idx: number, val: string) => {
@@ -155,15 +163,18 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
         toast.success(`${item.id} saved`);
       }
       navigate(`/alle?open=${item.id}`);
-    } catch (err: any) {
-      toast.error(err.message || "Save failed");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
     }
   };
 
   const isPending = saveMutation.isPending || updateMutation.isPending;
 
-  const availableForKoppeling = allAutomatiseringen.filter(
-    (a) => a.id !== editId && !(form.koppelingen || []).some((k) => k.doelId === a.id)
+  const availableForKoppeling = useMemo(
+    () => allAutomatiseringen.filter(
+      (a) => a.id !== editId && !(form.koppelingen || []).some((k) => k.doelId === a.id)
+    ),
+    [allAutomatiseringen, editId, form.koppelingen],
   );
 
   return (
@@ -215,10 +226,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
             <label key={f} className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={form.fasen?.includes(f)}
-                onCheckedChange={() => {
-                  const curr = form.fasen || [];
-                  set("fasen", curr.includes(f) ? curr.filter((x) => x !== f) : [...curr, f]);
-                }}
+                onCheckedChange={() => toggleFase(f)}
               />
               {f}
             </label>
@@ -336,7 +344,7 @@ export default function AutomatiseringForm({ prefill, editMode, editId }: Automa
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }): React.ReactNode {
   return (
     <div className="space-y-1.5">
       <Label className="label-uppercase">{label}</Label>

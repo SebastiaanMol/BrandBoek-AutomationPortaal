@@ -13,7 +13,7 @@ import {
   RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { triggerHubSpotSync } from "@/lib/supabaseStorage";
+import { useHubSpotSync } from "@/lib/hooks";
 import { KLANT_FASEN } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +24,7 @@ interface Confidence {
   systemen: string; stappen: string; branches: string;
   categorie: string; doel: string;
   beschrijving_in_simpele_taal?: string;
-  fasen?: string;    // from edge function inferFasen confidence
+  fasen?: string;
 }
 
 interface ImportProposal {
@@ -53,24 +53,24 @@ interface PendingAutomation {
   import_status: string;
   import_proposal: ImportProposal;
   created_at: string;
-  fasen: string[];    // lifecycle phases
-  owner: string;      // responsible person
+  fasen: string[];
+  owner: string;
 }
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
 async function fetchPending(): Promise<PendingAutomation[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from("automatiseringen")
     .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,fasen,owner")
     .eq("import_status", "pending_approval")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as unknown as PendingAutomation[];
 }
 
-async function approveAutomation(id: string) {
-  const { error } = await (supabase as any)
+async function approveAutomation(id: string): Promise<void> {
+  const { error } = await supabase
     .from("automatiseringen")
     .update({
       import_status: "approved",
@@ -81,16 +81,16 @@ async function approveAutomation(id: string) {
   if (error) throw error;
 }
 
-async function rejectAutomation(id: string, reason: string) {
-  const { error } = await (supabase as any)
+async function rejectAutomation(id: string, reason: string): Promise<void> {
+  const { error } = await supabase
     .from("automatiseringen")
     .update({ import_status: "rejected", rejection_reason: reason })
     .eq("id", id);
   if (error) throw error;
 }
 
-async function updateField(id: string, patch: Record<string, unknown>) {
-  const { error } = await (supabase as any)
+async function updateField(id: string, patch: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase
     .from("automatiseringen")
     .update(patch)
     .eq("id", id);
@@ -99,13 +99,13 @@ async function updateField(id: string, patch: Record<string, unknown>) {
 
 // ── Confidence badge ──────────────────────────────────────────────────────────
 
-function ConfBadge({ level }: { level?: string }) {
+function ConfBadge({ level }: { level?: string }): React.ReactNode {
   if (level === "high")   return <span className="text-[10px] text-emerald-600 font-medium">✓ zeker</span>;
   if (level === "medium") return <span className="text-[10px] text-amber-500 font-medium">~ nakijken</span>;
   return <span className="text-[10px] text-red-500 font-medium">⚠ invullen</span>;
 }
 
-function FieldLabel({ label, conf }: { label: string; conf?: string }) {
+function FieldLabel({ label, conf }: { label: string; conf?: string }): React.ReactNode {
   return (
     <div className="flex items-center gap-2 mb-1">
       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
@@ -116,7 +116,7 @@ function FieldLabel({ label, conf }: { label: string; conf?: string }) {
 
 function Field({ label, conf, children, className = "" }: {
   label: string; conf?: string; children: React.ReactNode; className?: string;
-}) {
+}): React.ReactNode {
   return (
     <div className={className}>
       <FieldLabel label={label} conf={conf} />
@@ -127,17 +127,15 @@ function Field({ label, conf, children, className = "" }: {
 
 // ── Plain-language story block ─────────────────────────────────────────────────
 
-function SimpeleTaalBlock({ sentences }: { sentences: string[] }) {
+function SimpeleTaalBlock({ sentences }: { sentences: string[] }): React.ReactNode {
   const [open, setOpen] = useState(true);
 
   if (!sentences || sentences.length === 0) return null;
 
-  // First sentence is the intro (no step number), rest are numbered steps
   const [intro, ...steps] = sentences;
 
   return (
     <div className="rounded-lg border border-blue-100 bg-blue-50/60 overflow-hidden">
-      {/* Header */}
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-blue-50 transition-colors"
@@ -157,15 +155,12 @@ function SimpeleTaalBlock({ sentences }: { sentences: string[] }) {
 
       {open && (
         <div className="px-4 pb-4 pt-1 space-y-2.5">
-          {/* Intro sentence */}
           <p className="text-sm text-blue-700 italic border-b border-blue-100 pb-2.5">
             {intro}
           </p>
 
-          {/* Numbered steps */}
           <div className="space-y-2">
             {steps.map((sentence, i) => {
-              // Detect "Let op:" lines → show as warning
               const isWarning = sentence.startsWith("Let op:");
               const isNote    = !sentence.match(/^Stap \d+:/i) && !isWarning;
 
@@ -187,7 +182,6 @@ function SimpeleTaalBlock({ sentences }: { sentences: string[] }) {
                 );
               }
 
-              // Regular "Stap X:" lines
               const stepMatch = sentence.match(/^(Stap \d+): (.+)$/s);
               const stepLabel = stepMatch?.[1] ?? `Stap ${i + 1}`;
               const stepText  = stepMatch?.[2] ?? sentence;
@@ -210,28 +204,28 @@ function SimpeleTaalBlock({ sentences }: { sentences: string[] }) {
 
 // ── Proposal card ─────────────────────────────────────────────────────────────
 
-function ProposalCard({ item }: { item: PendingAutomation }) {
+function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
   const conf    = item.import_proposal?.confidence ?? {};
   const trigger = item.import_proposal?.trigger ?? item.trigger_beschrijving ?? "";
   const simpeleTaal: string[] = item.import_proposal?.beschrijving_in_simpele_taal ?? [];
 
-  const [expanded,     setExpanded]     = useState(false);
-  const [editing,      setEditing]      = useState(false);
-  const [draft,        setDraft]        = useState({
-    naam: item.naam,
-    doel: item.doel,
+  const [expanded,        setExpanded]        = useState(false);
+  const [editing,         setEditing]         = useState(false);
+  const [draft,           setDraft]           = useState({
+    naam:      item.naam,
+    doel:      item.doel,
     trigger,
     categorie: item.categorie,
-    fasen: item.fasen ?? [],
-    owner: item.owner ?? "",
+    fasen:     item.fasen ?? [],
+    owner:     item.owner ?? "",
   });
-  const [rejectOpen,   setRejectOpen]   = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
-  const [saving,       setSaving]       = useState(false);
+  const [rejectOpen,      setRejectOpen]      = useState(false);
+  const [rejectReason,    setRejectReason]    = useState("");
+  const [saving,          setSaving]          = useState(false);
   const [stappenWarnOpen, setStappenWarnOpen] = useState(false);
 
-  const qc      = useQueryClient();
-  const refresh = () => {
+  const qc = useQueryClient();
+  const refresh = (): void => {
     qc.invalidateQueries({ queryKey: ["pending"] });
     qc.invalidateQueries({ queryKey: ["automatiseringen"] });
   };
@@ -248,7 +242,7 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
     onError:    () => toast.error("Afwijzen mislukt"),
   });
 
-  async function handleSave() {
+  async function handleSave(): Promise<void> {
     setSaving(true);
     try {
       await updateField(item.id, {
@@ -269,7 +263,7 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
     }
   }
 
-  function handleApproveClick() {
+  function handleApproveClick(): void {
     if (!item.stappen || item.stappen.length === 0) {
       setStappenWarnOpen(true);
       return;
@@ -316,12 +310,10 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
       {expanded && (
         <div className="border-t border-border px-5 py-4 space-y-5">
 
-          {/* ── Plain-language story (always shown first) ── */}
           {simpeleTaal.length > 0 && (
             <SimpeleTaalBlock sentences={simpeleTaal} />
           )}
 
-          {/* ── Technical proposal ── */}
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Technisch voorstel</p>
             {editing ? (
@@ -364,7 +356,6 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
             </Field>
           </div>
 
-          {/* Fasen multi-select (per D-02, D-03) */}
           <Field label="Fasen" conf={(editing ? draft.fasen.length > 0 : item.fasen && item.fasen.length > 0) ? undefined : "low"}>
             {editing ? (
               <div className="flex flex-wrap gap-1.5">
@@ -398,7 +389,6 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
             )}
           </Field>
 
-          {/* Owner input (per D-04, D-05) */}
           <Field label="Verantwoordelijke" conf={item.owner ? undefined : "low"}>
             {editing ? (
               <Input
@@ -468,7 +458,7 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
         </DialogContent>
       </Dialog>
 
-      {/* Stappen warning dialog (per D-06) */}
+      {/* Warn when approving an automation without steps */}
       <Dialog open={stappenWarnOpen} onOpenChange={setStappenWarnOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -495,25 +485,22 @@ function ProposalCard({ item }: { item: PendingAutomation }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function Imports() {
+export default function Imports(): React.ReactNode {
   const qc = useQueryClient();
-  const [syncing, setSyncing] = useState(false);
+  const hubspotSync = useHubSpotSync();
 
   const { data: pending = [], isLoading } = useQuery({
     queryKey: ["pending"],
     queryFn:  fetchPending,
   });
 
-  async function handleSync() {
-    setSyncing(true);
+  async function handleSync(): Promise<void> {
     try {
-      const result = await triggerHubSpotSync();
+      const result = await hubspotSync.mutateAsync();
       toast.success(`Sync klaar — ${result.inserted} nieuw, ${result.updated} bijgewerkt`);
       qc.invalidateQueries({ queryKey: ["pending"] });
     } catch {
       toast.error("Synchronisatie mislukt. Controleer je HubSpot token via Instellingen.");
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -526,9 +513,9 @@ export default function Imports() {
             Nieuwe HubSpot workflows wachten hier op goedkeuring voordat ze actief worden.
           </p>
         </div>
-        <Button onClick={handleSync} disabled={syncing} className="gap-2 shrink-0">
-          <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Bezig…" : "HubSpot synchroniseren"}
+        <Button onClick={handleSync} disabled={hubspotSync.isPending} className="gap-2 shrink-0">
+          <RefreshCw className={cn("h-4 w-4", hubspotSync.isPending && "animate-spin")} />
+          {hubspotSync.isPending ? "Bezig…" : "HubSpot synchroniseren"}
         </Button>
       </div>
 

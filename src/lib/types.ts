@@ -158,7 +158,6 @@ export function berekenComplexiteit(a: Automatisering): number {
 }
 
 export function berekenImpact(a: Automatisering, alle: Automatisering[]): number {
-  // Count how many other automations depend on this one (direct + indirect)
   const directDeps = alle.filter((other) =>
     other.koppelingen?.some((k) => k.doelId === a.id)
   ).length;

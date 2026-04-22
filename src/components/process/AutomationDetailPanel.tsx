@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Zap, ExternalLink, Unlink, ArrowRight, User, Clock, Layers, Lightbulb } from "lucide-react";
@@ -24,7 +24,7 @@ const STATUS_STYLES: Record<string, string> = {
   Uitgeschakeld: "bg-slate-100 text-slate-500 border-slate-200",
 };
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({ label, children }: { label: string; children: React.ReactNode }): React.ReactNode {
   return (
     <div>
       <p className="label-uppercase mb-2">
@@ -42,15 +42,29 @@ export function AutomationDetailPanel({
   branchConnections,
   onClose,
   onDetach,
-}: AutomationDetailPanelProps) {
+}: AutomationDetailPanelProps): React.ReactNode {
 
   const { data: allAutomations } = useAutomatiseringen();
-
   const { data: pipelines } = usePipelines();
 
-  const pipeline = (fullData?.pipelineId && pipelines)
-    ? pipelines.find((p) => p.pipelineId === fullData.pipelineId)
-    : undefined;
+  const pipeline = useMemo(
+    () => (fullData?.pipelineId && pipelines)
+      ? pipelines.find((p) => p.pipelineId === fullData.pipelineId)
+      : undefined,
+    [pipelines, fullData?.pipelineId],
+  );
+
+  const relatedAutomations = useMemo(() => {
+    if (!fullData) return [];
+    const fasenSet   = new Set(fullData.fasen ?? []);
+    const systemenSet = new Set(fullData.systemen ?? []);
+    return (allAutomations ?? [])
+      .filter(a => {
+        if (a.id === fullData.id) return false;
+        return a.fasen?.some(f => fasenSet.has(f)) || a.systemen?.some(s => systemenSet.has(s));
+      })
+      .slice(0, 5);
+  }, [allAutomations, fullData]);
 
   if (!automation) return null;
 
@@ -58,15 +72,6 @@ export function AutomationDetailPanel({
   const fromStep   = steps.find(s => s.id === automation.fromStepId);
   const toStep     = steps.find(s => s.id === automation.toStepId);
   const isAttached = !!(automation.fromStepId && automation.toStepId);
-
-  const relatedAutomations = fullData
-    ? (allAutomations ?? []).filter(a => {
-        if (a.id === fullData.id) return false;
-        const sharedFase = a.fasen?.some(f => fullData.fasen?.includes(f));
-        const sharedSystem = a.systemen?.some(s => fullData.systemen?.includes(s));
-        return sharedFase || sharedSystem;
-      }).slice(0, 5)
-    : [];
 
   return (
     <div
