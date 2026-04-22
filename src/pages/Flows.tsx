@@ -163,7 +163,7 @@ export default function Flows(): React.ReactNode {
           <h2 className="label-uppercase mb-3">Flows</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {flowsWithUpdateFlag.map(({ flow, hasUpdate }) => (
-              <FlowCard key={flow.id} flow={flow} hasUpdate={hasUpdate} />
+              <FlowCard key={flow.id} flow={flow} autoMap={autoMap} hasUpdate={hasUpdate} />
             ))}
           </div>
         </div>
