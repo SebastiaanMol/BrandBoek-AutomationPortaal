@@ -10,17 +10,20 @@ CREATE TABLE IF NOT EXISTS flows (
 
 ALTER TABLE flows ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Authenticated users can read flows"
-  ON flows FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "Authenticated users can insert flows"
-  ON flows FOR INSERT TO authenticated WITH CHECK (true);
-
-CREATE POLICY "Authenticated users can update flows"
-  ON flows FOR UPDATE TO authenticated USING (true);
-
-CREATE POLICY "Authenticated users can delete flows"
-  ON flows FOR DELETE TO authenticated USING (true);
-
-CREATE POLICY "Service role has full access to flows"
-  ON flows FOR ALL TO service_role USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'flows' AND policyname = 'Authenticated users can read flows') THEN
+    CREATE POLICY "Authenticated users can read flows" ON flows FOR SELECT TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'flows' AND policyname = 'Authenticated users can insert flows') THEN
+    CREATE POLICY "Authenticated users can insert flows" ON flows FOR INSERT TO authenticated WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'flows' AND policyname = 'Authenticated users can update flows') THEN
+    CREATE POLICY "Authenticated users can update flows" ON flows FOR UPDATE TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'flows' AND policyname = 'Authenticated users can delete flows') THEN
+    CREATE POLICY "Authenticated users can delete flows" ON flows FOR DELETE TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'flows' AND policyname = 'Service role has full access to flows') THEN
+    CREATE POLICY "Service role has full access to flows" ON flows FOR ALL TO service_role USING (true);
+  END IF;
+END $$;

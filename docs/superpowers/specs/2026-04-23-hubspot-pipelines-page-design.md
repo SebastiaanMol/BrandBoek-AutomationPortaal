@@ -14,7 +14,7 @@ All data infrastructure already exists — `usePipelines()`, `useHubSpotPipeline
 interface Pipeline {
   pipelineId: string;
   naam:       string;
-  stages:     PipelineStage[];   // sorted by display_order ascending
+  stages:     PipelineStage[];   // sort by display_order ascending before rendering
   syncedAt:   string;            // ISO timestamp
 }
 

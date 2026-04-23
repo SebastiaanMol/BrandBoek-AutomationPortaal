@@ -29,6 +29,9 @@ export default function Flows(): React.ReactNode {
 
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [query, setQuery] = useState("");
+  const [filterSysteem, setFilterSysteem] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [sortOrder, setSortOrder] = useState<"recent" | "naam">("recent");
 
   const autoMap = useMemo(
     () => new Map(automations.map((a) => [a.id, a])),
@@ -71,15 +74,43 @@ export default function Flows(): React.ReactNode {
     [flows, proposals],
   );
 
+  const allSystems = useMemo(
+    () => [...new Set(flows.flatMap((f) => f.systemen))].sort(),
+    [flows],
+  );
+
   const filteredFlows = useMemo(() => {
+    let result = flowsWithUpdateFlag;
+
     const q = query.trim().toLowerCase();
-    if (!q) return flowsWithUpdateFlag;
-    return flowsWithUpdateFlag.filter(
-      ({ flow }) =>
-        flow.naam.toLowerCase().includes(q) ||
-        flow.beschrijving.toLowerCase().includes(q),
-    );
-  }, [flowsWithUpdateFlag, query]);
+    if (q) {
+      result = result.filter(
+        ({ flow }) =>
+          flow.naam.toLowerCase().includes(q) ||
+          flow.beschrijving.toLowerCase().includes(q),
+      );
+    }
+
+    if (filterSysteem) {
+      result = result.filter(({ flow }) => flow.systemen.includes(filterSysteem as Systeem));
+    }
+
+    if (filterStatus === "actief") {
+      result = result.filter(({ hasUpdate }) => !hasUpdate);
+    } else if (filterStatus === "update") {
+      result = result.filter(({ hasUpdate }) => hasUpdate);
+    }
+
+    if (sortOrder === "naam") {
+      result = [...result].sort((a, b) => a.flow.naam.localeCompare(b.flow.naam, "nl"));
+    } else {
+      result = [...result].sort(
+        (a, b) => new Date(b.flow.createdAt).getTime() - new Date(a.flow.createdAt).getTime(),
+      );
+    }
+
+    return result;
+  }, [flowsWithUpdateFlag, query, filterSysteem, filterStatus, sortOrder]);
 
   async function handleBevestig(automationIds: string[]): Promise<void> {
     setConfirmState({ automationIds, aiName: "", aiBeschrijving: "", aiError: false, loading: true });
@@ -188,10 +219,10 @@ export default function Flows(): React.ReactNode {
           </div>
         )}
 
-        {/* Search */}
+        {/* Search + filters */}
         {flows.length > 0 && (
-          <div className="card-elevated p-4 mb-6">
-            <div className="relative">
+          <div className="card-elevated p-3 mb-6 flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 value={query}
@@ -200,6 +231,33 @@ export default function Flows(): React.ReactNode {
                 className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground focus-ring"
               />
             </div>
+            <select
+              value={filterSysteem}
+              onChange={(e) => setFilterSysteem(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
+            >
+              <option value="">Alle systemen</option>
+              {allSystems.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
+            >
+              <option value="">Alle statussen</option>
+              <option value="actief">Actief</option>
+              <option value="update">Update beschikbaar</option>
+            </select>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as "recent" | "naam")}
+              className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
+            >
+              <option value="recent">Recent</option>
+              <option value="naam">Naam A–Z</option>
+            </select>
           </div>
         )}
 

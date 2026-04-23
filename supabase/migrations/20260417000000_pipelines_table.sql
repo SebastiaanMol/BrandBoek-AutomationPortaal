@@ -14,8 +14,11 @@ ALTER TABLE automatiseringen
 -- Row Level Security
 ALTER TABLE pipelines ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Authenticated users can read pipelines"
-  ON pipelines FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "service role can manage pipelines"
-  ON pipelines FOR ALL TO service_role USING (true) WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pipelines' AND policyname = 'Authenticated users can read pipelines') THEN
+    CREATE POLICY "Authenticated users can read pipelines" ON pipelines FOR SELECT TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pipelines' AND policyname = 'service role can manage pipelines') THEN
+    CREATE POLICY "service role can manage pipelines" ON pipelines FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+END $$;

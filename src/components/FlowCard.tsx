@@ -21,7 +21,7 @@ export function FlowCard({ flow, autoMap, hasUpdate }: FlowCardProps) {
       <div className="p-5">
         <div className="flex items-center justify-between mb-3">
           <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-secondary text-[11px] font-semibold text-secondary-foreground tracking-wide">
-            {flow.automationIds.length} automations
+            {uniqueSystems[0] ?? "Flow"}
           </span>
           {hasUpdate ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-warning">
@@ -53,23 +53,34 @@ export function FlowCard({ flow, autoMap, hasUpdate }: FlowCardProps) {
         </div>
 
         <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
-          <div className="flex items-center">
-            {uniqueSystems.slice(0, 5).map((s) => {
-              const meta = getSystemMeta(s);
-              return (
-                <span
-                  key={s}
-                  title={meta.label}
-                  className="w-5 h-5 rounded-full border-2 border-card -ml-1 first:ml-0"
-                  style={{ background: `hsl(var(${meta.hue}))` }}
-                />
-              );
-            })}
-            {uniqueSystems.length > 5 && (
-              <span className="text-[10px] font-mono text-muted-foreground ml-1">
-                +{uniqueSystems.length - 5}
-              </span>
-            )}
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground tabular-nums">
+                {flow.automationIds.length}
+              </p>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                automations
+              </p>
+            </div>
+            <div className="h-7 w-px bg-border" />
+            <div className="flex items-center">
+              {uniqueSystems.slice(0, 5).map((s) => {
+                const meta = getSystemMeta(s);
+                return (
+                  <span
+                    key={s}
+                    title={meta.label}
+                    className="w-5 h-5 rounded-full border-2 border-card -ml-1 first:ml-0"
+                    style={{ background: `hsl(var(${meta.hue}))` }}
+                  />
+                );
+              })}
+              {uniqueSystems.length > 5 && (
+                <span className="text-[10px] font-mono text-muted-foreground ml-1">
+                  +{uniqueSystems.length - 5}
+                </span>
+              )}
+            </div>
           </div>
           <p className="text-[10px] text-muted-foreground">
             {new Date(flow.createdAt).toLocaleDateString("nl-NL")}

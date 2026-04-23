@@ -1,14 +1,13 @@
 import { Link } from "react-router-dom";
 import type { Automatisering, Flow } from "@/lib/types";
 import { getSystemMeta } from "@/lib/systemMeta";
-import { ExternalLink, Repeat2, X } from "lucide-react";
+import { ExternalLink, Repeat2 } from "lucide-react";
 
 interface AutomationDetailProps {
   automationId: string | null;
   currentFlowId: string;
   autoMap: Map<string, Automatisering>;
   allFlows: Flow[];
-  onClose: () => void;
 }
 
 export const AutomationDetail = ({
@@ -16,7 +15,6 @@ export const AutomationDetail = ({
   currentFlowId,
   autoMap,
   allFlows,
-  onClose,
 }: AutomationDetailProps) => {
   if (!automationId) return null;
   const auto = autoMap.get(automationId);
@@ -35,34 +33,24 @@ export const AutomationDetail = ({
 
   return (
     <div className="card-elevated p-5 animate-fade-in">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <span
-            className="inline-flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0"
-            style={{
-              background: `color-mix(in oklab, hsl(var(${sys.hue})) 14%, transparent)`,
-              color: `hsl(var(${sys.hue}))`,
-            }}
-          >
-            <span className="text-xs font-bold">{sys.label.slice(0, 2).toUpperCase()}</span>
-          </span>
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
-              Automation · {sys.label}
-            </p>
-            <h3 className="text-base font-semibold text-foreground leading-tight truncate">
-              {auto.naam}
-            </h3>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors focus-ring flex-shrink-0"
-          aria-label="Sluiten"
+      <div className="flex items-center gap-3 mb-4 min-w-0">
+        <span
+          className="inline-flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0"
+          style={{
+            background: `color-mix(in oklab, hsl(var(${sys.hue})) 14%, transparent)`,
+            color: `hsl(var(${sys.hue}))`,
+          }}
         >
-          <X className="w-4 h-4" />
-        </button>
+          <span className="text-xs font-bold">{sys.label.slice(0, 2).toUpperCase()}</span>
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
+            Automation · {sys.label}
+          </p>
+          <h3 className="text-base font-semibold text-foreground leading-tight break-words">
+            {auto.naam}
+          </h3>
+        </div>
       </div>
 
       <p className="text-sm text-foreground leading-relaxed">{description}</p>
@@ -107,7 +95,7 @@ export const AutomationDetail = ({
                 >
                   {String(idx + 1).padStart(2, "0")}
                 </span>
-                <p className="text-xs text-foreground leading-relaxed">{stap}</p>
+                <p className="text-xs text-foreground leading-relaxed break-words">{stap}</p>
               </li>
             ))}
           </ol>

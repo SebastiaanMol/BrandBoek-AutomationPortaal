@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import type { Flow } from "@/lib/types";
 import { getSystemMeta } from "@/lib/systemMeta";
-import { ChevronRight, Layers } from "lucide-react";
+import { Activity, Calendar, ChevronRight, Layers, Server } from "lucide-react";
 
 interface FlowHeaderProps {
   flow: Flow;
@@ -27,6 +27,8 @@ export const FlowHeader = ({
   isSaving,
 }: FlowHeaderProps) => {
   const uniqueSystems = [...new Set(flow.systemen)];
+  const primarySystem = uniqueSystems[0];
+  const primaryMeta = primarySystem ? getSystemMeta(primarySystem) : null;
 
   return (
     <header className="relative overflow-hidden rounded-2xl border border-border bg-gradient-hero">
@@ -42,6 +44,25 @@ export const FlowHeader = ({
 
         <div className="flex items-start justify-between gap-6 flex-wrap">
           <div className="min-w-0 flex-1">
+            {/* Category-style badge row */}
+            <div className="flex items-center gap-2 mb-2">
+              {primaryMeta && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] uppercase tracking-[0.14em] font-semibold"
+                  style={{
+                    background: `color-mix(in oklab, hsl(var(${primaryMeta.hue})) 14%, transparent)`,
+                    color: `hsl(var(${primaryMeta.hue}))`,
+                  }}
+                >
+                  {primaryMeta.label}
+                </span>
+              )}
+              <span className="text-muted-foreground">·</span>
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {new Date(flow.createdAt).toLocaleDateString("nl-NL")}
+              </span>
+            </div>
+
             <input
               className="text-3xl font-semibold tracking-tight text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-border focus:outline-none w-full pb-0.5"
               value={naam}
@@ -55,7 +76,7 @@ export const FlowHeader = ({
               placeholder="Beschrijving..."
             />
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="mt-5 flex flex-wrap items-center gap-2">
               {uniqueSystems.map((s) => {
                 const meta = getSystemMeta(s);
                 return (
@@ -75,8 +96,13 @@ export const FlowHeader = ({
             </div>
           </div>
 
-          {isDirty && (
-            <div className="flex items-center gap-2">
+          {/* Status + save action */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-success">
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-soft" />
+              Actief
+            </span>
+            {isDirty && (
               <button
                 type="button"
                 onClick={onSave}
@@ -85,27 +111,39 @@ export const FlowHeader = ({
               >
                 {isSaving ? "Opslaan..." : "Opslaan"}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3 max-w-xs">
-          <div className="rounded-xl bg-card/80 backdrop-blur-sm border border-border px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
-              Aangemaakt
-            </p>
-            <p className="mt-1 text-sm font-semibold text-foreground">
-              {new Date(flow.createdAt).toLocaleDateString("nl-NL")}
-            </p>
-          </div>
-          <div className="rounded-xl bg-card/80 backdrop-blur-sm border border-border px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
-              Automations
-            </p>
-            <p className="mt-1 text-sm font-semibold text-foreground">{automationCount}</p>
-          </div>
+        {/* 4-column stat grid */}
+        <div className="mt-7 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={Calendar} label="Aangemaakt" value={new Date(flow.createdAt).toLocaleDateString("nl-NL")} />
+          <StatCard icon={Layers} label="Automations" value={String(automationCount)} />
+          <StatCard icon={Server} label="Systemen" value={String(uniqueSystems.length)} />
+          <StatCard icon={Activity} label="Status" value="Actief" accent="Geen openstaande updates" />
         </div>
       </div>
     </header>
   );
 };
+
+const StatCard = ({
+  icon: Icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: typeof Activity;
+  label: string;
+  value: string;
+  accent?: string;
+}) => (
+  <div className="rounded-xl bg-card/80 backdrop-blur-sm border border-border px-4 py-3">
+    <div className="flex items-center gap-1.5 text-muted-foreground">
+      <Icon className="w-3.5 h-3.5" />
+      <span className="text-[11px] uppercase tracking-wider font-semibold">{label}</span>
+    </div>
+    <p className="mt-1 text-sm font-semibold text-foreground truncate">{value}</p>
+    {accent && <p className="text-[11px] text-success font-medium mt-0.5">{accent}</p>}
+  </div>
+);

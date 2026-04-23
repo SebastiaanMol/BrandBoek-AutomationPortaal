@@ -22,7 +22,7 @@ export const AutomationList = ({ flow, autoMap, selectedId, onSelect }: Automati
         return (
           <li key={id} className="relative pl-12 pr-2 py-1.5">
             <span
-              className="absolute left-2 top-3 inline-flex items-center justify-center w-9 h-9 rounded-full bg-card border-2 transition-colors text-[11px] font-bold"
+              className="absolute left-[1px] top-3 inline-flex items-center justify-center w-9 h-9 rounded-full bg-card border-2 transition-colors text-[11px] font-bold"
               style={{
                 borderColor: active ? `hsl(var(${sys.hue}))` : "hsl(var(--border))",
                 color: `hsl(var(${sys.hue}))`,

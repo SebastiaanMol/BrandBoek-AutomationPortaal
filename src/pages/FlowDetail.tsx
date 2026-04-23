@@ -158,7 +158,7 @@ export default function FlowDetail(): React.ReactNode {
               <Info className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
               <p>
                 {view === "flow"
-                  ? "Klik op een node voor de interne stappen. Zie aan de ↻ badge of een automation ook in andere flows wordt hergebruikt."
+                  ? "Deze flow leest je van boven naar beneden: het proces start bovenaan en loopt via de verbonden automations naar het eindresultaat. Elke gekleurde node is een losse automation in een specifiek systeem. Klik op een node voor de interne stappen en zie aan de ↻ badge of een automation ook in andere processen wordt hergebruikt."
                   : "Alle automations in volgorde. Klik op een stap om rechts de details te zien."}
               </p>
             </div>
@@ -195,7 +195,6 @@ export default function FlowDetail(): React.ReactNode {
               currentFlowId={flow.id}
               autoMap={autoMap}
               allFlows={flows}
-              onClose={() => setSelectedId(null)}
             />
 
             <div className="card-elevated p-4">
