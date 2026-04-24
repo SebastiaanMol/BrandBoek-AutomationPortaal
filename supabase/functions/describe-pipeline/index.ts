@@ -6,6 +6,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface PipelineStage {
+  label: string;
+  display_order: number;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -30,28 +35,27 @@ serve(async (req) => {
       .eq("pipeline_id", pipeline_id)
       .maybeSingle();
 
-    if (dbError || !pipeline) {
+    if (dbError) throw dbError;
+
+    if (!pipeline) {
       return new Response(
         JSON.stringify({ error: "Pipeline niet gevonden" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const stages = (pipeline.stages ?? []) as Array<{ label: string; display_order: number }>;
+    const stages = (pipeline.stages ?? []) as PipelineStage[];
     const sortedStages = [...stages].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
     const stageList = sortedStages.map((s, i) => `${i + 1}. ${s.label}`).join("\n");
 
     const prompt = `Je krijgt een HubSpot deal-pipeline genaamd "${pipeline.naam}" met de volgende stages:\n${stageList}\n\nSchrijf een zakelijke beschrijving van 2-3 zinnen die uitlegt wat het doel van deze pipeline is en wat het proces globaal inhoudt. Schrijf voor medewerkers van een boekhoudkantoor, geen technisch jargon. Antwoord uitsluitend in het Nederlands.\n\nAntwoord in JSON: { "beschrijving": "..." }`;
-
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is niet geconfigureerd");
 
     const res = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${GEMINI_API_KEY}`,
+          Authorization: `Bearer ${Deno.env.get("GEMINI_API_KEY")!}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
