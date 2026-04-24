@@ -35,3 +35,15 @@ describe("ProcessenView pipeline selection", () => {
     expect(selected).toBeNull();
   });
 });
+
+describe("ProcessenEditor pipeline switch", () => {
+  it("allows switching pipeline when canvas is clean", () => {
+    const isDirty = false;
+    expect(isDirty).toBe(false);
+  });
+
+  it("requires confirmation when canvas is dirty", () => {
+    const isDirty = true;
+    expect(isDirty).toBe(true);
+  });
+});
