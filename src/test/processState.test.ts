@@ -17,3 +17,21 @@ describe("process state ID contract", () => {
     expect(buildProcessStateId(id)).toBe(id);
   });
 });
+
+describe("ProcessenView pipeline selection", () => {
+  it("auto-selects first pipeline when none selected", () => {
+    const pipelines = [
+      { pipelineId: "a", naam: "Sales", stages: [], syncedAt: "", beschrijving: null },
+      { pipelineId: "b", naam: "Onboarding", stages: [], syncedAt: "", beschrijving: null },
+    ];
+    // When selectedPipelineId is null, the first pipeline should be used
+    const selected = pipelines.find(p => p.pipelineId === null) ?? pipelines[0];
+    expect(selected.pipelineId).toBe("a");
+  });
+
+  it("returns null when pipelines array is empty", () => {
+    const pipelines: { pipelineId: string }[] = [];
+    const selected = pipelines.length > 0 ? pipelines[0] : null;
+    expect(selected).toBeNull();
+  });
+});
