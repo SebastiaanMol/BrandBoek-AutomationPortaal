@@ -29,7 +29,6 @@ import type { ProcessStep, Automation, TeamKey, ProcessState } from "@/data/proc
 import { initialState, TEAM_ORDER, TEAM_CONFIG } from "@/data/processData";
 import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
 import type { Automatisering, KlantFase } from "@/lib/types";
-import { supabase } from "@/integrations/supabase/client";
 import { saveProcessState } from "@/lib/supabaseStorage";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
@@ -54,11 +53,10 @@ function toCanvasAutomation(a: Automatisering, existing?: Automation): Automatio
 
 interface ProcessenEditorProps {
   pipelineId: string;
-  onSwitchToView: () => void;
   onSwitchPipeline: (id: string) => void;
 }
 
-export function ProcessenEditor({ pipelineId, onSwitchToView, onSwitchPipeline }: ProcessenEditorProps) {
+export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEditorProps) {
   const navigate = useNavigate();
   const [state, setState]     = useState<ProcessState>(initialState);
   const [saved, setSaved]     = useState<ProcessState>(initialState);
