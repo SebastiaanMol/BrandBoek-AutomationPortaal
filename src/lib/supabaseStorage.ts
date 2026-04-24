@@ -394,10 +394,11 @@ export async function confirmAutomationLink(linkId: string): Promise<void> {
 // ─── Pipelines ────────────────────────────────────────────────────────────────
 
 interface PipelineRow {
-  pipeline_id: string;
-  naam:        string;
-  stages:      PipelineStage[] | null;
-  synced_at:   string;
+  pipeline_id:  string;
+  naam:         string;
+  stages:       PipelineStage[] | null;
+  synced_at:    string;
+  beschrijving: string | null;
 }
 
 export async function fetchPipelines(): Promise<Pipeline[]> {
@@ -407,15 +408,20 @@ export async function fetchPipelines(): Promise<Pipeline[]> {
     .order("naam", { ascending: true });
   if (error) throw error;
   return (data as PipelineRow[] ?? []).map((r) => ({
-    pipelineId: r.pipeline_id,
-    naam:       r.naam,
-    stages:     r.stages ?? [],
-    syncedAt:   r.synced_at,
+    pipelineId:   r.pipeline_id,
+    naam:         r.naam,
+    stages:       r.stages ?? [],
+    syncedAt:     r.synced_at,
+    beschrijving: r.beschrijving ?? null,
   }));
 }
 
 export async function triggerHubSpotPipelinesSync(): Promise<{ upserted: number }> {
   return invokeEdgeFunction<{ upserted: number }>("hubspot-pipelines");
+}
+
+export async function triggerDescribePipeline(pipelineId: string): Promise<{ beschrijving: string }> {
+  return invokeEdgeFunction<{ beschrijving: string }>("describe-pipeline", { pipeline_id: pipelineId });
 }
 
 // ─── Flows ────────────────────────────────────────────────────────────────────

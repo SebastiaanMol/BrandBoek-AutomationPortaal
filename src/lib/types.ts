@@ -43,10 +43,11 @@ export interface PipelineStage {
 }
 
 export interface Pipeline {
-  pipelineId: string;
-  naam:       string;
-  stages:     PipelineStage[];
-  syncedAt:   string;
+  pipelineId:   string;
+  naam:         string;
+  stages:       PipelineStage[];
+  syncedAt:     string;
+  beschrijving: string | null;
 }
 
 // ── Flow ─────────────────────────────────────────────────────────────────────

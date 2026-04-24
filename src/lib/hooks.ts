@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult } from "@tanstack/react-query";
-import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings, fetchAutomationLinks, confirmAutomationLink, fetchPipelines, triggerHubSpotPipelinesSync, fetchFlows, insertFlow, updateFlow, deleteFlow, fetchAllConfirmedAutomationLinks } from "./supabaseStorage";
+import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings, fetchAutomationLinks, confirmAutomationLink, fetchPipelines, triggerHubSpotPipelinesSync, triggerDescribePipeline, fetchFlows, insertFlow, updateFlow, deleteFlow, fetchAllConfirmedAutomationLinks } from "./supabaseStorage";
 import type { Automatisering, Flow, PortalSettings } from "./types";
 
 export function useAutomatiseringen() {
@@ -162,6 +162,14 @@ export function useHubSpotPipelinesSync() {
   return useMutation({
     mutationFn: triggerHubSpotPipelinesSync,
     onSuccess:  () => queryClient.invalidateQueries({ queryKey: ["pipelines"] }),
+  });
+}
+
+export function useDescribePipeline() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (pipelineId: string) => triggerDescribePipeline(pipelineId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pipelines"] }),
   });
 }
 
