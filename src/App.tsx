@@ -20,6 +20,7 @@ import Brandy from "./pages/Brandy";
 import Flows from "./pages/Flows";
 import FlowDetail from "./pages/FlowDetail";
 import Pipelines from "./pages/Pipelines";
+import PipelineDetail from "./pages/PipelineDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,7 @@ function ProtectedRoutes() {
         <Route path="/flows" element={<Flows />} />
         <Route path="/flows/:id" element={<FlowDetail />} />
         <Route path="/pipelines" element={<Pipelines />} />
+        <Route path="/pipelines/:id" element={<PipelineDetail />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

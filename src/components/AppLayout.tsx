@@ -209,7 +209,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
           <span className="label-uppercase ml-3 lg:ml-0">
-            {[...navGroups.flatMap(g => g.items), ...bottomNavItems].find((n) => n.url === location.pathname)?.title || "Portal"}
+            {location.pathname.startsWith("/pipelines/")
+              ? "Pipeline Detail"
+              : [...navGroups.flatMap(g => g.items), ...bottomNavItems].find((n) => n.url === location.pathname)?.title || "Portal"}
           </span>
         </header>
         <main className={`flex-1 w-full ${
@@ -217,7 +219,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           location.pathname === "/brandy" ||
           location.pathname === "/flows" ||
           location.pathname.startsWith("/flows/") ||
-          location.pathname === "/pipelines"
+          location.pathname === "/pipelines" ||
+          location.pathname.startsWith("/pipelines/")
             ? "p-0"
             : "p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto"
         }`}>
