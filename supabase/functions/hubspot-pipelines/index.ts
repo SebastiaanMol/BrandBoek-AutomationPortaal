@@ -18,7 +18,7 @@ async function generateDescription(
   stages: PipelineStage[],
   geminiKey: string,
 ): Promise<string | null> {
-  const sortedStages = [...stages].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+  const sortedStages = [...stages].sort((a, b) => a.display_order - b.display_order);
   const stageList = sortedStages.map((s, i) => `${i + 1}. ${s.label}`).join("\n");
   const prompt = `Je krijgt een HubSpot deal-pipeline genaamd "${naam}" met de volgende stages:\n${stageList}\n\nSchrijf een zakelijke beschrijving van 2-3 zinnen die uitlegt wat het doel van deze pipeline is en wat het proces globaal inhoudt. Schrijf voor medewerkers van een boekhoudkantoor, geen technisch jargon. Antwoord uitsluitend in het Nederlands.\n\nAntwoord in JSON: { "beschrijving": "..." }`;
 
@@ -82,7 +82,7 @@ serve(async (req) => {
     }
 
     const token = integration.token as string;
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") ?? "";
 
     const res = await fetch(
       "https://api.hubapi.com/crm/v3/pipelines/deals?includeInactive=false",
@@ -104,7 +104,8 @@ serve(async (req) => {
     }
 
     const pipelinesBody = await res.json();
-    const pipelines: any[] = pipelinesBody.results ?? [];
+    const pipelines: Array<{ id: string; label: string; stages?: unknown[] }> =
+      pipelinesBody.results ?? [];
     const now = new Date().toISOString();
     let upserted = 0;
 
@@ -125,15 +126,18 @@ serve(async (req) => {
         .eq("pipeline_id", pipeline.id)
         .maybeSingle();
 
-      const existingIds = ((existing?.stages ?? []) as PipelineStage[])
-        .map((s) => s.stage_id).sort().join(",");
-      const newIds = stages.map((s) => s.stage_id).sort().join(",");
-      const stagesChanged = existingIds !== newIds;
+      // Fingerprint: sorted "id:label" pairs — catches additions, removals, and renames
+      const stageFingerprint = (ss: PipelineStage[]) =>
+        [...ss].sort((a, b) => a.stage_id.localeCompare(b.stage_id))
+          .map((s) => `${s.stage_id}:${s.label}`)
+          .join(",");
+      const stagesChanged = stageFingerprint((existing?.stages ?? []) as PipelineStage[]) !==
+        stageFingerprint(stages);
       const needsDescription = !existing?.beschrijving;
 
       let beschrijving: string | null = existing?.beschrijving ?? null;
-      if ((stagesChanged || needsDescription) && GEMINI_API_KEY) {
-        beschrijving = await generateDescription(pipeline.label, stages, GEMINI_API_KEY);
+      if ((stagesChanged || needsDescription) && geminiApiKey) {
+        beschrijving = await generateDescription(pipeline.label, stages, geminiApiKey);
       }
 
       const { error } = await db.from("pipelines").upsert(
