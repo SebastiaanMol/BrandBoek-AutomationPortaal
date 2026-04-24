@@ -6,6 +6,56 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface PipelineStage {
+  stage_id:      string;
+  label:         string;
+  display_order: number;
+  metadata:      Record<string, unknown>;
+}
+
+async function generateDescription(
+  naam: string,
+  stages: PipelineStage[],
+  geminiKey: string,
+): Promise<string | null> {
+  const sortedStages = [...stages].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+  const stageList = sortedStages.map((s, i) => `${i + 1}. ${s.label}`).join("\n");
+  const prompt = `Je krijgt een HubSpot deal-pipeline genaamd "${naam}" met de volgende stages:\n${stageList}\n\nSchrijf een zakelijke beschrijving van 2-3 zinnen die uitlegt wat het doel van deze pipeline is en wat het proces globaal inhoudt. Schrijf voor medewerkers van een boekhoudkantoor, geen technisch jargon. Antwoord uitsluitend in het Nederlands.\n\nAntwoord in JSON: { "beschrijving": "..." }`;
+
+  try {
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${geminiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: "Je bent een technische assistent voor een Nederlands boekhoudkantoor. Antwoord alleen in het gevraagde JSON-formaat. Geen extra tekst.",
+            },
+            { role: "user", content: prompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      },
+    );
+    if (!res.ok) return null;
+    const geminiResult = await res.json();
+    const content = geminiResult.choices?.[0]?.message?.content;
+    if (!content) return null;
+    const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const result = JSON.parse(cleaned) as { beschrijving: string };
+    return result.beschrijving ?? null;
+  } catch {
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -15,7 +65,6 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Read HubSpot integration
     const { data: integration, error: intError } = await db
       .from("integrations")
       .select("*")
@@ -33,8 +82,8 @@ serve(async (req) => {
     }
 
     const token = integration.token as string;
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 
-    // Fetch all deal pipelines from HubSpot
     const res = await fetch(
       "https://api.hubapi.com/crm/v3/pipelines/deals?includeInactive=false",
       { headers: { Authorization: `Bearer ${token}` } },
@@ -60,7 +109,7 @@ serve(async (req) => {
     let upserted = 0;
 
     for (const pipeline of pipelines) {
-      const stages = [...(pipeline.stages ?? [])]
+      const stages: PipelineStage[] = [...(pipeline.stages ?? [])]
         .sort((a: any, b: any) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
         .map((s: any) => ({
           stage_id:      s.id,
@@ -69,12 +118,31 @@ serve(async (req) => {
           metadata:      s.metadata ?? {},
         }));
 
+      // Fetch existing row to compare stages and preserve beschrijving
+      const { data: existing } = await db
+        .from("pipelines")
+        .select("stages, beschrijving")
+        .eq("pipeline_id", pipeline.id)
+        .maybeSingle();
+
+      const existingIds = ((existing?.stages ?? []) as PipelineStage[])
+        .map((s) => s.stage_id).sort().join(",");
+      const newIds = stages.map((s) => s.stage_id).sort().join(",");
+      const stagesChanged = existingIds !== newIds;
+      const needsDescription = !existing?.beschrijving;
+
+      let beschrijving: string | null = existing?.beschrijving ?? null;
+      if ((stagesChanged || needsDescription) && GEMINI_API_KEY) {
+        beschrijving = await generateDescription(pipeline.label, stages, GEMINI_API_KEY);
+      }
+
       const { error } = await db.from("pipelines").upsert(
         {
-          pipeline_id: pipeline.id,
-          naam:        pipeline.label,
+          pipeline_id:  pipeline.id,
+          naam:         pipeline.label,
           stages,
-          synced_at:   now,
+          synced_at:    now,
+          ...(beschrijving !== null ? { beschrijving } : {}),
         },
         { onConflict: "pipeline_id" },
       );
