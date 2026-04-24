@@ -1,15 +1,16 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, ChevronRight, Layers2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Layers2, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
-import { usePipelines } from "@/lib/hooks";
+import { usePipelines, useDescribePipeline } from "@/lib/hooks";
 import { PIPELINE_COLORS } from "@/components/PipelineCard";
 
 export default function PipelineDetail(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: pipelines = [], isLoading } = usePipelines();
+  const describeMutation = useDescribePipeline();
 
   if (isLoading) {
     return (
@@ -44,6 +45,12 @@ export default function PipelineDetail(): ReactNode {
   const sortedStages = [...pipeline.stages].sort(
     (a, b) => a.display_order - b.display_order,
   );
+
+  useEffect(() => {
+    if (pipeline && !pipeline.beschrijving && !describeMutation.isPending) {
+      describeMutation.mutate(pipeline.pipelineId);
+    }
+  }, [pipeline?.pipelineId]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -95,6 +102,49 @@ export default function PipelineDetail(): ReactNode {
                 locale: nl,
               })}
             </p>
+          </div>
+          {/* AI beschrijving */}
+          <div
+            className="mt-4 rounded-lg px-3 py-2.5"
+            style={{ background: "rgba(255,255,255,0.15)" }}
+          >
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Sparkles
+                className="w-2.5 h-2.5 flex-shrink-0"
+                style={{ color: "rgba(255,255,255,0.8)" }}
+              />
+              <span
+                className="text-[9px] font-semibold uppercase tracking-widest"
+                style={{ color: "rgba(255,255,255,0.7)" }}
+              >
+                AI Samenvatting
+              </span>
+            </div>
+            {pipeline.beschrijving ? (
+              <p
+                className="text-[11px] leading-relaxed"
+                style={{ color: "rgba(255,255,255,0.9)" }}
+              >
+                {pipeline.beschrijving}
+              </p>
+            ) : (
+              <div className="space-y-1.5 animate-pulse">
+                <div
+                  className="h-2 rounded-full w-full"
+                  style={{ background: "rgba(255,255,255,0.25)" }}
+                />
+                <div
+                  className="h-2 rounded-full w-4/5"
+                  style={{ background: "rgba(255,255,255,0.25)" }}
+                />
+                <p
+                  className="text-[8px] mt-1"
+                  style={{ color: "rgba(255,255,255,0.45)" }}
+                >
+                  Beschrijving wordt gegenereerd…
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
