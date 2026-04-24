@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -58,6 +59,7 @@ interface ProcessenEditorProps {
 
 export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEditorProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [state, setState]     = useState<ProcessState>(initialState);
   const [saved, setSaved]     = useState<ProcessState>(initialState);
   const [isDirty, setIsDirty] = useState(false);
@@ -151,6 +153,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
       setSaved(state);
       setIsDirty(false);
       toast.success("Proceskaart opgeslagen");
+      queryClient.invalidateQueries({ queryKey: ["processState", pipelineId] });
     } catch (err) {
       console.error(err);
       toast.error("Opslaan mislukt — controleer de database");
