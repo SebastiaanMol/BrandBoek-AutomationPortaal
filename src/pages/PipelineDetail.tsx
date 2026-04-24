@@ -12,6 +12,15 @@ export default function PipelineDetail(): ReactNode {
   const { data: pipelines = [], isLoading } = usePipelines();
   const describeMutation = useDescribePipeline();
 
+  const pipelineIndex = pipelines.findIndex((p) => p.pipelineId === id);
+  const pipeline = pipelines[pipelineIndex];
+
+  useEffect(() => {
+    if (pipeline && !pipeline.beschrijving && !describeMutation.isPending) {
+      describeMutation.mutate(pipeline.pipelineId);
+    }
+  }, [pipeline?.pipelineId]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -19,9 +28,6 @@ export default function PipelineDetail(): ReactNode {
       </div>
     );
   }
-
-  const pipelineIndex = pipelines.findIndex((p) => p.pipelineId === id);
-  const pipeline = pipelines[pipelineIndex];
 
   if (!pipeline) {
     return (
@@ -45,12 +51,6 @@ export default function PipelineDetail(): ReactNode {
   const sortedStages = [...pipeline.stages].sort(
     (a, b) => a.display_order - b.display_order,
   );
-
-  useEffect(() => {
-    if (pipeline && !pipeline.beschrijving && !describeMutation.isPending) {
-      describeMutation.mutate(pipeline.pipelineId);
-    }
-  }, [pipeline?.pipelineId]);
 
   return (
     <div className="min-h-screen bg-background">
