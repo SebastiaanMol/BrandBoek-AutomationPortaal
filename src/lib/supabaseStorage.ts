@@ -273,18 +273,16 @@ export interface SavedProcessState {
   autoLinks:   Record<string, { fromStepId: string; toStepId: string }>;
 }
 
-const PROCESS_STATE_ID = "main";
-
 // Tables not yet in the generated Supabase types (process_state, portal_settings,
 // pipelines, automation_links) require a cast until `supabase gen types` is re-run.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 
-export async function fetchProcessState(): Promise<SavedProcessState | null> {
+export async function fetchProcessState(pipelineId: string): Promise<SavedProcessState | null> {
   const { data, error } = await db
     .from("process_state")
     .select("steps, connections, auto_links")
-    .eq("id", PROCESS_STATE_ID)
+    .eq("id", pipelineId)
     .maybeSingle();
 
   if (error) throw error;
@@ -297,12 +295,12 @@ export async function fetchProcessState(): Promise<SavedProcessState | null> {
   };
 }
 
-export async function saveProcessState(state: SavedProcessState): Promise<void> {
+export async function saveProcessState(pipelineId: string, state: SavedProcessState): Promise<void> {
   const { error } = await db
     .from("process_state")
     .upsert(
       {
-        id:          PROCESS_STATE_ID,
+        id:          pipelineId,
         steps:       state.steps,
         connections: state.connections,
         auto_links:  state.autoLinks,
