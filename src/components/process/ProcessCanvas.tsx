@@ -288,15 +288,15 @@ interface ProcessCanvasProps {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
-  onStepClick: (s: ProcessStep) => void;
-  onAutomationClick: (a: Automation) => void;
-  onAddConnection: (fromId: string, toId: string) => void;
-  onDeleteConnection: (id: string) => void;
-  onMoveStep: (stepId: string, newTeam: TeamKey, newColumn: number, newRow: number) => void;
-  onAttachAutomation: (autoId: string, fromStepId: string, toStepId: string) => void;
-  onAddStep: (team: TeamKey, column: number, row: number) => void;
-  onAddBranch: (automationId: string, toStepId: string) => void;
-  onUpdateConnectionLabel: (connId: string, label: string) => void;
+  onStepClick?: (s: ProcessStep) => void;
+  onAutomationClick?: (a: Automation) => void;
+  onAddConnection?: (fromId: string, toId: string) => void;
+  onDeleteConnection?: (id: string) => void;
+  onMoveStep?: (stepId: string, newTeam: TeamKey, newColumn: number, newRow: number) => void;
+  onAttachAutomation?: (autoId: string, fromStepId: string, toStepId: string) => void;
+  onAddStep?: (team: TeamKey, column: number, row: number) => void;
+  onAddBranch?: (automationId: string, toStepId: string) => void;
+  onUpdateConnectionLabel?: (connId: string, label: string) => void;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -492,7 +492,7 @@ export function ProcessCanvas({
         if (isEvent(s)) return Math.hypot(pt.x - scx, pt.y - scy) <= EVT_R * 1.5 && s.id !== drawing.fromId;
         return Math.abs(pt.x - scx) <= STEP_W / 2 && Math.abs(pt.y - scy) <= STEP_H / 2 && s.id !== drawing.fromId;
       });
-      if (target) onAddConnection(drawing.fromId, target.id);
+      if (target) onAddConnection?.(drawing.fromId, target.id);
       setDrawing(null);
     }
 
@@ -502,14 +502,14 @@ export function ProcessCanvas({
         if (isEvent(s)) return Math.hypot(pt.x - scx, pt.y - scy) <= EVT_R * 1.5;
         return Math.abs(pt.x - scx) <= STEP_W / 2 && Math.abs(pt.y - scy) <= STEP_H / 2;
       });
-      if (target) onAddBranch(drawingBranch.automationId, target.id);
+      if (target) onAddBranch?.(drawingBranch.automationId, target.id);
       setDrawingBranch(null);
     }
 
     if (dragging) {
       if (dragging.moved) {
         const { team, row } = nearestTeamRow(dragging.curY);
-        onMoveStep(dragging.stepId, team, nearestCol(dragging.curX), row);
+        onMoveStep?.(dragging.stepId, team, nearestCol(dragging.curX), row);
       }
       setDragging(null);
     }
@@ -549,7 +549,7 @@ export function ProcessCanvas({
           const col = nearestCol(pt.x);
           const { team, row } = nearestTeamRow(pt.y);
           setNewStepDrag(null);
-          onAddStep(team, col, row);
+          onAddStep?.(team, col, row);
         }}
         className="select-none block">
 
@@ -643,8 +643,8 @@ export function ProcessCanvas({
                     <foreignObject x={mid.x - postEstW / 2} y={mid.y - 13} width={Math.max(postEstW, 120)} height={26}>
                       <input autoFocus value={editingLabel!.value}
                         onChange={e => setEditingLabel(prev => prev ? { ...prev, value: e.target.value } : null)}
-                        onBlur={() => { onUpdateConnectionLabel(conn.id, editingLabel!.value); setEditingLabel(null); }}
-                        onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") { onUpdateConnectionLabel(conn.id, editingLabel!.value); setEditingLabel(null); } }}
+                        onBlur={() => { onUpdateConnectionLabel?.(conn.id, editingLabel!.value); setEditingLabel(null); }}
+                        onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") { onUpdateConnectionLabel?.(conn.id, editingLabel!.value); setEditingLabel(null); } }}
                         className="w-full h-full text-center text-[10px] font-medium bg-white border border-amber-300 rounded px-1 outline-none" />
                     </foreignObject>
                   ) : postLabelText ? (
@@ -673,7 +673,7 @@ export function ProcessCanvas({
                 onDrop={e => {
                   e.preventDefault();
                   const autoId = e.dataTransfer.getData("automationId");
-                  if (autoId) onAttachAutomation(autoId, conn.fromStepId, conn.toStepId);
+                  if (autoId) onAttachAutomation?.(autoId, conn.fromStepId, conn.toStepId);
                   setHoveredConn(null);
                 }} />
             </g>
@@ -690,7 +690,7 @@ export function ProcessCanvas({
           const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           return dotPositions(arrow.dotCenter, connAutos.length).map((pos, i) => (
             <AutomationDot key={connAutos[i].id} auto={connAutos[i]} cx={pos.x} cy={pos.y}
-              onClick={ev => { ev.stopPropagation(); onAutomationClick(connAutos[i]); }}
+              onClick={ev => { ev.stopPropagation(); onAutomationClick?.(connAutos[i]); }}
               onPortMouseDown={ev => {
                 ev.stopPropagation();
                 setDrawingBranch({
@@ -727,7 +727,7 @@ export function ProcessCanvas({
           return (
             <StepBox key={step.id} step={step} cx={cx} cy={cy}
               isDragging={isDrag} isTarget={isTarget}
-              onClick={() => { if (!dragging?.moved) onStepClick(step); }}
+              onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
               onPortMouseDown={e => handlePortMouseDown(e, step)}
               onStepMouseDown={e => handleStepMouseDown(e, step)} />
           );
@@ -886,9 +886,9 @@ export function ProcessCanvas({
                     autoFocus
                     value={editingLabel!.value}
                     onChange={e => setEditingLabel(prev => prev ? { ...prev, value: e.target.value } : prev)}
-                    onBlur={() => { onUpdateConnectionLabel(conn.id, editingLabel!.value); setEditingLabel(null); }}
+                    onBlur={() => { onUpdateConnectionLabel?.(conn.id, editingLabel!.value); setEditingLabel(null); }}
                     onKeyDown={e => {
-                      if (e.key === "Enter") { onUpdateConnectionLabel(conn.id, editingLabel!.value); setEditingLabel(null); }
+                      if (e.key === "Enter") { onUpdateConnectionLabel?.(conn.id, editingLabel!.value); setEditingLabel(null); }
                       if (e.key === "Escape") setEditingLabel(null);
                     }}
                     style={{
@@ -948,7 +948,7 @@ export function ProcessCanvas({
         >
           <button
             className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-            onClick={() => { onDeleteConnection(contextMenu.connId); setContextMenu(null); }}
+            onClick={() => { onDeleteConnection?.(contextMenu.connId); setContextMenu(null); }}
           >
             Verbinding verwijderen
           </button>
