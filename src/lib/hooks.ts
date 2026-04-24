@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult } from "@tanstack/react-query";
-import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings, fetchAutomationLinks, confirmAutomationLink, fetchPipelines, triggerHubSpotPipelinesSync, triggerDescribePipeline, fetchFlows, insertFlow, updateFlow, deleteFlow, fetchAllConfirmedAutomationLinks } from "./supabaseStorage";
+import { fetchAutomatiseringen, insertAutomatisering, updateAutomatisering, deleteAutomatisering, generateNextId, verifieerAutomatisering, fetchIntegration, saveIntegration, deleteIntegration, triggerHubSpotSync, triggerZapierSync, triggerTypeformSync, triggerGitlabSync, fetchPortalSettings, savePortalSettings, fetchAutomationLinks, confirmAutomationLink, fetchPipelines, triggerHubSpotPipelinesSync, triggerDescribePipeline, fetchFlows, insertFlow, updateFlow, deleteFlow, fetchAllConfirmedAutomationLinks, fetchProcessState, saveProcessState } from "./supabaseStorage";
 import type { Automatisering, Flow, PortalSettings } from "./types";
 
 export function useAutomatiseringen() {
@@ -170,6 +170,17 @@ export function useDescribePipeline() {
   return useMutation({
     mutationFn: (pipelineId: string) => triggerDescribePipeline(pipelineId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pipelines"] }),
+  });
+}
+
+// ─── Process state ────────────────────────────────────────────────────────────
+
+export function useProcessState(pipelineId: string | null) {
+  return useQuery({
+    queryKey: ["processState", pipelineId],
+    queryFn:  () => pipelineId ? fetchProcessState(pipelineId) : null,
+    enabled:  !!pipelineId,
+    staleTime: Infinity, // canvas state doesn't change externally
   });
 }
 
