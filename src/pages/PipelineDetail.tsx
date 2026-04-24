@@ -19,7 +19,10 @@ export default function PipelineDetail(): ReactNode {
     if (pipeline && !pipeline.beschrijving && !describeMutation.isPending) {
       describeMutation.mutate(pipeline.pipelineId);
     }
-  }, [pipeline?.pipelineId]);
+    // describeMutation is a stable ref; isPending intentionally omitted to avoid
+    // re-firing after the mutation completes (before query invalidation runs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipeline?.pipelineId, pipeline?.beschrijving]);
 
   if (isLoading) {
     return (
