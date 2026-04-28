@@ -1,11 +1,35 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
-import { usePipelines, useProcessState } from "@/lib/hooks";
+import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
 import { ProcessenView } from "@/components/process/ProcessenView";
 import { ProcessenEditor } from "@/components/process/ProcessenEditor";
 import { stagesToProcessState } from "@/data/processData";
-import type { ProcessState } from "@/data/processData";
+import type { Automation, ProcessState, TeamKey } from "@/data/processData";
 import type { SavedProcessState } from "@/lib/supabaseStorage";
+import type { Automatisering, KlantFase } from "@/lib/types";
+
+const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
+  Marketing:   "marketing",
+  Sales:       "sales",
+  Onboarding:  "onboarding",
+  Boekhouding: "boekhouding",
+  Offboarding: "management",
+};
+
+function toCanvasAutomation(
+  a: Automatisering,
+  savedLink?: { fromStepId: string; toStepId: string },
+): Automation {
+  return {
+    id:         a.id,
+    name:       a.naam,
+    team:       FASE_TO_TEAM[a.fasen?.[0]] ?? "management",
+    tool:       a.systemen?.[0] ?? "Anders",
+    goal:       a.doel ?? "",
+    fromStepId: savedLink?.fromStepId,
+    toStepId:   savedLink?.toStepId,
+  };
+}
 
 type Mode = "view" | "edit";
 
@@ -13,7 +37,8 @@ export default function Processen(): ReactNode {
   const [mode, setMode]                       = useState<Mode>("view");
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
 
-  const { data: pipelines = [] } = usePipelines();
+  const { data: pipelines = [] }      = usePipelines();
+  const { data: dbAutomations = [] }  = useAutomatiseringen();
 
   // Auto-select first pipeline
   useEffect(() => {
@@ -34,7 +59,7 @@ export default function Processen(): ReactNode {
     if (saved) return {
       steps:       saved.steps       as ProcessState["steps"],
       connections: saved.connections as ProcessState["connections"],
-      automations: [],
+      automations: dbAutomations.map(a => toCanvasAutomation(a, saved.autoLinks[a.id])),
     };
     if (currentPipeline && currentPipeline.stages.length > 0) {
       return stagesToProcessState(currentPipeline);
