@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { usePipelines, useProcessState } from "@/lib/hooks";
 import { ProcessenView } from "@/components/process/ProcessenView";
 import { ProcessenEditor } from "@/components/process/ProcessenEditor";
+import { stagesToProcessState } from "@/data/processData";
 import type { ProcessState } from "@/data/processData";
 import type { SavedProcessState } from "@/lib/supabaseStorage";
 
@@ -21,19 +22,24 @@ export default function Processen(): ReactNode {
     }
   }, [pipelines, selectedPipelineId]);
 
+  const currentPipeline = pipelines.find(p => p.pipelineId === selectedPipelineId) ?? null;
+
   // Fetch canvas state for view mode only
   const { data: savedState, isLoading: stateLoading } = useProcessState(
     mode === "view" ? selectedPipelineId : null,
   );
 
-  // Convert SavedProcessState → ProcessState for the view canvas
+  // Convert SavedProcessState → ProcessState; fall back to pipeline stages when no canvas saved yet
   function toProcessState(saved: SavedProcessState | null | undefined): ProcessState | null {
-    if (!saved) return null;
-    return {
+    if (saved) return {
       steps:       saved.steps       as ProcessState["steps"],
       connections: saved.connections as ProcessState["connections"],
       automations: [],
     };
+    if (currentPipeline && currentPipeline.stages.length > 0) {
+      return stagesToProcessState(currentPipeline);
+    }
+    return null;
   }
 
   return (

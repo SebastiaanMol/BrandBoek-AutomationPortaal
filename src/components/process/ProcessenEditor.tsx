@@ -27,7 +27,7 @@ import { UnassignedPanel } from "@/components/process/UnassignedPanel";
 import { AutomationDetailPanel } from "@/components/process/AutomationDetailPanel";
 import { StepDialog } from "@/components/process/StepDialog";
 import type { ProcessStep, Automation, TeamKey, ProcessState } from "@/data/processData";
-import { initialState, TEAM_ORDER, TEAM_CONFIG } from "@/data/processData";
+import { initialState, stagesToProcessState, TEAM_ORDER, TEAM_CONFIG } from "@/data/processData";
 import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
 import type { Automatisering, KlantFase } from "@/lib/types";
 import { saveProcessState } from "@/lib/supabaseStorage";
@@ -85,19 +85,33 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
 
   const { data: savedState, isLoading: stateLoading } = useProcessState(pipelineId);
 
-  // Reset state when pipeline changes
+  // Reset state when pipeline changes — seed with stages so the canvas isn't blank while loading
   useEffect(() => {
-    setState(initialState);
-    setSaved(initialState);
+    const pipeline = pipelines.find(p => p.pipelineId === pipelineId) ?? null;
+    const baseState = pipeline && pipeline.stages.length > 0
+      ? stagesToProcessState(pipeline)
+      : initialState;
+    savedLinksRef.current = {};
+    setState(baseState);
+    setSaved(baseState);
     setIsDirty(false);
     setLoading(true);
-  }, [pipelineId]);
+  }, [pipelineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply saved state when data loads
   useEffect(() => {
     if (stateLoading) return;
     setLoading(false);
-    if (!savedState) return;
+    if (!savedState) {
+      // No saved canvas — initialize from stages if available
+      const pipeline = pipelines.find(p => p.pipelineId === pipelineId) ?? null;
+      if (pipeline && pipeline.stages.length > 0) {
+        const stagesState = stagesToProcessState(pipeline);
+        setState(stagesState);
+        setSaved(stagesState);
+      }
+      return;
+    }
     savedLinksRef.current = savedState.autoLinks;
     setState(prev => ({
       ...prev,

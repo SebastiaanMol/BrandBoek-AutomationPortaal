@@ -1,3 +1,5 @@
+import type { Pipeline } from "@/lib/types";
+
 export type TeamKey = "marketing" | "sales" | "onboarding" | "boekhouding" | "management";
 
 export interface ProcessStep {
@@ -104,3 +106,22 @@ export const initialState: ProcessState = {
   ],
   automations: [],
 };
+
+/** Convert a pipeline's HubSpot stages into a ProcessState with sequential steps in the sales lane. */
+export function stagesToProcessState(pipeline: Pipeline): ProcessState {
+  const sorted = [...pipeline.stages].sort((a, b) => a.display_order - b.display_order);
+  const steps: ProcessStep[] = sorted.map((stage, i) => ({
+    id:     `stage-${stage.stage_id}`,
+    label:  stage.label,
+    team:   "sales",
+    column: i + 1,
+    row:    0,
+    type:   "task",
+  }));
+  const connections: Connection[] = steps.slice(0, -1).map((step, i) => ({
+    id:         `stage-conn-${i}`,
+    fromStepId: step.id,
+    toStepId:   steps[i + 1].id,
+  }));
+  return { steps, connections, automations: [] };
+}

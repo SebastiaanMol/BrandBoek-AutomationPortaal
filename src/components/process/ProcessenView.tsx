@@ -1,6 +1,5 @@
 import { Eye } from "lucide-react";
 import { ProcessCanvas } from "./ProcessCanvas";
-import { initialState } from "@/data/processData";
 import type { Pipeline } from "@/lib/types";
 import type { ProcessState } from "@/data/processData";
 
@@ -21,9 +20,6 @@ export function ProcessenView({
   onSelectPipeline,
   onSwitchToEdit,
 }: ProcessenViewProps) {
-  const state = canvasState ?? initialState;
-  const hasCanvas = !!canvasState;
-
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Pipeline selector bar */}
@@ -63,26 +59,17 @@ export function ProcessenView({
           <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
             Selecteer een pipeline om de proceskaart te bekijken.
           </div>
-        ) : !hasCanvas ? (
-          <div className="card-elevated p-12 text-center space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Nog geen canvas aangemaakt voor deze pipeline.
-            </p>
-            <button
-              type="button"
-              onClick={onSwitchToEdit}
-              className="text-sm font-medium text-primary hover:underline"
-            >
-              Aanmaken in Bewerken →
-            </button>
+        ) : !canvasState ? (
+          <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+            Geen stages gevonden voor deze pipeline.
           </div>
         ) : (
           <>
             <div className="process-canvas-wrap border border-border rounded-[var(--radius-outer)] overflow-hidden bg-card shadow-sm">
               <ProcessCanvas
-                steps={state.steps}
-                connections={state.connections}
-                automations={state.automations}
+                steps={canvasState.steps}
+                connections={canvasState.connections}
+                automations={canvasState.automations}
               />
             </div>
             <div className="mt-3 flex items-center gap-1.5">
