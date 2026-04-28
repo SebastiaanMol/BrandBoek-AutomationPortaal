@@ -14,7 +14,8 @@ interface AutomationDetailPanelProps {
   steps: { id: string; label: string }[];
   branchConnections: Connection[];   // connections where fromAutomationId === automation.id
   onClose: () => void;
-  onDetach: (id: string) => void;
+  onDetach?: (id: string) => void;
+  readOnly?: boolean;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -42,6 +43,7 @@ export function AutomationDetailPanel({
   branchConnections,
   onClose,
   onDetach,
+  readOnly = false,
 }: AutomationDetailPanelProps): React.ReactNode {
 
   const { data: allAutomations } = useAutomatiseringen();
@@ -278,7 +280,7 @@ export function AutomationDetailPanel({
         <Section label="Uitgaande paden">
           {branchConnections.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              Sleep een lijn van de ⚡ naar een stap om een pad toe te voegen.
+              {readOnly ? "Geen uitgaande paden." : "Sleep een lijn van de ⚡ naar een stap om een pad toe te voegen."}
             </p>
           ) : (
             <div className="space-y-1.5">
@@ -333,7 +335,7 @@ export function AutomationDetailPanel({
       </div>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
-      {isAttached && (
+      {isAttached && !readOnly && onDetach && (
         <div className="p-4 border-t border-border">
           <Button
             variant="outline"
