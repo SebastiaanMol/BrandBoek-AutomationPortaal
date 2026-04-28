@@ -1,5 +1,12 @@
-import { Eye } from "lucide-react";
+import { ChevronDown, Eye } from "lucide-react";
 import { ProcessCanvas } from "./ProcessCanvas";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Pipeline } from "@/lib/types";
 import type { ProcessState } from "@/data/processData";
 
@@ -20,33 +27,37 @@ export function ProcessenView({
   onSelectPipeline,
   onSwitchToEdit,
 }: ProcessenViewProps) {
+  const selectedPipeline = pipelines.find(p => p.pipelineId === selectedPipelineId);
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Pipeline selector bar */}
-      <div className="shrink-0 px-6 py-2.5 border-b border-border bg-card flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mr-1">
-          Pipeline:
-        </span>
-        {pipelines.map((p) => (
-          <button
-            key={p.pipelineId}
-            type="button"
-            onClick={() => onSelectPipeline(p.pipelineId)}
-            className={[
-              "px-3 py-1 rounded-full text-[11px] font-semibold transition-colors",
-              selectedPipelineId === p.pipelineId
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:bg-muted/80",
-            ].join(" ")}
-          >
-            {p.naam}
-          </button>
-        ))}
-        {pipelines.length === 0 && (
-          <span className="text-[11px] text-muted-foreground">
-            Geen pipelines gevonden — synchroniseer eerst via Instellingen.
-          </span>
-        )}
+      {/* Header with pipeline dropdown */}
+      <div className="shrink-0 px-6 py-3 border-b border-border bg-card flex items-center gap-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs">
+              {selectedPipeline?.naam ?? "Pipeline"}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {pipelines.map((p) => (
+              <DropdownMenuItem
+                key={p.pipelineId}
+                onClick={() => onSelectPipeline(p.pipelineId)}
+                className={p.pipelineId === selectedPipelineId ? "font-semibold" : ""}
+              >
+                {p.naam}
+              </DropdownMenuItem>
+            ))}
+            {pipelines.length === 0 && (
+              <DropdownMenuItem disabled>
+                Geen pipelines gevonden
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <h1 className="text-base font-bold">Bekijken</h1>
       </div>
 
       {/* Canvas area */}
