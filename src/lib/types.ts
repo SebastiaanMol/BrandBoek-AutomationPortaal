@@ -48,6 +48,7 @@ export interface Pipeline {
   stages:       PipelineStage[];
   syncedAt:     string;
   beschrijving: string | null;
+  isActive?:    boolean;
 }
 
 // ── Flow ─────────────────────────────────────────────────────────────────────
