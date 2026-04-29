@@ -674,7 +674,7 @@ export function ProcessCanvas({
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
                 onClick={() => { if (hasAuto) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
-                onContextMenu={e => { e.preventDefault(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }}
+                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }}
                 onDragOver={e => { e.preventDefault(); setHoveredConn(conn.id); }}
                 onDragLeave={() => setHoveredConn(null)}
                 onDrop={e => {
@@ -884,7 +884,7 @@ export function ProcessCanvas({
               <path d={branchPath} stroke="transparent" strokeWidth="18" fill="none"
                 className="cursor-pointer"
                 onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}
-                onContextMenu={e => { e.preventDefault(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }} />
+                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }} />
               {/* Visible path */}
               <path d={branchPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
                 markerEnd="url(#ah-branch)" opacity={0.75} style={{ pointerEvents: "none" }} />
