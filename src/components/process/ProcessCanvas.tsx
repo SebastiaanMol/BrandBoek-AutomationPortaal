@@ -207,11 +207,12 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
 
 // ── EventCircle ───────────────────────────────────────────────────────────────
 
-function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMouseDown }: {
+function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
   onPortMouseDown: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
   const isStart = step.type === "start";
@@ -222,7 +223,7 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
   return (
     <g style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onMouseDown={onMouseDown}>
+      onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
       {isTarget && (
         <circle cx={cx} cy={cy} r={EVT_R + 6}
           fill="none" stroke={stroke} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
@@ -246,12 +247,13 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
 
 // ── StepBox ───────────────────────────────────────────────────────────────────
 
-function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown }: {
+function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick: () => void;
   onPortMouseDown: (e: React.MouseEvent) => void;
   onStepMouseDown: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
   const cfg = TEAM_CONFIG[step.team];
@@ -260,7 +262,8 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
 
   return (
     <g style={{ opacity: isDragging ? 0.3 : 1 }}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onContextMenu={onContextMenu}>
       {isTarget && (
         <rect x={x - 3} y={y - 3} width={STEP_W + 6} height={STEP_H + 6}
           rx="10" fill="none" stroke={cfg.stroke} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
@@ -297,6 +300,7 @@ interface ProcessCanvasProps {
   onAddStep?: (team: TeamKey, column: number, row: number) => void;
   onAddBranch?: (automationId: string, toStepId: string) => void;
   onUpdateConnectionLabel?: (connId: string, label: string) => void;
+  onParkStep?: (stepId: string) => void;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -306,6 +310,7 @@ export function ProcessCanvas({
   onStepClick, onAutomationClick,
   onAddConnection, onDeleteConnection,
   onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
+  onParkStep,
 }: ProcessCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -340,9 +345,11 @@ export function ProcessCanvas({
   const [drawingBranch, setDrawingBranch] = useState<{
     automationId: string; startX: number; startY: number; curX: number; curY: number;
   } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    connId: string; x: number; y: number;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    | { type: "conn"; connId: string; x: number; y: number }
+    | { type: "step"; stepId: string; x: number; y: number }
+    | null
+  >(null);
   const [editingLabel, setEditingLabel] = useState<{
     connId: string; x: number; y: number; value: string;
   } | null>(null);
@@ -667,7 +674,7 @@ export function ProcessCanvas({
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
                 onClick={() => { if (hasAuto) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
-                onContextMenu={e => { e.preventDefault(); setContextMenu({ connId: conn.id, x: e.clientX, y: e.clientY }); }}
+                onContextMenu={e => { e.preventDefault(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }}
                 onDragOver={e => { e.preventDefault(); setHoveredConn(conn.id); }}
                 onDragLeave={() => setHoveredConn(null)}
                 onDrop={e => {
@@ -720,7 +727,8 @@ export function ProcessCanvas({
               <EventCircle key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
                 onMouseDown={e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
-                onPortMouseDown={e => handlePortMouseDown(e, step)} />
+                onPortMouseDown={e => handlePortMouseDown(e, step)}
+                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
           }
 
@@ -729,7 +737,8 @@ export function ProcessCanvas({
               isDragging={isDrag} isTarget={isTarget}
               onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
               onPortMouseDown={e => handlePortMouseDown(e, step)}
-              onStepMouseDown={e => handleStepMouseDown(e, step)} />
+              onStepMouseDown={e => handleStepMouseDown(e, step)}
+              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
           );
         })}
 
@@ -875,7 +884,7 @@ export function ProcessCanvas({
               <path d={branchPath} stroke="transparent" strokeWidth="18" fill="none"
                 className="cursor-pointer"
                 onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}
-                onContextMenu={e => { e.preventDefault(); setContextMenu({ connId: conn.id, x: e.clientX, y: e.clientY }); }} />
+                onContextMenu={e => { e.preventDefault(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }} />
               {/* Visible path */}
               <path d={branchPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
                 markerEnd="url(#ah-branch)" opacity={0.75} style={{ pointerEvents: "none" }} />
@@ -946,12 +955,22 @@ export function ProcessCanvas({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onMouseLeave={() => setContextMenu(null)}
         >
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-            onClick={() => { onDeleteConnection?.(contextMenu.connId); setContextMenu(null); }}
-          >
-            Verbinding verwijderen
-          </button>
+          {contextMenu.type === "conn" && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+              onClick={() => { onDeleteConnection?.(contextMenu.connId); setContextMenu(null); }}
+            >
+              Verbinding verwijderen
+            </button>
+          )}
+          {contextMenu.type === "step" && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-secondary/50 transition-colors"
+              onClick={() => { onParkStep?.(contextMenu.stepId); setContextMenu(null); }}
+            >
+              Parkeer stap
+            </button>
+          )}
         </div>
       )}
     </div>
