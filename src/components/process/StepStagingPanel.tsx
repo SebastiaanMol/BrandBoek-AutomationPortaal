@@ -93,6 +93,7 @@ export function StepStagingPanel({
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <button
+                    type="button"
                     onClick={() => onApplyRename(r.stepId, r.newLabel)}
                     className="h-6 w-6 rounded flex items-center justify-center bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                     title="Toepassen"
@@ -100,6 +101,7 @@ export function StepStagingPanel({
                     <Check className="h-3 w-3" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => onDismissRename(r.stepId)}
                     className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary/70 transition-colors text-muted-foreground"
                     title="Negeren"
@@ -123,7 +125,7 @@ export function StepStagingPanel({
           <p className="px-4 pb-2 text-[11px] text-muted-foreground">Sleep terug naar de canvas</p>
           <div className="divide-y divide-border">
             {parkedSteps.map(step => {
-              const cfg = TEAM_CONFIG[step.team];
+              const cfg = TEAM_CONFIG[step.team] ?? TEAM_CONFIG["sales"];
               return (
                 <div
                   key={step.id}
