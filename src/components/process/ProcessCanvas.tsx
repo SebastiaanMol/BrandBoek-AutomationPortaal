@@ -342,8 +342,11 @@ export function ProcessCanvas({
   const [dragging, setDragging] = useState<{
     stepId: string; startX: number; startY: number; curX: number; curY: number; moved: boolean;
   } | null>(null);
+  // Always-current ref — assigned in render body (not useEffect) so it's synchronously up-to-date
   const draggingRef = useRef(dragging);
-  useEffect(() => { draggingRef.current = dragging; }, [dragging]);
+  draggingRef.current = dragging;
+  const onParkStepRef = useRef(onParkStep);
+  onParkStepRef.current = onParkStep;
   const [newStepDrag, setNewStepDrag] = useState<{ col: number; team: TeamKey; row: number } | null>(null);
   const [drawingBranch, setDrawingBranch] = useState<{
     automationId: string; startX: number; startY: number; curX: number; curY: number;
@@ -468,14 +471,16 @@ export function ProcessCanvas({
     return { team: best, row: Math.min(row, maxR) };
   }
 
-  // Global mouseup: detect drag-to-right-of-SVG to park step in staging area
+  // Global mouseup: detect drag-to-right-of-SVG to park step in staging area.
+  // Uses refs for dragging and onParkStep so this stable handler always sees current values.
+  // 8px buffer prevents false positives when dropping exactly at the SVG's right edge.
   useEffect(() => {
     function onGlobalUp(e: MouseEvent) {
       const d = draggingRef.current;
       if (d?.moved) {
         const svgRect = svgRef.current?.getBoundingClientRect();
-        if (svgRect && e.clientX > svgRect.right) {
-          onParkStep?.(d.stepId);
+        if (svgRect && e.clientX > svgRect.right + 8) {
+          onParkStepRef.current?.(d.stepId);
           setDragging(null);
           setDrawing(null);
           setDrawingBranch(null);
@@ -488,7 +493,7 @@ export function ProcessCanvas({
     }
     window.addEventListener("mouseup", onGlobalUp);
     return () => window.removeEventListener("mouseup", onGlobalUp);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // stable: reads from refs
 
   // Mouse handlers
   function handlePortMouseDown(e: React.MouseEvent, step: ProcessStep) {
@@ -561,7 +566,7 @@ export function ProcessCanvas({
     <div className="overflow-x-auto overflow-y-hidden w-full" style={{ height: effectiveSvgHeight }}>
       <svg ref={svgRef} width={svgWidth} height={effectiveSvgHeight}
         onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
-        onMouseLeave={() => { setDrawing(null); setDragging(null); }}
+        onMouseLeave={() => { setDrawing(null); }}
         onClick={() => setContextMenu(null)}
         onDragOver={e => {
           if (!e.dataTransfer.types.includes("newstep") && !e.dataTransfer.types.includes("stagedstep")) return;
@@ -589,8 +594,10 @@ export function ProcessCanvas({
           const stagedStepJson = e.dataTransfer.getData("stagedStep");
           if (stagedStepJson) {
             try {
-              const step = JSON.parse(stagedStepJson) as ProcessStep;
-              onPlaceStagedStep?.(step, team, col, row);
+              const step = JSON.parse(stagedStepJson);
+              if (step && typeof step.id === "string" && typeof step.team === "string") {
+                onPlaceStagedStep?.(step as ProcessStep, team, col, row);
+              }
             } catch { /* ignore malformed data */ }
           }
         }}
