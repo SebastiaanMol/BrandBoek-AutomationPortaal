@@ -9,6 +9,8 @@ export default function Pipelines(): ReactNode {
   const syncMutation = useHubSpotPipelinesSync();
 
   const totalStages = pipelines.reduce((sum, p) => sum + p.stages.length, 0);
+  const activePipelines = pipelines.filter(p => p.isActive);
+  const inactivePipelines = pipelines.filter(p => !p.isActive);
 
   async function handleSync(): Promise<void> {
     try {
@@ -61,6 +63,7 @@ export default function Pipelines(): ReactNode {
               </button>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
+              <StatBadge label="Actief" value={activePipelines.length} />
               <StatBadge label="Pipelines" value={pipelines.length} />
               <StatBadge label="Stages" value={totalStages} />
             </div>
@@ -85,12 +88,27 @@ export default function Pipelines(): ReactNode {
           </div>
         )}
 
-        {/* Grid */}
-        {pipelines.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {pipelines.map((pipeline, i) => (
-              <PipelineCard key={pipeline.pipelineId} pipeline={pipeline} index={i} />
-            ))}
+        {/* Active pipelines */}
+        {activePipelines.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-sm font-semibold text-foreground mb-3">Actieve pipelines</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {activePipelines.map((pipeline, i) => (
+                <PipelineCard key={pipeline.pipelineId} pipeline={pipeline} index={i} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Inactive pipelines */}
+        {inactivePipelines.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground mb-3">Inactieve pipelines</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 opacity-60">
+              {inactivePipelines.map((pipeline, i) => (
+                <PipelineCard key={pipeline.pipelineId} pipeline={pipeline} index={activePipelines.length + i} />
+              ))}
+            </div>
           </div>
         )}
       </div>

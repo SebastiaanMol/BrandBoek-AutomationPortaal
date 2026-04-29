@@ -400,6 +400,7 @@ interface PipelineRow {
   stages:       PipelineStage[] | null;
   synced_at:    string;
   beschrijving: string | null;
+  is_active:    boolean;
 }
 
 export async function fetchPipelines(): Promise<Pipeline[]> {
@@ -414,7 +415,16 @@ export async function fetchPipelines(): Promise<Pipeline[]> {
     stages:       r.stages ?? [],
     syncedAt:     r.synced_at,
     beschrijving: r.beschrijving ?? null,
+    isActive:     r.is_active,
   }));
+}
+
+export async function setPipelineActive(pipelineId: string, isActive: boolean): Promise<void> {
+  const { error } = await db
+    .from("pipelines")
+    .update({ is_active: isActive })
+    .eq("pipeline_id", pipelineId);
+  if (error) throw error;
 }
 
 export async function triggerHubSpotPipelinesSync(): Promise<{ upserted: number }> {

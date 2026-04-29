@@ -8,6 +8,7 @@ const ROW_H        = 110;   // height of one row within a swimlane
 const LANE_HDR_W   = 132;
 const STEP_W       = 152;
 const STEP_H       = 52;
+const DECISION_H   = 32;    // half-diagonal of decision diamond
 const BASE_COL_W   = 248;
 const EVT_COL_W    = 120;
 const DOT_R        = 14;
@@ -23,6 +24,10 @@ interface ArrowData { path: string; preDotPath: string; postDotPath: string; pos
 
 function isEvent(step: ProcessStep) {
   return step.type === "start" || step.type === "end";
+}
+
+function isDecision(step: ProcessStep) {
+  return step.type === "decision";
 }
 
 function stepRow(step: ProcessStep) {
@@ -95,10 +100,10 @@ function computeColX(
 
 // ── Arrow builder ─────────────────────────────────────────────────────────────
 
-function edgeRight(s: ProcessStep, cx: number) { return cx + (isEvent(s) ? EVT_R : STEP_W / 2); }
-function edgeLeft (s: ProcessStep, cx: number) { return cx - (isEvent(s) ? EVT_R : STEP_W / 2); }
-function edgeDown (s: ProcessStep, cy: number) { return cy + (isEvent(s) ? EVT_R : STEP_H / 2); }
-function edgeUp   (s: ProcessStep, cy: number) { return cy - (isEvent(s) ? EVT_R : STEP_H / 2); }
+function edgeRight(s: ProcessStep, cx: number) { return cx + (isEvent(s) ? EVT_R : isDecision(s) ? DECISION_H : STEP_W / 2); }
+function edgeLeft (s: ProcessStep, cx: number) { return cx - (isEvent(s) ? EVT_R : isDecision(s) ? DECISION_H : STEP_W / 2); }
+function edgeDown (s: ProcessStep, cy: number) { return cy + (isEvent(s) ? EVT_R : isDecision(s) ? DECISION_H : STEP_H / 2); }
+function edgeUp   (s: ProcessStep, cy: number) { return cy - (isEvent(s) ? EVT_R : isDecision(s) ? DECISION_H : STEP_H / 2); }
 
 function buildArrow(
   from: ProcessStep,
@@ -210,8 +215,8 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
 function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onPortMouseDown: (e: React.MouseEvent) => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
@@ -237,10 +242,12 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {isStart ? "Start" : "Einde"}
       </text>
-      <circle cx={cx + EVT_R} cy={cy} r={5}
-        fill={stroke} stroke="white" strokeWidth="1.5"
-        style={{ cursor: "crosshair" }}
-        onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      {hov && onPortMouseDown && (
+        <circle cx={cx + EVT_R} cy={cy} r={5}
+          fill={stroke} stroke="white" strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
     </g>
   );
 }
@@ -250,9 +257,9 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
 function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
-  onClick: () => void;
-  onPortMouseDown: (e: React.MouseEvent) => void;
-  onStepMouseDown: (e: React.MouseEvent) => void;
+  onClick?: () => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onStepMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
@@ -278,9 +285,57 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
-      <circle cx={x + STEP_W} cy={cy} r={5} fill={cfg.stroke} stroke="white" strokeWidth="1.5"
-        style={{ cursor: "crosshair" }}
-        onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      {onPortMouseDown && (
+        <circle cx={x + STEP_W} cy={cy} r={5} fill={cfg.stroke} stroke="white" strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
+    </g>
+  );
+}
+
+// ── DecisionDiamond ───────────────────────────────────────────────────────────
+
+function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown }: {
+  step: ProcessStep; cx: number; cy: number;
+  isDragging?: boolean; isTarget?: boolean;
+  onClick?: () => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onStepMouseDown?: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const cfg = TEAM_CONFIG[step.team];
+  const h = DECISION_H;
+  const pts = `${cx},${cy - h} ${cx + h},${cy} ${cx},${cy + h} ${cx - h},${cy}`;
+  const ptsTarget = `${cx},${cy - h - 6} ${cx + h + 6},${cy} ${cx},${cy + h + 6} ${cx - h - 6},${cy}`;
+  const label = step.label.length > 13 ? step.label.slice(0, 12) + "…" : step.label;
+
+  return (
+    <g style={{ opacity: isDragging ? 0.3 : 1 }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      {isTarget && (
+        <polygon points={ptsTarget} fill="none" stroke={cfg.stroke}
+          strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
+      )}
+      <polygon
+        points={pts}
+        fill="white"
+        stroke={hov ? cfg.stroke : "#cbd5e1"}
+        strokeWidth={hov ? 2 : 1.5}
+        style={{ cursor: "pointer", filter: hov ? "drop-shadow(0 2px 6px rgba(0,0,0,.1))" : undefined }}
+        onMouseDown={onStepMouseDown}
+        onClick={onClick}
+      />
+      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+        fontSize="10" fontWeight="500" fill="#1e293b"
+        style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+        {label}
+      </text>
+      {onPortMouseDown && (
+        <circle cx={cx + h} cy={cy} r={5} fill={cfg.stroke} stroke="white" strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
     </g>
   );
 }
@@ -291,13 +346,14 @@ interface ProcessCanvasProps {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
+  readOnly?: boolean;
   onStepClick?: (s: ProcessStep) => void;
   onAutomationClick?: (a: Automation) => void;
   onAddConnection?: (fromId: string, toId: string) => void;
   onDeleteConnection?: (id: string) => void;
   onMoveStep?: (stepId: string, newTeam: TeamKey, newColumn: number, newRow: number) => void;
   onAttachAutomation?: (autoId: string, fromStepId: string, toStepId: string) => void;
-  onAddStep?: (team: TeamKey, column: number, row: number) => void;
+  onAddStep?: (team: TeamKey, column: number, row: number, type?: ProcessStep["type"]) => void;
   onAddBranch?: (automationId: string, toStepId: string) => void;
   onUpdateConnectionLabel?: (connId: string, label: string) => void;
   onParkStep?: (stepId: string) => void;
@@ -308,6 +364,7 @@ interface ProcessCanvasProps {
 
 export function ProcessCanvas({
   steps, connections, automations,
+  readOnly = false,
   onStepClick, onAutomationClick,
   onAddConnection, onDeleteConnection,
   onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
@@ -428,6 +485,31 @@ export function ProcessCanvas({
     return clientToSvg(e.clientX, e.clientY);
   }, [clientToSvg]);
 
+  // Cancel drawing/dragging if mouse released outside the SVG
+  useEffect(() => {
+    function onGlobalUp() {
+      setDragging(null);
+      setDrawing(null);
+      setDrawingBranch(null);
+    }
+    window.addEventListener("mouseup", onGlobalUp);
+    return () => window.removeEventListener("mouseup", onGlobalUp);
+  }, []);
+
+  // Track cursor position during drag even outside the SVG
+  useEffect(() => {
+    if (!dragging) return;
+    function onGlobalMove(e: MouseEvent) {
+      const pt = clientToSvg(e.clientX, e.clientY);
+      setDragging(d => d
+        ? { ...d, curX: pt.x, curY: pt.y, moved: d.moved || Math.hypot(pt.x - d.startX, pt.y - d.startY) > 6 }
+        : null
+      );
+    }
+    window.addEventListener("mousemove", onGlobalMove);
+    return () => window.removeEventListener("mousemove", onGlobalMove);
+  }, [dragging?.stepId, clientToSvg]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Returns the pixel X for an existing column, or the next new column position.
   // New column is placed just after the last step's right edge + standard padding.
   function getColX(col: number): number | undefined {
@@ -497,14 +579,16 @@ export function ProcessCanvas({
 
   // Mouse handlers
   function handlePortMouseDown(e: React.MouseEvent, step: ProcessStep) {
+    if (readOnly) return;
     e.stopPropagation();
     const pt  = toSvg(e);
     const scx = colX[step.column] ?? 0;
-    const portX = scx + (isEvent(step) ? EVT_R : STEP_W / 2);
+    const portX = scx + (isEvent(step) ? EVT_R : isDecision(step) ? DECISION_H : STEP_W / 2);
     setDrawing({ fromId: step.id, fromX: portX, fromY: stepCY(step, laneStarts), curX: pt.x, curY: pt.y });
   }
 
   function handleStepMouseDown(e: React.MouseEvent, step: ProcessStep) {
+    if (readOnly) return;
     if (e.button !== 0) return;
     const pt = toSvg(e);
     setDragging({ stepId: step.id, startX: pt.x, startY: pt.y, curX: pt.x, curY: pt.y, moved: false });
@@ -546,7 +630,14 @@ export function ProcessCanvas({
     if (dragging) {
       if (dragging.moved) {
         const { team, row } = nearestTeamRow(dragging.curY);
-        onMoveStep?.(dragging.stepId, team, nearestCol(dragging.curX), row);
+        const draggingStepData = steps.find(s => s.id === dragging.stepId);
+        // Events can land on any existing row but cannot create new rows (cap at maxRow).
+        // This lets them move into Sales rows 1-4 while keeping Marketing events at row 0
+        // (Marketing has no regular steps so maxRowInLane = 0).
+        const effectiveRow = draggingStepData && isEvent(draggingStepData)
+          ? Math.min(row, maxRowInLane(team, steps))
+          : row;
+        onMoveStep?.(dragging.stepId, team, nearestCol(dragging.curX), effectiveRow);
       }
       setDragging(null);
     }
@@ -554,7 +645,13 @@ export function ProcessCanvas({
 
   const draggingStep = dragging ? steps.find(s => s.id === dragging.stepId) : null;
   const dragTarget = dragging?.moved
-    ? { col: nearestCol(dragging.curX), ...nearestTeamRow(dragging.curY) }
+    ? (() => {
+        const { col: _col, ...teamRow } = { col: nearestCol(dragging.curX), ...nearestTeamRow(dragging.curY) };
+        const effectiveRow = draggingStep && isEvent(draggingStep)
+          ? Math.min(teamRow.row, maxRowInLane(teamRow.team, steps))
+          : teamRow.row;
+        return { col: _col, team: teamRow.team, row: effectiveRow };
+      })()
     : null;
 
   // Show extension zone when cursor is targeting a new row
@@ -566,9 +663,10 @@ export function ProcessCanvas({
     <div className="overflow-x-auto overflow-y-hidden w-full" style={{ height: effectiveSvgHeight }}>
       <svg ref={svgRef} width={svgWidth} height={effectiveSvgHeight}
         onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
-        onMouseLeave={() => { setDrawing(null); }}
+        onMouseLeave={() => { setDrawing(null); setDrawingBranch(null); }}
         onClick={() => setContextMenu(null)}
         onDragOver={e => {
+          if (readOnly) return;
           if (!e.dataTransfer.types.includes("newstep") && !e.dataTransfer.types.includes("stagedstep")) return;
           e.preventDefault();
           const pt = clientToSvg(e.clientX, e.clientY);
@@ -580,6 +678,7 @@ export function ProcessCanvas({
         }}
         onDragLeave={() => setNewStepDrag(null)}
         onDrop={e => {
+          if (readOnly) return;
           e.preventDefault();
           const pt  = clientToSvg(e.clientX, e.clientY);
           const col = nearestCol(pt.x);
@@ -741,7 +840,7 @@ export function ProcessCanvas({
           return dotPositions(arrow.dotCenter, connAutos.length).map((pos, i) => (
             <AutomationDot key={connAutos[i].id} auto={connAutos[i]} cx={pos.x} cy={pos.y}
               onClick={ev => { ev.stopPropagation(); onAutomationClick?.(connAutos[i]); }}
-              onPortMouseDown={ev => {
+              onPortMouseDown={readOnly ? undefined : ev => {
                 ev.stopPropagation();
                 setDrawingBranch({
                   automationId: connAutos[i].id,
@@ -769,9 +868,19 @@ export function ProcessCanvas({
             return (
               <EventCircle key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
-                onMouseDown={e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
-                onPortMouseDown={e => handlePortMouseDown(e, step)}
-                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
+                onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
+            );
+          }
+
+          if (isDecision(step)) {
+            return (
+              <DecisionDiamond key={step.id} step={step} cx={cx} cy={cy}
+                isDragging={isDrag} isTarget={isTarget}
+                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
+                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onStepMouseDown={readOnly ? undefined : e => handleStepMouseDown(e, step)} />
             );
           }
 
@@ -779,9 +888,9 @@ export function ProcessCanvas({
             <StepBox key={step.id} step={step} cx={cx} cy={cy}
               isDragging={isDrag} isTarget={isTarget}
               onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
-              onPortMouseDown={e => handlePortMouseDown(e, step)}
-              onStepMouseDown={e => handleStepMouseDown(e, step)}
-              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
+              onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+              onStepMouseDown={readOnly ? undefined : e => handleStepMouseDown(e, step)}
+              onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
           );
         })}
 
@@ -816,6 +925,21 @@ export function ProcessCanvas({
               ? laneStarts[dragTarget.team] + laneHeightFn(dragTarget.team, steps)
               : laneStarts[dragTarget.team] + dragTarget.row * ROW_H + ROW_H / 2
             : gy;
+
+          if (isDecision(step)) {
+            const str = TEAM_CONFIG[step.team].stroke;
+            const pts = `${gx},${gy - DECISION_H} ${gx + DECISION_H},${gy} ${gx},${gy + DECISION_H} ${gx - DECISION_H},${gy}`;
+            return (
+              <g opacity={0.65} style={{ pointerEvents: "none" }}>
+                <polygon points={pts} fill="white" stroke={str} strokeWidth="2" />
+                {dragTarget && getColX(dragTarget.col) !== undefined && (
+                  <polygon
+                    points={`${getColX(dragTarget.col)!},${targetCY - DECISION_H - 6} ${getColX(dragTarget.col)! + DECISION_H + 6},${targetCY} ${getColX(dragTarget.col)!},${targetCY + DECISION_H + 6} ${getColX(dragTarget.col)! - DECISION_H - 6},${targetCY}`}
+                    fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray="5 3" opacity={0.6} />
+                )}
+              </g>
+            );
+          }
 
           return (
             <g opacity={0.65} style={{ pointerEvents: "none" }}>

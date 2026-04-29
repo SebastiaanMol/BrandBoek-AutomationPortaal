@@ -55,11 +55,22 @@ export function PipelineCard({ pipeline, index }: PipelineCardProps) {
         </div>
       </div>
       {/* Footer */}
-      <div className="px-4 py-2.5">
+      <div className="px-4 py-2.5 flex items-center justify-between gap-3">
         <p className="text-[10px] text-muted-foreground">
           Gesynchroniseerd{" "}
           {format(new Date(pipeline.syncedAt), "d MMM yyyy, HH:mm", { locale: nl })}
         </p>
+        <span
+          className={[
+            "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0",
+            pipeline.isActive
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : "bg-slate-100 text-slate-500 border-slate-200",
+          ].join(" ")}
+        >
+          <span className={["w-1.5 h-1.5 rounded-full", pipeline.isActive ? "bg-emerald-500" : "bg-slate-400"].join(" ")} />
+          {pipeline.isActive ? "Actief" : "Inactief"}
+        </span>
       </div>
     </button>
   );

@@ -15,6 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import type { ProcessStep, TeamKey } from "@/data/processData";
+type StepType = "task" | "decision";
 import { TEAM_CONFIG, TEAM_ORDER } from "@/data/processData";
 import { Trash2 } from "lucide-react";
 
@@ -22,7 +23,7 @@ interface StepDialogProps {
   open: boolean;
   step: ProcessStep | null;       // null = add new
   maxColumn: number;
-  defaultValues?: { team?: TeamKey; column?: number; row?: number };
+  defaultValues?: { team?: TeamKey; column?: number; row?: number; type?: StepType };
   onSave: (step: ProcessStep) => void;
   onDelete?: (id: string) => void;
   onClose: () => void;
@@ -34,6 +35,7 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
   const [column, setColumn]     = useState(0);
   const [row, setRow]           = useState(0);
   const [description, setDesc]  = useState("");
+  const [stepType, setStepType] = useState<StepType>("task");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -43,12 +45,14 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
       setColumn(step.column);
       setRow(step.row ?? 0);
       setDesc(step.description ?? "");
+      setStepType((step.type === "decision" ? "decision" : "task") as StepType);
     } else {
       setLabel("");
       setTeam(defaultValues?.team ?? "sales");
       setColumn(defaultValues?.column ?? maxColumn + 1);
       setRow(defaultValues?.row ?? 0);
       setDesc("");
+      setStepType(defaultValues?.type ?? "task");
     }
   }, [step, open, maxColumn, defaultValues]);
 
@@ -57,10 +61,11 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
     onSave({
       id: step?.id ?? `s-${Date.now()}`,
       label: label.trim(),
+      type: stepType,
       team,
       column,
       row: row > 0 ? row : undefined,
-      description: description.trim() || undefined,
+      description: stepType === "task" ? (description.trim() || undefined) : undefined,
     });
     onClose();
   }
@@ -76,6 +81,27 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Type</Label>
+              <div className="flex gap-2">
+                {(["task", "decision"] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setStepType(t)}
+                    className={[
+                      "flex-1 rounded-md border px-3 py-2 text-xs font-medium transition-colors",
+                      stepType === t
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40",
+                    ].join(" ")}
+                  >
+                    {t === "task" ? "Taakstap" : "◇ Beslissingspunt"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label>Naam</Label>
               <Input
@@ -108,15 +134,17 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Beschrijving <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
-              <Textarea
-                value={description}
-                onChange={e => setDesc(e.target.value)}
-                placeholder="Korte toelichting op deze stap..."
-                rows={2}
-              />
-            </div>
+            {stepType === "task" && (
+              <div className="space-y-1.5">
+                <Label>Beschrijving <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
+                <Textarea
+                  value={description}
+                  onChange={e => setDesc(e.target.value)}
+                  placeholder="Korte toelichting op deze stap..."
+                  rows={2}
+                />
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex items-center justify-between">

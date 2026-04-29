@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useBlocker } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -57,9 +57,10 @@ function toCanvasAutomation(a: Automatisering, existing?: Automation): Automatio
 interface ProcessenEditorProps {
   pipelineId: string;
   onSwitchPipeline: (id: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEditorProps) {
+export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }: ProcessenEditorProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [state, setState]     = useState<ProcessState>(initialState);
@@ -67,6 +68,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
   const [isDirty, setIsDirty] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
+  const blocker = useBlocker(isDirty);
   const [loading, setLoading] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
   const savedLinksRef        = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
@@ -76,7 +78,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
   const [rightTab, setRightTab]                 = useState<"automations" | "stappen">("automations");
   const [dismissedRenames, setDismissedRenames] = useState<Set<string>>(new Set());
 
-  const { data: pipelines = [] } = usePipelines();
+  const { data: allPipelines = [] } = usePipelines();
+  const pipelines = allPipelines.filter(p => p.isActive);
   const [confirmSwitch, setConfirmSwitch] = useState(false);
   const [pendingPipelineId, setPendingPipelineId] = useState<string | null>(null);
 
@@ -157,7 +160,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
   const [selectedAuto, setSelectedAuto] = useState<Automation | null>(null);
   const [editingStep, setEditingStep]   = useState<ProcessStep | null>(null);
   const [stepDialogOpen, setStepDialogOpen] = useState(false);
-  const [stepDefaults, setStepDefaults] = useState<{ team?: TeamKey; column?: number; row?: number }>({});
+  const [stepDefaults, setStepDefaults] = useState<{ team?: TeamKey; column?: number; row?: number; type?: ProcessStep["type"] }>({});
+
+  // Notify parent when dirty state changes
+  useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
 
   // ── Dirty tracking helper ──────────────────────────────────────────────────
   function update(fn: (s: ProcessState) => ProcessState) {
@@ -325,10 +331,38 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
     toast.success("Stap verwijderd");
   }
 
-  function handleAddStep(team: TeamKey, column: number, row: number) {
-    setStepDefaults({ team, column, row });
+  function handleAddStep(team: TeamKey, column: number, row: number, type: ProcessStep["type"] = "task") {
+    if (type === "start" || type === "end") {
+      update(s => ({
+        ...s,
+        steps: [...s.steps, {
+          id:     `ev-${type}-${Date.now()}`,
+          label:  type === "start" ? "Start" : "Einde",
+          team,
+          column,
+          type,
+        }],
+      }));
+      return;
+    }
+    setStepDefaults({ team, column, row, type });
     setEditingStep(null);
     setStepDialogOpen(true);
+  }
+
+  function handleAddEventStep(type: "start" | "end") {
+    const col  = type === "start" ? 0 : maxColumn + 1;
+    const team: TeamKey = type === "start" ? "marketing" : "management";
+    update(s => ({
+      ...s,
+      steps: [...s.steps, {
+        id:    `ev-${type}-${Date.now()}`,
+        label: type === "start" ? "Start" : "Einde",
+        team,
+        column: col,
+        type,
+      }],
+    }));
   }
 
   function handleMoveStep(stepId: string, newTeam: TeamKey, newColumn: number, newRow: number = 0) {
@@ -339,11 +373,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
       // Event markers use INSERT behaviour: slide everything to make room, close the gap left behind.
       if (moving.type === "start" || moving.type === "end") {
         const oldCol = moving.column;
-        if (oldCol === newColumn) return { ...s, steps: s.steps.map(x => x.id === stepId ? { ...x, team: newTeam } : x) };
+        if (oldCol === newColumn) return { ...s, steps: s.steps.map(x => x.id === stepId ? { ...x, team: newTeam, row: newRow } : x) };
         return {
           ...s,
           steps: s.steps.map(x => {
-            if (x.id === stepId) return { ...x, team: newTeam, column: newColumn };
+            if (x.id === stepId) return { ...x, team: newTeam, column: newColumn, row: newRow };
             if (newColumn > oldCol) {
               // Moving right: steps strictly between old and new shift left by 1
               if (x.column > oldCol && x.column <= newColumn) return { ...x, column: x.column - 1 };
@@ -583,13 +617,46 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
           <Button
             draggable
             variant="outline" size="sm"
-            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "1")}
-            onClick={() => { setStepDefaults({}); setEditingStep(null); setStepDialogOpen(true); }}
+            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "task")}
+            onClick={() => { setStepDefaults({ type: "task" }); setEditingStep(null); setStepDialogOpen(true); }}
             className="gap-1.5 ml-1 cursor-grab active:cursor-grabbing"
-            title="Klik om een stap toe te voegen, of sleep naar de canvas"
+            title="Stap toevoegen"
           >
             <Plus className="h-3.5 w-3.5" />
-            Stap toevoegen
+            Stap
+          </Button>
+
+          <Button
+            draggable
+            variant="outline" size="sm"
+            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "decision")}
+            onClick={() => { setStepDefaults({ type: "decision" }); setEditingStep(null); setStepDialogOpen(true); }}
+            className="gap-1.5 cursor-grab active:cursor-grabbing"
+            title="Beslissingspunt toevoegen"
+          >
+            ◇ Beslissing
+          </Button>
+
+          <Button
+            draggable
+            variant="outline" size="sm"
+            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "start")}
+            onClick={() => handleAddEventStep("start")}
+            className="gap-1.5 cursor-grab active:cursor-grabbing"
+            title="Startpunt toevoegen"
+          >
+            Start
+          </Button>
+
+          <Button
+            draggable
+            variant="outline" size="sm"
+            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "end")}
+            onClick={() => handleAddEventStep("end")}
+            className="gap-1.5 cursor-grab active:cursor-grabbing"
+            title="Eindpunt toevoegen"
+          >
+            Einde
           </Button>
 
           <Button variant="ghost" size="sm" onClick={() => navigate("/brandy")}
@@ -800,6 +867,24 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
             <AlertDialogCancel>Annuleren</AlertDialogCancel>
             <AlertDialogAction onClick={() => { handleSave(); setConfirmSave(false); }}>
               Ja, opslaan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Navigatie blokkeren bij onopgeslagen wijzigingen ─────────── */}
+      <AlertDialog open={blocker.state === "blocked"} onOpenChange={() => blocker.reset?.()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Niet-opgeslagen wijzigingen</AlertDialogTitle>
+            <AlertDialogDescription>
+              Je hebt wijzigingen die nog niet zijn opgeslagen. Als je nu weggaat gaan deze verloren.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => blocker.reset?.()}>Blijven</AlertDialogCancel>
+            <AlertDialogAction onClick={() => blocker.proceed?.()}>
+              Weggaan zonder opslaan
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

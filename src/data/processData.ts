@@ -9,7 +9,7 @@ export interface ProcessStep {
   column: number;
   row?: number;          // vertical row within lane (0 = top, 1 = second, …)
   description?: string;
-  type?: "task" | "start" | "end";
+  type?: "task" | "start" | "end" | "decision";
 }
 
 export interface Automation {

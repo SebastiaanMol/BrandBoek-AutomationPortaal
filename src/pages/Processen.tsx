@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
 import { ProcessenView } from "@/components/process/ProcessenView";
 import { ProcessenEditor } from "@/components/process/ProcessenEditor";
@@ -36,8 +41,16 @@ type Mode = "view" | "edit";
 export default function Processen(): ReactNode {
   const [mode, setMode]                       = useState<Mode>("view");
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
+  const [editorDirty, setEditorDirty]         = useState(false);
+  const [confirmLeaveEdit, setConfirmLeaveEdit] = useState(false);
 
-  const { data: pipelines = [] }      = usePipelines();
+  function handleSwitchToView() {
+    if (editorDirty) { setConfirmLeaveEdit(true); return; }
+    setMode("view");
+  }
+
+  const { data: allPipelines = [] }    = usePipelines();
+  const pipelines = allPipelines.filter(p => p.isActive);
   const { data: dbAutomations = [] }  = useAutomatiseringen();
 
   // Auto-select first pipeline
@@ -74,7 +87,7 @@ export default function Processen(): ReactNode {
         <div className="flex gap-0">
           <button
             type="button"
-            onClick={() => setMode("view")}
+            onClick={handleSwitchToView}
             className={[
               "px-4 py-2 text-[11px] font-semibold border-b-2 transition-colors",
               mode === "view"
@@ -113,12 +126,29 @@ export default function Processen(): ReactNode {
         <ProcessenEditor
           pipelineId={selectedPipelineId}
           onSwitchPipeline={setSelectedPipelineId}
+          onDirtyChange={setEditorDirty}
         />
       ) : (
         <div className="flex items-center justify-center flex-1 text-sm text-muted-foreground">
           Geen pipeline geselecteerd.
         </div>
       )}
+      <AlertDialog open={confirmLeaveEdit} onOpenChange={setConfirmLeaveEdit}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Niet-opgeslagen wijzigingen</AlertDialogTitle>
+            <AlertDialogDescription>
+              Je hebt wijzigingen die nog niet zijn opgeslagen. Als je naar Bekijken gaat gaan deze verloren.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuleren</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmLeaveEdit(false); setEditorDirty(false); setMode("view"); }}>
+              Doorgaan zonder opslaan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -101,6 +101,7 @@ export function ProcessenView({
                   steps={canvasState.steps}
                   connections={canvasState.connections}
                   automations={canvasState.automations}
+                  readOnly
                   onStepClick={handleStepClick}
                   onAutomationClick={handleAutoClick}
                 />

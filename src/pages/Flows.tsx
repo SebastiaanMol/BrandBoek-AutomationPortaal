@@ -24,7 +24,8 @@ interface ConfirmState {
 export default function Flows(): React.ReactNode {
   const { data: automations = [], refetch: refetchAutomations } = useAutomatiseringen();
   const { data: flows = [] } = useFlows();
-  const { data: confirmedLinks = [] } = useAllConfirmedAutomationLinks();
+  const { data: confirmedLinks = [], refetch: refetchLinks } = useAllConfirmedAutomationLinks();
+  const [detecting, setDetecting] = useState(false);
   const createFlow = useCreateFlow();
 
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
@@ -152,6 +153,17 @@ export default function Flows(): React.ReactNode {
     }
   }
 
+  async function handleDetect() {
+    setDetecting(true);
+    await Promise.all([refetchAutomations(), refetchLinks()]);
+    setDetecting(false);
+    toast.success(
+      newProposals.length > 0
+        ? `${newProposals.length} nieuw${newProposals.length === 1 ? "e flow" : "e flows"} gevonden`
+        : "Geen nieuwe flows gevonden",
+    );
+  }
+
   const totalSystems = new Set(flows.flatMap((f) => f.systemen)).size;
 
   return (
@@ -178,10 +190,11 @@ export default function Flows(): React.ReactNode {
               </div>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:border-primary/40 transition-colors focus-ring"
-                onClick={() => refetchAutomations()}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:border-primary/40 transition-colors focus-ring disabled:opacity-50"
+                onClick={handleDetect}
+                disabled={detecting}
               >
-                Detecteer flows
+                {detecting ? "Bezig…" : "Detecteer flows"}
               </button>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">

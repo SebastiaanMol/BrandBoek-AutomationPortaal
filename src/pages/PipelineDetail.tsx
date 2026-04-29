@@ -3,7 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Check, ChevronRight, Layers2, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
-import { usePipelines, useDescribePipeline } from "@/lib/hooks";
+import { toast } from "sonner";
+import { usePipelines, useDescribePipeline, useSetPipelineActive } from "@/lib/hooks";
 import { PIPELINE_COLORS } from "@/components/PipelineCard";
 
 export default function PipelineDetail(): ReactNode {
@@ -11,6 +12,15 @@ export default function PipelineDetail(): ReactNode {
   const navigate = useNavigate();
   const { data: pipelines = [], isLoading } = usePipelines();
   const describeMutation = useDescribePipeline();
+  const setActiveMutation = useSetPipelineActive();
+
+  function handleToggleActive() {
+    if (!pipeline) return;
+    setActiveMutation.mutate(
+      { pipelineId: pipeline.pipelineId, isActive: !pipeline.isActive },
+      { onError: () => toast.error("Kon status niet opslaan") },
+    );
+  }
 
   const pipelineIndex = pipelines.findIndex((p) => p.pipelineId === id);
   const pipeline = pipelines[pipelineIndex];
@@ -95,16 +105,32 @@ export default function PipelineDetail(): ReactNode {
                 </h1>
               </div>
             </div>
-            <p
-              className="text-[10px] text-right flex-shrink-0 pt-1"
-              style={{ color: "rgba(255,255,255,0.6)" }}
-            >
-              Gesynchroniseerd
-              <br />
-              {format(new Date(pipeline.syncedAt), "d MMM yyyy, HH:mm", {
-                locale: nl,
-              })}
-            </p>
+            <div className="flex flex-col items-end gap-2 flex-shrink-0">
+              <p
+                className="text-[10px] text-right"
+                style={{ color: "rgba(255,255,255,0.6)" }}
+              >
+                Gesynchroniseerd
+                <br />
+                {format(new Date(pipeline.syncedAt), "d MMM yyyy, HH:mm", {
+                  locale: nl,
+                })}
+              </p>
+              <button
+                type="button"
+                onClick={handleToggleActive}
+                disabled={setActiveMutation.isPending}
+                className={[
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors disabled:opacity-60",
+                  pipeline.isActive
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                    : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200",
+                ].join(" ")}
+              >
+                <span className={["w-1.5 h-1.5 rounded-full", pipeline.isActive ? "bg-emerald-500" : "bg-slate-400"].join(" ")} />
+                {pipeline.isActive ? "Actief" : "Inactief"}
+              </button>
+            </div>
           </div>
           {/* AI beschrijving */}
           <div
