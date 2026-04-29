@@ -69,7 +69,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
   const [confirmSave, setConfirmSave] = useState(false);
   const [loading, setLoading] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
-  const savedLinksRef = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
+  const savedLinksRef        = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
+  const savedParkedStepsRef  = useRef<ProcessStep[]>([]);
 
   const [parkedSteps, setParkedSteps]           = useState<ProcessStep[]>([]);
   const [rightTab, setRightTab]                 = useState<"automations" | "stappen">("automations");
@@ -131,7 +132,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
       steps:       savedState.steps       as ProcessState["steps"],
       connections: savedState.connections as ProcessState["connections"],
     }));
-    setParkedSteps(savedState.parkedSteps as ProcessStep[]);
+    const restoredParked = savedState.parkedSteps as ProcessStep[];
+    setParkedSteps(restoredParked);
+    savedParkedStepsRef.current = restoredParked;
     setIsDirty(false);
   }, [savedState, stateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -174,6 +177,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
     try {
       await saveProcessState(pipelineId, { steps: state.steps, connections: state.connections, autoLinks, parkedSteps });
       setSaved(state);
+      savedParkedStepsRef.current = parkedSteps;
       setIsDirty(false);
       toast.success("Proceskaart opgeslagen");
       queryClient.invalidateQueries({ queryKey: ["processState", pipelineId] });
@@ -195,6 +199,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
           : { ...a, fromStepId: undefined, toStepId: undefined };
       }),
     }));
+    setParkedSteps(savedParkedStepsRef.current);
     setIsDirty(false);
     toast.info("Teruggezet naar opgeslagen versie");
   }
@@ -419,10 +424,13 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
 
   // ── Staging area handlers ─────────────────────────────────────────────────
   function handleParkStep(stepId: string) {
-    // Read the step inside the updater so we never close over a potentially-stale state reference
+    // Quick bail: avoid marking dirty if the step is no longer on the canvas
+    if (!state.steps.some(s => s.id === stepId)) return;
+    // Read the step inside the updater so the functional state is authoritative
     let capturedStep: ProcessStep | undefined;
     update(s => {
       capturedStep = s.steps.find(x => x.id === stepId);
+      if (!capturedStep) return s; // concurrent removal — leave state unchanged
       return {
         ...s,
         steps: s.steps.filter(x => x.id !== stepId),
@@ -442,7 +450,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
 
   function handlePlaceStep(step: ProcessStep, team: TeamKey, column: number, row: number) {
     const placed = { ...step, team, column, row };
-    update(s => ({ ...s, steps: [...s.steps, placed] }));
+    update(s => ({
+      ...s,
+      // Guard against double-placement (e.g. rapid double-drop)
+      steps: s.steps.some(x => x.id === step.id) ? s.steps : [...s.steps, placed],
+    }));
     setParkedSteps(prev => prev.filter(p => p.id !== step.id));
     toast.success(`"${step.label}" geplaatst`);
   }
