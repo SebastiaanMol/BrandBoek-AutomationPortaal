@@ -268,9 +268,10 @@ export async function triggerGitlabSync(): Promise<{ inserted: number; updated: 
 // ─── Process state (canvas) ───────────────────────────────────────────────────
 
 export interface SavedProcessState {
-  steps:       unknown[];   // ProcessStep[]
-  connections: unknown[];   // Connection[]
+  steps:       unknown[];
+  connections: unknown[];
   autoLinks:   Record<string, { fromStepId: string; toStepId: string }>;
+  parkedSteps: unknown[];   // ProcessStep[] — persisted across sessions
 }
 
 // Tables not yet in the generated Supabase types (process_state, portal_settings,
@@ -281,7 +282,7 @@ const db = supabase as any;
 export async function fetchProcessState(pipelineId: string): Promise<SavedProcessState | null> {
   const { data, error } = await db
     .from("process_state")
-    .select("steps, connections, auto_links")
+    .select("steps, connections, auto_links, parked_steps")
     .eq("id", pipelineId)
     .maybeSingle();
 
@@ -289,9 +290,10 @@ export async function fetchProcessState(pipelineId: string): Promise<SavedProces
   if (!data)  return null;
 
   return {
-    steps:       (data.steps       ?? []) as unknown[],
-    connections: (data.connections ?? []) as unknown[],
-    autoLinks:   (data.auto_links  ?? {}) as Record<string, { fromStepId: string; toStepId: string }>,
+    steps:       (data.steps        ?? []) as unknown[],
+    connections: (data.connections  ?? []) as unknown[],
+    autoLinks:   (data.auto_links   ?? {}) as Record<string, { fromStepId: string; toStepId: string }>,
+    parkedSteps: (data.parked_steps ?? []) as unknown[],
   };
 }
 
@@ -300,11 +302,12 @@ export async function saveProcessState(pipelineId: string, state: SavedProcessSt
     .from("process_state")
     .upsert(
       {
-        id:          pipelineId,
-        steps:       state.steps,
-        connections: state.connections,
-        auto_links:  state.autoLinks,
-        updated_at:  new Date().toISOString(),
+        id:           pipelineId,
+        steps:        state.steps,
+        connections:  state.connections,
+        auto_links:   state.autoLinks,
+        parked_steps: state.parkedSteps,
+        updated_at:   new Date().toISOString(),
       },
       { onConflict: "id" }
     );
