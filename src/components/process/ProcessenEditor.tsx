@@ -419,20 +419,25 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
 
   // ── Staging area handlers ─────────────────────────────────────────────────
   function handleParkStep(stepId: string) {
-    const step = state.steps.find(s => s.id === stepId);
-    if (!step) return;
-    update(s => ({
-      ...s,
-      steps: s.steps.filter(x => x.id !== stepId),
-      connections: s.connections.filter(c => c.fromStepId !== stepId && c.toStepId !== stepId),
-      automations: s.automations.map(a =>
-        a.fromStepId === stepId || a.toStepId === stepId
-          ? { ...a, fromStepId: undefined, toStepId: undefined }
-          : a,
-      ),
-    }));
-    setParkedSteps(prev => [...prev, step]);
-    toast.info(`"${step.label}" geparkeerd`);
+    // Read the step inside the updater so we never close over a potentially-stale state reference
+    let capturedStep: ProcessStep | undefined;
+    update(s => {
+      capturedStep = s.steps.find(x => x.id === stepId);
+      return {
+        ...s,
+        steps: s.steps.filter(x => x.id !== stepId),
+        connections: s.connections.filter(c => c.fromStepId !== stepId && c.toStepId !== stepId),
+        automations: s.automations.map(a =>
+          a.fromStepId === stepId || a.toStepId === stepId
+            ? { ...a, fromStepId: undefined, toStepId: undefined }
+            : a,
+        ),
+      };
+    });
+    if (capturedStep) {
+      setParkedSteps(prev => [...prev, capturedStep!]);
+      toast.info(`"${capturedStep!.label}" geparkeerd`);
+    }
   }
 
   function handlePlaceStep(step: ProcessStep, team: TeamKey, column: number, row: number) {
@@ -480,16 +485,19 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
   const maxColumn = state.steps.reduce((m, s) => Math.max(m, s.column), 0);
   const breadcrumb  = TEAM_ORDER.map(t => TEAM_CONFIG[t].label).join(" → ");
 
-  const currentPipeline = pipelines.find(p => p.pipelineId === pipelineId) ?? null;
-
-  const { driftNew, driftRenamed: allDriftRenamed } = useMemo(
-    () => currentPipeline && !loading
-      ? detectDrift(state.steps, currentPipeline)
-      : { driftNew: [], driftRenamed: [] },
-    [state.steps, currentPipeline, loading],
+  const currentPipeline = useMemo(
+    () => pipelines.find(p => p.pipelineId === pipelineId) ?? null,
+    [pipelines, pipelineId],
   );
 
-  const driftRenamed = allDriftRenamed.filter(r => !dismissedRenames.has(r.stepId));
+  const { driftNew, driftRenamed } = useMemo(
+    () => {
+      if (!currentPipeline || loading) return { driftNew: [], driftRenamed: [] };
+      const { driftNew, driftRenamed: all } = detectDrift(state.steps, currentPipeline);
+      return { driftNew, driftRenamed: all.filter(r => !dismissedRenames.has(r.stepId)) };
+    },
+    [state.steps, currentPipeline, loading, dismissedRenames],
+  );
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
