@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, useCallback } from "react";
+import { useRef, useMemo, useState, useCallback, useEffect } from "react";
 import type { ProcessStep, Connection, Automation, TeamKey } from "@/data/processData";
 import { TEAM_CONFIG, TEAM_ORDER } from "@/data/processData";
 
@@ -301,6 +301,7 @@ interface ProcessCanvasProps {
   onAddBranch?: (automationId: string, toStepId: string) => void;
   onUpdateConnectionLabel?: (connId: string, label: string) => void;
   onParkStep?: (stepId: string) => void;
+  onPlaceStagedStep?: (step: ProcessStep, team: TeamKey, column: number, row: number) => void;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -310,7 +311,7 @@ export function ProcessCanvas({
   onStepClick, onAutomationClick,
   onAddConnection, onDeleteConnection,
   onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
-  onParkStep,
+  onParkStep, onPlaceStagedStep,
 }: ProcessCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -341,6 +342,8 @@ export function ProcessCanvas({
   const [dragging, setDragging] = useState<{
     stepId: string; startX: number; startY: number; curX: number; curY: number; moved: boolean;
   } | null>(null);
+  const draggingRef = useRef(dragging);
+  useEffect(() => { draggingRef.current = dragging; }, [dragging]);
   const [newStepDrag, setNewStepDrag] = useState<{ col: number; team: TeamKey; row: number } | null>(null);
   const [drawingBranch, setDrawingBranch] = useState<{
     automationId: string; startX: number; startY: number; curX: number; curY: number;
@@ -465,6 +468,28 @@ export function ProcessCanvas({
     return { team: best, row: Math.min(row, maxR) };
   }
 
+  // Global mouseup: detect drag-to-right-of-SVG to park step in staging area
+  useEffect(() => {
+    function onGlobalUp(e: MouseEvent) {
+      const d = draggingRef.current;
+      if (d?.moved) {
+        const svgRect = svgRef.current?.getBoundingClientRect();
+        if (svgRect && e.clientX > svgRect.right) {
+          onParkStep?.(d.stepId);
+          setDragging(null);
+          setDrawing(null);
+          setDrawingBranch(null);
+          return;
+        }
+      }
+      setDragging(null);
+      setDrawing(null);
+      setDrawingBranch(null);
+    }
+    window.addEventListener("mouseup", onGlobalUp);
+    return () => window.removeEventListener("mouseup", onGlobalUp);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Mouse handlers
   function handlePortMouseDown(e: React.MouseEvent, step: ProcessStep) {
     e.stopPropagation();
@@ -539,7 +564,7 @@ export function ProcessCanvas({
         onMouseLeave={() => { setDrawing(null); setDragging(null); }}
         onClick={() => setContextMenu(null)}
         onDragOver={e => {
-          if (!e.dataTransfer.types.includes("newstep")) return;
+          if (!e.dataTransfer.types.includes("newstep") && !e.dataTransfer.types.includes("stagedstep")) return;
           e.preventDefault();
           const pt = clientToSvg(e.clientX, e.clientY);
           const col = nearestCol(pt.x);
@@ -550,13 +575,24 @@ export function ProcessCanvas({
         }}
         onDragLeave={() => setNewStepDrag(null)}
         onDrop={e => {
-          if (e.dataTransfer.getData("newStep") !== "1") return;
           e.preventDefault();
-          const pt = clientToSvg(e.clientX, e.clientY);
+          const pt  = clientToSvg(e.clientX, e.clientY);
           const col = nearestCol(pt.x);
           const { team, row } = nearestTeamRow(pt.y);
           setNewStepDrag(null);
-          onAddStep?.(team, col, row);
+
+          if (e.dataTransfer.getData("newStep") === "1") {
+            onAddStep?.(team, col, row);
+            return;
+          }
+
+          const stagedStepJson = e.dataTransfer.getData("stagedStep");
+          if (stagedStepJson) {
+            try {
+              const step = JSON.parse(stagedStepJson) as ProcessStep;
+              onPlaceStagedStep?.(step, team, col, row);
+            } catch { /* ignore malformed data */ }
+          }
         }}
         className="select-none block">
 
