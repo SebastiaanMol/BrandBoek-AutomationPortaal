@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
@@ -31,6 +31,8 @@ import { initialState, stagesToProcessState, TEAM_ORDER, TEAM_CONFIG } from "@/d
 import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
 import type { Automatisering, KlantFase } from "@/lib/types";
 import { saveProcessState } from "@/lib/supabaseStorage";
+import { detectDrift } from "@/lib/processDrift";
+import { StepStagingPanel } from "@/components/process/StepStagingPanel";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
   Marketing:   "marketing",
@@ -69,6 +71,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
   const [helpOpen, setHelpOpen] = useState(false);
   const savedLinksRef = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
 
+  const [parkedSteps, setParkedSteps]           = useState<ProcessStep[]>([]);
+  const [rightTab, setRightTab]                 = useState<"automations" | "stappen">("automations");
+  const [dismissedRenames, setDismissedRenames] = useState<Set<string>>(new Set());
+
   const { data: pipelines = [] } = usePipelines();
   const [confirmSwitch, setConfirmSwitch] = useState(false);
   const [pendingPipelineId, setPendingPipelineId] = useState<string | null>(null);
@@ -94,6 +100,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
     savedLinksRef.current = {};
     setState(baseState);
     setSaved(baseState);
+    setParkedSteps([]);
+    setDismissedRenames(new Set());
     setIsDirty(false);
     setLoading(true);
   }, [pipelineId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -123,6 +131,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
       steps:       savedState.steps       as ProcessState["steps"],
       connections: savedState.connections as ProcessState["connections"],
     }));
+    setParkedSteps(savedState.parkedSteps as ProcessStep[]);
     setIsDirty(false);
   }, [savedState, stateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -163,7 +172,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
     });
 
     try {
-      await saveProcessState(pipelineId, { steps: state.steps, connections: state.connections, autoLinks });
+      await saveProcessState(pipelineId, { steps: state.steps, connections: state.connections, autoLinks, parkedSteps });
       setSaved(state);
       setIsDirty(false);
       toast.success("Proceskaart opgeslagen");
@@ -408,6 +417,44 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
     toast.success("Automation losgekoppeld");
   }
 
+  // ── Staging area handlers ─────────────────────────────────────────────────
+  function handleParkStep(stepId: string) {
+    const step = state.steps.find(s => s.id === stepId);
+    if (!step) return;
+    update(s => ({
+      ...s,
+      steps: s.steps.filter(x => x.id !== stepId),
+      connections: s.connections.filter(c => c.fromStepId !== stepId && c.toStepId !== stepId),
+      automations: s.automations.map(a =>
+        a.fromStepId === stepId || a.toStepId === stepId
+          ? { ...a, fromStepId: undefined, toStepId: undefined }
+          : a,
+      ),
+    }));
+    setParkedSteps(prev => [...prev, step]);
+    toast.info(`"${step.label}" geparkeerd`);
+  }
+
+  function handlePlaceStep(step: ProcessStep, team: TeamKey, column: number, row: number) {
+    const placed = { ...step, team, column, row };
+    update(s => ({ ...s, steps: [...s.steps, placed] }));
+    setParkedSteps(prev => prev.filter(p => p.id !== step.id));
+    toast.success(`"${step.label}" geplaatst`);
+  }
+
+  function handleApplyRename(stepId: string, newLabel: string) {
+    update(s => ({
+      ...s,
+      steps: s.steps.map(x => x.id === stepId ? { ...x, label: newLabel } : x),
+    }));
+    setDismissedRenames(prev => new Set([...prev, stepId]));
+    toast.success("Stap hernoemd");
+  }
+
+  function handleDismissRename(stepId: string) {
+    setDismissedRenames(prev => new Set([...prev, stepId]));
+  }
+
   function handleAddBranch(automationId: string, toStepId: string) {
     // Branch = a regular Connection with fromAutomationId instead of fromStepId
     const newConn = {
@@ -432,6 +479,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
   // ── Derived data ───────────────────────────────────────────────────────────
   const maxColumn = state.steps.reduce((m, s) => Math.max(m, s.column), 0);
   const breadcrumb  = TEAM_ORDER.map(t => TEAM_CONFIG[t].label).join(" → ");
+
+  const currentPipeline = pipelines.find(p => p.pipelineId === pipelineId) ?? null;
+
+  const { driftNew, driftRenamed: allDriftRenamed } = useMemo(
+    () => currentPipeline && !loading
+      ? detectDrift(state.steps, currentPipeline)
+      : { driftNew: [], driftRenamed: [] },
+    [state.steps, currentPipeline, loading],
+  );
+
+  const driftRenamed = allDriftRenamed.filter(r => !dismissedRenames.has(r.stepId));
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -552,6 +610,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
                 onAddStep={handleAddStep}
                 onAddBranch={handleAddBranch}
                 onUpdateConnectionLabel={handleUpdateConnectionLabel}
+                onParkStep={handleParkStep}
+                onPlaceStagedStep={handlePlaceStep}
               />
             </div>
 
@@ -574,22 +634,65 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline }: ProcessenEdito
             fullData={dbAutomations?.find(a => a.id === selectedAuto?.id)}
             steps={state.steps}
             branchConnections={[
-              // Main outgoing path: the step-to-step connection this automation sits on
               ...state.connections.filter(c =>
                 selectedAuto?.fromStepId && c.fromStepId === selectedAuto.fromStepId && c.toStepId === selectedAuto.toStepId
               ),
-              // Extra branch connections drawn from the automation dot
               ...state.connections.filter(c => c.fromAutomationId === selectedAuto?.id),
             ]}
             onClose={() => setSelectedAuto(null)}
             onDetach={handleDetach}
           />
         ) : (
-          <UnassignedPanel
-            automations={state.automations}
-            steps={state.steps}
-            onAutomationClick={handleAutoClick}
-          />
+          <div className="w-72 shrink-0 border-l border-border bg-card flex flex-col h-full">
+            {/* Tab header */}
+            <div className="shrink-0 flex border-b border-border">
+              <button
+                type="button"
+                onClick={() => setRightTab("automations")}
+                className={[
+                  "flex-1 px-3 py-2.5 text-[11px] font-semibold transition-colors border-b-2",
+                  rightTab === "automations"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                ].join(" ")}
+              >
+                Automations
+              </button>
+              <button
+                type="button"
+                onClick={() => setRightTab("stappen")}
+                className={[
+                  "flex-1 px-3 py-2.5 text-[11px] font-semibold transition-colors border-b-2 flex items-center justify-center gap-1.5",
+                  rightTab === "stappen"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                ].join(" ")}
+              >
+                Stappen
+                {(driftNew.length + driftRenamed.length + parkedSteps.length) > 0 && (
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold">
+                    {driftNew.length + driftRenamed.length + parkedSteps.length}
+                  </span>
+                )}
+              </button>
+            </div>
+            {/* Tab content */}
+            {rightTab === "automations" ? (
+              <UnassignedPanel
+                automations={state.automations}
+                steps={state.steps}
+                onAutomationClick={handleAutoClick}
+              />
+            ) : (
+              <StepStagingPanel
+                driftNew={driftNew}
+                driftRenamed={driftRenamed}
+                parkedSteps={parkedSteps}
+                onApplyRename={handleApplyRename}
+                onDismissRename={handleDismissRename}
+              />
+            )}
+          </div>
         )}
       </div>
 
