@@ -358,11 +358,12 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
 
 // ── TerminateCircle ───────────────────────────────────────────────────────────
 
-function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onPortMouseDown, onContextMenu }: {
+function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onClick, onPortMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   customLanes?: CustomLane[];
   onMouseDown?: (e: React.MouseEvent) => void;
+  onClick?: () => void;
   onPortMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
@@ -374,7 +375,7 @@ function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMo
   return (
     <g style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
+      onMouseDown={onMouseDown} onClick={onClick} onContextMenu={onContextMenu}>
       {isTarget && (
         <circle cx={cx} cy={cy} r={EVT_R + 6}
           fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
@@ -399,11 +400,12 @@ function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMo
 
 // ── SendCircle ────────────────────────────────────────────────────────────────
 
-function SendCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onPortMouseDown, onContextMenu }: {
+function SendCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onClick, onPortMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   customLanes?: CustomLane[];
   onMouseDown?: (e: React.MouseEvent) => void;
+  onClick?: () => void;
   onPortMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
@@ -415,7 +417,7 @@ function SendCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDo
   return (
     <g style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
+      onMouseDown={onMouseDown} onClick={onClick} onContextMenu={onContextMenu}>
       {isTarget && (
         <circle cx={cx} cy={cy} r={EVT_R + 6}
           fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
@@ -443,11 +445,12 @@ function SendCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDo
 
 // ── ReceiveCircle ─────────────────────────────────────────────────────────────
 
-function ReceiveCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onPortMouseDown, onContextMenu }: {
+function ReceiveCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onClick, onPortMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   customLanes?: CustomLane[];
   onMouseDown?: (e: React.MouseEvent) => void;
+  onClick?: () => void;
   onPortMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
@@ -459,7 +462,7 @@ function ReceiveCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMous
   return (
     <g style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
+      onMouseDown={onMouseDown} onClick={onClick} onContextMenu={onContextMenu}>
       {isTarget && (
         <circle cx={cx} cy={cy} r={EVT_R + 6}
           fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
@@ -1121,6 +1124,7 @@ export function ProcessCanvas({
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
                 onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
@@ -1132,6 +1136,7 @@ export function ProcessCanvas({
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
                 onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
@@ -1143,6 +1148,7 @@ export function ProcessCanvas({
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
                 onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
