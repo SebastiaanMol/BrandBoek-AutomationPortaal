@@ -13,9 +13,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
-import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2, Filter, Info } from "lucide-react";
+import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2, Filter, Info, BarChart3 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const FASE_COLORS: Record<KlantFase, string> = {
   Marketing: "#8b5cf6",
@@ -79,7 +80,7 @@ function findCascadeFailures(
 export default function Analyse() {
   const navigate = useNavigate();
   const { data: fetchedData, isLoading } = useAutomatiseringen();
-  const data = fetchedData || [];
+  const data = useMemo(() => fetchedData ?? [], [fetchedData]);
   const smartEdges = useMemo(() => computeSmartEdges(data), [data]);
   const [expandedFailure, setExpandedFailure] = useState<string | null>(null);
   const [impactFilter, setImpactFilter] = useState<string>("alle");
@@ -127,10 +128,58 @@ export default function Analyse() {
     );
   }
 
+  const activeCount    = data.filter(a => a.status === "Actief").length;
+  const highRiskCount  = scoredData.filter(a => a.impact >= 70 || a.complexiteit >= 70).length;
+
   return (
-    <div className="space-y-10">
+    <div className="flex flex-col gap-0">
       <h1 className="sr-only">Analysis</h1>
-      {/* ═══════════════ KLANTPROCES TIJDLIJN ═══════════════ */}
+
+      <Tabs defaultValue="timeline" className="w-full">
+        {/* Hero + tab nav as one connected card */}
+        <div className="mx-6 mt-6 rounded-2xl border border-border overflow-hidden shadow-sm">
+          <header className="relative bg-gradient-hero px-8 py-8">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
+                <BarChart3 className="w-4 h-4" />
+              </span>
+              <span className="text-[11px] uppercase tracking-[0.14em] font-semibold text-primary">
+                Automation Portal
+              </span>
+            </div>
+            <h2 className="text-3xl font-semibold tracking-tight text-foreground">Analyse</h2>
+            <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+              Inzicht in impact, complexiteit en afhankelijkheden van alle automations.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <StatBadge label="Automations" value={data.length} />
+              <StatBadge label="Actief" value={activeCount} />
+              <StatBadge label="Hoog risico" value={highRiskCount} />
+            </div>
+          </header>
+          <div className="border-t border-border bg-card px-6">
+            <TabsList className="h-auto bg-transparent p-0 gap-0 rounded-none">
+              <TabsTrigger value="timeline" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                Timeline
+              </TabsTrigger>
+              <TabsTrigger value="scores" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                Impact & Scores
+              </TabsTrigger>
+              <TabsTrigger value="dependency" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                Dependency Graph
+              </TabsTrigger>
+              <TabsTrigger value="charts" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                Charts
+              </TabsTrigger>
+              <TabsTrigger value="bottlenecks" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                Bottlenecks
+              </TabsTrigger>
+            </TabsList>
+          </div>
+        </div>
+
+        {/* ═══════════════ KLANTPROCES TIJDLIJN ═══════════════ */}
+        <TabsContent value="timeline" className="p-6 mt-0">
       <section>
         <div className="flex items-center gap-2 mb-6">
           <Activity className="h-5 w-5 text-primary" />
@@ -207,8 +256,10 @@ export default function Analyse() {
           </div>
         </div>
       </section>
+        </TabsContent>
 
-      {/* ═══════════════ IMPACT & COMPLEXITEIT SCORES ═══════════════ */}
+        {/* ═══════════════ IMPACT & COMPLEXITEIT SCORES ═══════════════ */}
+        <TabsContent value="scores" className="p-6 mt-0">
       <section>
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div className="flex items-center gap-2">
@@ -348,8 +399,10 @@ export default function Analyse() {
           ))}
         </div>
       </section>
+        </TabsContent>
 
-      {/* ═══════════════ AFHANKELIJKHEIDSGRAPH ═══════════════ */}
+        {/* ═══════════════ AFHANKELIJKHEIDSGRAPH ═══════════════ */}
+        <TabsContent value="dependency" className="p-6 mt-0">
       <section>
         <div className="flex items-center gap-2 mb-6">
           <Layers className="h-5 w-5 text-primary" />
@@ -417,8 +470,10 @@ export default function Analyse() {
           })}
         </div>
       </section>
+        </TabsContent>
 
-      {/* ═══════════════ BESTAANDE CHARTS ═══════════════ */}
+        {/* ═══════════════ BESTAANDE CHARTS ═══════════════ */}
+        <TabsContent value="charts" className="p-6 mt-0">
       <section>
         <h2 className="text-lg font-semibold tracking-tight mb-6">Overview Charts</h2>
         <div className="grid lg:grid-cols-2 gap-8">
@@ -428,8 +483,10 @@ export default function Analyse() {
           <ChartCard title="By Status" data={statusData} colors={COLORS} />
         </div>
       </section>
+        </TabsContent>
 
-      {/* ═══════════════ KNELPUNTEN ═══════════════ */}
+        {/* ═══════════════ KNELPUNTEN ═══════════════ */}
+        <TabsContent value="bottlenecks" className="p-6 mt-0">
       <section>
         <h2 className="text-lg font-semibold tracking-tight mb-4">Bottlenecks Overview</h2>
         {data.filter((a) => a.afhankelijkheden?.trim()).length === 0 ? (
@@ -448,6 +505,8 @@ export default function Analyse() {
           </div>
         )}
       </section>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -473,8 +532,16 @@ function ChartCard({ title, data, colors }: { title: string; data: { name: strin
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function groupBy(arr: any[], key: string): { name: string; count: number }[] {
+function StatBadge({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-card/80 backdrop-blur-sm border border-border px-4 py-2.5">
+      <p className="text-xl font-semibold text-foreground tabular-nums leading-tight">{value}</p>
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+    </div>
+  );
+}
+
+function groupBy<T extends Record<string, unknown>>(arr: T[], key: keyof T): { name: string; count: number }[] {
   const counts: Record<string, number> = {};
   arr.forEach((item) => {
     const val = String(item[key] || "Onbekend");
