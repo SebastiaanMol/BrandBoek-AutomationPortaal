@@ -15,8 +15,99 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import type { ProcessStep, TeamKey } from "@/data/processData";
-type StepType = "task" | "decision";
 import { TEAM_CONFIG, TEAM_ORDER } from "@/data/processData";
+
+// ── BPMN type icon components (20×20 SVG, rendered at h-5 w-5) ───────────────
+
+const StartEventIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="10" cy="10" r="2.5" fill="currentColor" />
+  </svg>
+);
+
+const EndEventIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="3" />
+    <circle cx="10" cy="10" r="3.5" fill="currentColor" />
+  </svg>
+);
+
+const TerminateIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="2.5" />
+    <circle cx="10" cy="10" r="4.5" fill="currentColor" />
+  </svg>
+);
+
+const SendIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+    <rect x="5.5" y="7" width="9" height="6" rx="0.5" fill="currentColor" />
+    <polyline points="5.5,7 10,10.5 14.5,7" stroke="white" strokeWidth="1" />
+  </svg>
+);
+
+const ReceiveIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+    <rect x="5.5" y="7" width="9" height="6" rx="0.5" stroke="currentColor" strokeWidth="1" />
+    <polyline points="5.5,7 10,10.5 14.5,7" stroke="currentColor" strokeWidth="1" />
+  </svg>
+);
+
+const XorIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <polygon points="10,2 18,10 10,18 2,10" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="7" y1="7" x2="13" y2="13" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="13" y1="7" x2="7" y2="13" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
+const AndIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <polygon points="10,2 18,10 10,18 2,10" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="10" y1="5" x2="10" y2="15" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="5" y1="10" x2="15" y2="10" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
+const TaskIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <rect x="2" y="5" width="16" height="10" rx="3" stroke="currentColor" strokeWidth="1.5" />
+    <rect x="2" y="5" width="3" height="10" rx="1.5" fill="currentColor" />
+  </svg>
+);
+
+type StepType = "task" | "decision" | "start" | "end" | "terminate" | "send" | "receive" | "and";
+
+const TYPE_GROUPS: { label: string; types: { value: StepType; label: string; Icon: () => React.JSX.Element }[] }[] = [
+  {
+    label: "Events",
+    types: [
+      { value: "start",     label: "Start",     Icon: StartEventIcon },
+      { value: "end",       label: "End",        Icon: EndEventIcon },
+      { value: "terminate", label: "Terminate",  Icon: TerminateIcon },
+      { value: "send",      label: "Send",       Icon: SendIcon },
+      { value: "receive",   label: "Receive",    Icon: ReceiveIcon },
+    ],
+  },
+  {
+    label: "Gateways",
+    types: [
+      { value: "decision",  label: "XOR",        Icon: XorIcon },
+      { value: "and",       label: "AND",        Icon: AndIcon },
+    ],
+  },
+  {
+    label: "Activity",
+    types: [
+      { value: "task",      label: "Task",       Icon: TaskIcon },
+    ],
+  },
+];
+
+const VALID_STEP_TYPES = TYPE_GROUPS.flatMap(g => g.types.map(t => t.value));
 import { Trash2 } from "lucide-react";
 
 interface StepDialogProps {
@@ -45,7 +136,7 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
       setColumn(step.column);
       setRow(step.row ?? 0);
       setDesc(step.description ?? "");
-      setStepType((step.type === "decision" ? "decision" : "task") as StepType);
+      setStepType(VALID_STEP_TYPES.includes(step.type as StepType) ? (step.type as StepType) : "task");
     } else {
       setLabel("");
       setTeam(defaultValues?.team ?? "sales");
@@ -83,21 +174,31 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Type</Label>
-              <div className="flex gap-2">
-                {(["task", "decision"] as const).map(t => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setStepType(t)}
-                    className={[
-                      "flex-1 rounded-md border px-3 py-2 text-xs font-medium transition-colors",
-                      stepType === t
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border text-muted-foreground hover:border-primary/40",
-                    ].join(" ")}
-                  >
-                    {t === "task" ? "Taakstap" : "◇ Beslissingspunt"}
-                  </button>
+              <div className="space-y-3">
+                {TYPE_GROUPS.map(group => (
+                  <div key={group.label}>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                      {group.label}
+                    </p>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {group.types.map(t => (
+                        <button
+                          key={t.value}
+                          type="button"
+                          onClick={() => setStepType(t.value)}
+                          className={[
+                            "flex flex-col items-center gap-1 rounded-lg border p-2 text-[9px] transition-colors",
+                            stepType === t.value
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-border text-muted-foreground hover:border-primary/30",
+                          ].join(" ")}
+                        >
+                          <t.Icon />
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
