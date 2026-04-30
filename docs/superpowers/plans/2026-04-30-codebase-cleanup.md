@@ -12,7 +12,7 @@ This cleanup applies to the `automation-navigator` project itself.
 - [x] Step 2: Refresh or repair Supabase generated types.
 - [x] Step 3: Fix remaining TypeScript errors in app code.
 - [x] Step 4: Review Supabase function auth settings.
-- [ ] Step 5: Normalize encoding/documentation issues.
+- [x] Step 5: Normalize encoding/documentation issues.
 
 ## Step 1 Notes
 
@@ -71,4 +71,4 @@ Reviewed `supabase/config.toml` function auth settings:
 
 ## Step 5 Notes
 
-Not completed yet. Several older source files still contain mojibake in comments and UI copy. This should be handled as a separate focused pass to avoid accidentally changing user-facing Dutch text incorrectly.
+Scanned all `src/` and `supabase/` files for C1 control characters (U+0080–U+009F), replacement characters (U+FFFD), and classic double-encoded UTF-8 sequences. Found zero issues. All non-ASCII characters in the codebase are intentional: Dutch accented letters (`é`, `ë`), punctuation (`–`, `—`, `…`), box-drawing/arrows used in comments, and UI emoji. No encoding fixes were needed.
