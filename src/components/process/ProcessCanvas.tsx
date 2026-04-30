@@ -354,6 +354,186 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
   );
 }
 
+// ── TerminateCircle ───────────────────────────────────────────────────────────
+
+function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onPortMouseDown, onContextMenu }: {
+  step: ProcessStep; cx: number; cy: number;
+  isDragging?: boolean; isTarget?: boolean;
+  customLanes?: CustomLane[];
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const cfg = getLaneConfig(step.team, customLanes);
+  const str = cfg.stroke;
+  const label = step.label.length > 14 ? step.label.slice(0, 13) + "…" : step.label;
+
+  return (
+    <g style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
+      {isTarget && (
+        <circle cx={cx} cy={cy} r={EVT_R + 6}
+          fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
+      )}
+      <circle cx={cx} cy={cy} r={EVT_R} fill="white" stroke={str} strokeWidth="3"
+        style={{ filter: hov ? `drop-shadow(0 2px 8px ${str}88)` : undefined }} />
+      <circle cx={cx} cy={cy} r={EVT_R * 0.5} fill={str} style={{ pointerEvents: "none" }} />
+      <text x={cx} y={cy + EVT_R + 10} textAnchor="middle" dominantBaseline="middle"
+        fontSize="8" fontWeight="600" fill={str}
+        style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+        {label}
+      </text>
+      {hov && onPortMouseDown && (
+        <circle cx={cx + EVT_R} cy={cy} r={5}
+          fill={str} stroke="white" strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
+    </g>
+  );
+}
+
+// ── SendCircle ────────────────────────────────────────────────────────────────
+
+function SendCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onPortMouseDown, onContextMenu }: {
+  step: ProcessStep; cx: number; cy: number;
+  isDragging?: boolean; isTarget?: boolean;
+  customLanes?: CustomLane[];
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const cfg = getLaneConfig(step.team, customLanes);
+  const str = cfg.stroke;
+  const label = step.label.length > 14 ? step.label.slice(0, 13) + "…" : step.label;
+
+  return (
+    <g style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
+      {isTarget && (
+        <circle cx={cx} cy={cy} r={EVT_R + 6}
+          fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
+      )}
+      <circle cx={cx} cy={cy} r={EVT_R} fill="white" stroke={str} strokeWidth="1.5"
+        style={{ filter: hov ? `drop-shadow(0 2px 8px ${str}88)` : undefined }} />
+      <rect x={cx - 7} y={cy - 5} width="14" height="10" rx="1" fill={str}
+        style={{ pointerEvents: "none" }} />
+      <polyline points={`${cx - 7},${cy - 5} ${cx},${cy + 1} ${cx + 7},${cy - 5}`}
+        stroke="white" strokeWidth="1.2" fill="none" style={{ pointerEvents: "none" }} />
+      <text x={cx} y={cy + EVT_R + 10} textAnchor="middle" dominantBaseline="middle"
+        fontSize="8" fontWeight="600" fill={str}
+        style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+        {label}
+      </text>
+      {hov && onPortMouseDown && (
+        <circle cx={cx + EVT_R} cy={cy} r={5}
+          fill={str} stroke="white" strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
+    </g>
+  );
+}
+
+// ── ReceiveCircle ─────────────────────────────────────────────────────────────
+
+function ReceiveCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onPortMouseDown, onContextMenu }: {
+  step: ProcessStep; cx: number; cy: number;
+  isDragging?: boolean; isTarget?: boolean;
+  customLanes?: CustomLane[];
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const cfg = getLaneConfig(step.team, customLanes);
+  const str = cfg.stroke;
+  const label = step.label.length > 14 ? step.label.slice(0, 13) + "…" : step.label;
+
+  return (
+    <g style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
+      {isTarget && (
+        <circle cx={cx} cy={cy} r={EVT_R + 6}
+          fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
+      )}
+      <circle cx={cx} cy={cy} r={EVT_R} fill="white" stroke={str} strokeWidth="1.5"
+        style={{ filter: hov ? `drop-shadow(0 2px 8px ${str}88)` : undefined }} />
+      <rect x={cx - 7} y={cy - 5} width="14" height="10" rx="1"
+        fill="none" stroke={str} strokeWidth="1.2" style={{ pointerEvents: "none" }} />
+      <polyline points={`${cx - 7},${cy - 5} ${cx},${cy + 1} ${cx + 7},${cy - 5}`}
+        stroke={str} strokeWidth="1.2" fill="none" style={{ pointerEvents: "none" }} />
+      <text x={cx} y={cy + EVT_R + 10} textAnchor="middle" dominantBaseline="middle"
+        fontSize="8" fontWeight="600" fill={str}
+        style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+        {label}
+      </text>
+      {hov && onPortMouseDown && (
+        <circle cx={cx + EVT_R} cy={cy} r={5}
+          fill={str} stroke="white" strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
+    </g>
+  );
+}
+
+// ── AndDiamond ────────────────────────────────────────────────────────────────
+
+function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, customLanes }: {
+  step: ProcessStep; cx: number; cy: number;
+  isDragging?: boolean; isTarget?: boolean;
+  onClick?: () => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onStepMouseDown?: (e: React.MouseEvent) => void;
+  customLanes?: CustomLane[];
+}) {
+  const [hov, setHov] = useState(false);
+  const cfg = getLaneConfig(step.team, customLanes);
+  const h = DECISION_H;
+  const pts = `${cx},${cy - h} ${cx + h},${cy} ${cx},${cy + h} ${cx - h},${cy}`;
+  const ptsTarget = `${cx},${cy - h - 6} ${cx + h + 6},${cy} ${cx},${cy + h + 6} ${cx - h - 6},${cy}`;
+  const label = step.label.length > 13 ? step.label.slice(0, 12) + "…" : step.label;
+
+  return (
+    <g style={{ opacity: isDragging ? 0.3 : 1 }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      {isTarget && (
+        <polygon points={ptsTarget} fill="none" stroke={cfg.stroke}
+          strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
+      )}
+      <polygon
+        points={pts}
+        fill="white"
+        stroke={hov ? cfg.stroke : "#cbd5e1"}
+        strokeWidth={hov ? 2 : 1.5}
+        style={{ cursor: "pointer", filter: hov ? "drop-shadow(0 2px 6px rgba(0,0,0,.1))" : undefined }}
+        onMouseDown={onStepMouseDown}
+        onClick={onClick}
+      />
+      <line x1={cx} y1={cy - h * 0.55} x2={cx} y2={cy + h * 0.55}
+        stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
+      <line x1={cx - h * 0.55} y1={cy} x2={cx + h * 0.55} y2={cy}
+        stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
+      <text x={cx} y={cy + h + 10} textAnchor="middle" dominantBaseline="middle"
+        fontSize="8" fontWeight="500" fill="#1e293b"
+        style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+        {label}
+      </text>
+      {onPortMouseDown && (
+        <circle cx={cx + h} cy={cy} r={5} fill={cfg.stroke} stroke="white" strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
+    </g>
+  );
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface ProcessCanvasProps {
@@ -921,7 +1101,7 @@ export function ProcessCanvas({
             dragTarget.row  === stepRow(step) &&
             dragging?.stepId !== step.id);
 
-          if (isEvent(step)) {
+          if (step.type === "start" || step.type === "end") {
             return (
               <EventCircle key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
@@ -931,7 +1111,51 @@ export function ProcessCanvas({
             );
           }
 
-          if (isDecision(step)) {
+          if (step.type === "terminate") {
+            return (
+              <TerminateCircle key={step.id} step={step} cx={cx} cy={cy}
+                isDragging={isDrag} isTarget={isTarget}
+                customLanes={customLanes}
+                onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
+            );
+          }
+
+          if (step.type === "send") {
+            return (
+              <SendCircle key={step.id} step={step} cx={cx} cy={cy}
+                isDragging={isDrag} isTarget={isTarget}
+                customLanes={customLanes}
+                onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
+            );
+          }
+
+          if (step.type === "receive") {
+            return (
+              <ReceiveCircle key={step.id} step={step} cx={cx} cy={cy}
+                isDragging={isDrag} isTarget={isTarget}
+                customLanes={customLanes}
+                onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
+            );
+          }
+
+          if (step.type === "and") {
+            return (
+              <AndDiamond key={step.id} step={step} cx={cx} cy={cy}
+                isDragging={isDrag} isTarget={isTarget}
+                customLanes={customLanes}
+                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
+                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }} />
+            );
+          }
+
+          if (step.type === "decision") {
             return (
               <DecisionDiamond key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
@@ -961,15 +1185,17 @@ export function ProcessCanvas({
 
           if (isEvent(step)) {
             const isStart = step.type === "start";
-            const fill = isStart ? "#dcfce7" : "#fee2e2";
-            const str  = isStart ? "#16a34a" : "#dc2626";
+            const isEnd   = step.type === "end";
+            const fill  = isStart ? "#dcfce7" : isEnd ? "#fee2e2" : "white";
+            const str   = isStart ? "#16a34a"  : isEnd ? "#dc2626"  : getLaneConfig(step.team, customLanes).stroke;
+            const sw    = isEnd ? 4 : isStart ? 2.5 : 2;
             const targetCY = dragTarget
               ? laneStarts[dragTarget.team] + dragTarget.row * ROW_H + ROW_H / 2
               : gy;
             return (
               <g opacity={0.6} style={{ pointerEvents: "none" }}>
-                <circle cx={gx} cy={gy} r={EVT_R} fill={fill} stroke={str} strokeWidth={isStart ? 2.5 : 4} />
-                <circle cx={gx} cy={gy} r={isStart ? EVT_R * 0.38 : EVT_R * 0.55} fill={str} />
+                <circle cx={gx} cy={gy} r={EVT_R} fill={fill} stroke={str} strokeWidth={sw} />
+                <circle cx={gx} cy={gy} r={EVT_R * 0.4} fill={str} />
                 {dragTarget && getColX(dragTarget.col) !== undefined && (
                   <circle cx={getColX(dragTarget.col)!} cy={targetCY} r={EVT_R + 6}
                     fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray="5 3" opacity="0.6" />
@@ -1191,8 +1417,9 @@ export function ProcessCanvas({
           )}
           {contextMenu.type === "step" && (() => {
             const step = steps.find(s => s.id === contextMenu.stepId);
-            const isEvent = step?.type === "start" || step?.type === "end";
-            return isEvent ? (
+            const isEvt = step?.type === "start" || step?.type === "end"
+              || step?.type === "terminate" || step?.type === "send" || step?.type === "receive";
+            return isEvt ? (
               <button
                 className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
                 onClick={() => { onDeleteStep?.(contextMenu.stepId); setContextMenu(null); }}
