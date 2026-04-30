@@ -34,11 +34,12 @@ interface Pt { x: number; y: number }
 interface ArrowData { path: string; preDotPath: string; postDotPath: string; postDotMid: Pt; postDotMidVertical: boolean; dotCenter: Pt; isVertical: boolean }
 
 function isEvent(step: ProcessStep) {
-  return step.type === "start" || step.type === "end";
+  return step.type === "start" || step.type === "end"
+    || step.type === "terminate" || step.type === "send" || step.type === "receive";
 }
 
 function isDecision(step: ProcessStep) {
-  return step.type === "decision";
+  return step.type === "decision" || step.type === "and";
 }
 
 function stepRow(step: ProcessStep) {
