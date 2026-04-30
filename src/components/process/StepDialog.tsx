@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Trash2 } from "lucide-react";
 import type { ProcessStep, TeamKey } from "@/data/processData";
 import { TEAM_CONFIG, TEAM_ORDER } from "@/data/processData";
 
@@ -81,7 +82,7 @@ const TaskIcon = () => (
 
 type StepType = "task" | "decision" | "start" | "end" | "terminate" | "send" | "receive" | "and";
 
-const TYPE_GROUPS: { label: string; types: { value: StepType; label: string; Icon: () => React.JSX.Element }[] }[] = [
+const TYPE_GROUPS: { label: string; types: { value: StepType; label: string; Icon: () => JSX.Element }[] }[] = [
   {
     label: "Events",
     types: [
@@ -108,7 +109,6 @@ const TYPE_GROUPS: { label: string; types: { value: StepType; label: string; Ico
 ];
 
 const VALID_STEP_TYPES = TYPE_GROUPS.flatMap(g => g.types.map(t => t.value));
-import { Trash2 } from "lucide-react";
 
 interface StepDialogProps {
   open: boolean;
