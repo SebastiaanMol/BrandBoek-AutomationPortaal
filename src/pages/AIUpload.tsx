@@ -125,7 +125,7 @@ function mapRow(row: Record<string, string>): ParsedAutomation {
   // For Zapier: combine trigger app + action app as steps if no explicit steps
   const triggerApp = findField(row, ["trigger app", "trigger_app"]);
   const actionApp = findField(row, ["action app", "action_app"]);
-  let stappen = stappen_raw ? stappen_raw.split(/[;\|→]/).map((s) => s.trim()).filter(Boolean) : [];
+  const stappen = stappen_raw ? stappen_raw.split(/[;|→]/).map((s) => s.trim()).filter(Boolean) : [];
   if (stappen.length === 0 && (triggerApp || actionApp)) {
     if (triggerApp) stappen.push(`Trigger: ${triggerApp}`);
     if (actionApp) stappen.push(`Action: ${actionApp}`);

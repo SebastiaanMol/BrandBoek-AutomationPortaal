@@ -272,17 +272,16 @@ export interface SavedProcessState {
   connections: unknown[];
   autoLinks:   Record<string, { fromStepId: string; toStepId: string }>;
   parkedSteps: unknown[];   // ProcessStep[] — persisted across sessions
+  activeLanes?: string[];   // visible lane keys — undefined means all lanes
+  customLanes?: unknown[];  // CustomLane[] — user-defined extra swimlanes
 }
 
-// Tables not yet in the generated Supabase types (process_state, portal_settings,
-// pipelines, automation_links) require a cast until `supabase gen types` is re-run.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+const db = supabase;
 
 export async function fetchProcessState(pipelineId: string): Promise<SavedProcessState | null> {
   const { data, error } = await db
     .from("process_state")
-    .select("steps, connections, auto_links, parked_steps")
+    .select("steps, connections, auto_links, parked_steps, active_lanes, custom_lanes")
     .eq("id", pipelineId)
     .maybeSingle();
 
@@ -294,6 +293,8 @@ export async function fetchProcessState(pipelineId: string): Promise<SavedProces
     connections: (data.connections  ?? []) as unknown[],
     autoLinks:   (data.auto_links   ?? {}) as Record<string, { fromStepId: string; toStepId: string }>,
     parkedSteps: (data.parked_steps ?? []) as unknown[],
+    activeLanes: (data.active_lanes ?? undefined) as string[] | undefined,
+    customLanes: (data.custom_lanes ?? undefined) as unknown[] | undefined,
   };
 }
 
@@ -307,6 +308,8 @@ export async function saveProcessState(pipelineId: string, state: SavedProcessSt
         connections:  state.connections,
         auto_links:   state.autoLinks,
         parked_steps: state.parkedSteps,
+        active_lanes: state.activeLanes ?? null,
+        custom_lanes: state.customLanes ?? null,
         updated_at:   new Date().toISOString(),
       },
       { onConflict: "id" }
