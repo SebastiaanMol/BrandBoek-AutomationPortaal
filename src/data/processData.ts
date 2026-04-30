@@ -1,11 +1,29 @@
 import type { Pipeline } from "@/lib/types";
 
-export type TeamKey = "marketing" | "sales" | "onboarding" | "boekhouding" | "management";
+export type TeamKey = "marketing" | "sales" | "onboarding" | "klantrelaties" | "boekhouding" | "management";
+
+export interface CustomLane {
+  key: string;    // unique identifier (e.g. "custom-1")
+  label: string;  // display name
+  bg: string;
+  stroke: string;
+  text: string;
+  dot: string;
+}
+
+// Preset colors to cycle through for new custom lanes
+export const CUSTOM_LANE_PALETTE: Omit<CustomLane, "key" | "label">[] = [
+  { bg: "hsl(200 70% 97%)", stroke: "hsl(200 70% 48%)", text: "hsl(200 60% 28%)", dot: "hsl(200 65% 54%)" },
+  { bg: "hsl(290 55% 97%)", stroke: "hsl(290 55% 50%)", text: "hsl(290 45% 30%)", dot: "hsl(290 50% 56%)" },
+  { bg: "hsl(55  80% 97%)", stroke: "hsl(55  80% 44%)", text: "hsl(55  70% 24%)", dot: "hsl(55  75% 50%)" },
+  { bg: "hsl(150 55% 97%)", stroke: "hsl(150 50% 42%)", text: "hsl(150 50% 26%)", dot: "hsl(150 48% 48%)" },
+  { bg: "hsl(20  70% 97%)", stroke: "hsl(20  70% 48%)", text: "hsl(20  60% 28%)", dot: "hsl(20  65% 54%)" },
+];
 
 export interface ProcessStep {
   id: string;
   label: string;
-  team: TeamKey;
+  team: string;   // TeamKey or custom lane key
   column: number;
   row?: number;          // vertical row within lane (0 = top, 1 = second, …)
   description?: string;
@@ -35,6 +53,8 @@ export interface ProcessState {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
+  activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
+  customLanes?: CustomLane[];
 }
 
 export const TEAM_CONFIG: Record<TeamKey, {
@@ -46,13 +66,14 @@ export const TEAM_CONFIG: Record<TeamKey, {
 }> = {
   marketing:   { label: "Marketing",   bg: "hsl(280 60% 97%)", stroke: "hsl(280 60% 52%)", text: "hsl(280 50% 32%)", dot: "hsl(280 55% 58%)" },
   sales:       { label: "Sales",       bg: "hsl(215 80% 97%)", stroke: "hsl(215 80% 50%)", text: "hsl(215 70% 32%)", dot: "hsl(215 75% 55%)" },
-  onboarding:  { label: "Onboarding",  bg: "hsl(165 60% 97%)", stroke: "hsl(165 55% 40%)", text: "hsl(165 55% 24%)", dot: "hsl(165 50% 44%)" },
-  boekhouding: { label: "Boekhouding", bg: "hsl(35  85% 97%)", stroke: "hsl(35  85% 50%)", text: "hsl(35  75% 28%)", dot: "hsl(35  80% 55%)" },
+  onboarding:    { label: "Onboarding",    bg: "hsl(165 60% 97%)", stroke: "hsl(165 55% 40%)", text: "hsl(165 55% 24%)", dot: "hsl(165 50% 44%)" },
+  klantrelaties: { label: "Klantrelaties", bg: "hsl(185 65% 97%)", stroke: "hsl(185 65% 40%)", text: "hsl(185 60% 22%)", dot: "hsl(185 60% 45%)" },
+  boekhouding:   { label: "Boekhouding",   bg: "hsl(35  85% 97%)", stroke: "hsl(35  85% 50%)", text: "hsl(35  75% 28%)", dot: "hsl(35  80% 55%)" },
   management:  { label: "Management",  bg: "hsl(350 65% 97%)", stroke: "hsl(350 65% 52%)", text: "hsl(350 55% 32%)", dot: "hsl(350 60% 56%)" },
 };
 
 export const TEAM_ORDER: TeamKey[] = [
-  "marketing", "sales", "onboarding", "boekhouding", "management",
+  "marketing", "sales", "onboarding", "klantrelaties", "boekhouding", "management",
 ];
 
 export const initialState: ProcessState = {

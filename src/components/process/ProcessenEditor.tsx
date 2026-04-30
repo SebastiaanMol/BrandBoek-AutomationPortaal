@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useNavigate, useBlocker } from "react-router-dom";
+import { useBlocker } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,19 +15,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { RotateCcw, Save, Plus, ImageDown, FileDown, ChevronDown, HelpCircle, X, Sparkles } from "lucide-react";
+import { RotateCcw, Save, ImageDown, FileDown, ChevronDown, HelpCircle, X, Rows3 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ProcessCanvas } from "@/components/process/ProcessCanvas";
 import { UnassignedPanel } from "@/components/process/UnassignedPanel";
 import { AutomationDetailPanel } from "@/components/process/AutomationDetailPanel";
 import { StepDialog } from "@/components/process/StepDialog";
-import type { ProcessStep, Automation, TeamKey, ProcessState } from "@/data/processData";
-import { initialState, stagesToProcessState, TEAM_ORDER, TEAM_CONFIG } from "@/data/processData";
+import type { ProcessStep, Automation, TeamKey, ProcessState, CustomLane } from "@/data/processData";
+import { initialState, stagesToProcessState, TEAM_ORDER, TEAM_CONFIG, CUSTOM_LANE_PALETTE } from "@/data/processData";
 import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
 import type { Automatisering, KlantFase } from "@/lib/types";
 import { saveProcessState } from "@/lib/supabaseStorage";
@@ -61,7 +62,7 @@ interface ProcessenEditorProps {
 }
 
 export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }: ProcessenEditorProps) {
-  const navigate = useNavigate();
+
   const queryClient = useQueryClient();
   const [state, setState]     = useState<ProcessState>(initialState);
   const [saved, setSaved]     = useState<ProcessState>(initialState);
@@ -77,6 +78,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
   const [parkedSteps, setParkedSteps]           = useState<ProcessStep[]>([]);
   const [rightTab, setRightTab]                 = useState<"automations" | "stappen">("automations");
   const [dismissedRenames, setDismissedRenames] = useState<Set<string>>(new Set());
+  const [activeLanes, setActiveLanes]           = useState<string[]>([...TEAM_ORDER]);
+  const [customLanes, setCustomLanes]           = useState<CustomLane[]>([]);
+  const [newLaneDialogOpen, setNewLaneDialogOpen] = useState(false);
+  const [newLaneName, setNewLaneName]             = useState("");
 
   const { data: allPipelines = [] } = usePipelines();
   const pipelines = allPipelines.filter(p => p.isActive);
@@ -106,6 +111,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     setSaved(baseState);
     setParkedSteps([]);
     setDismissedRenames(new Set());
+    setActiveLanes([...TEAM_ORDER]);
+    setCustomLanes([]);
     setIsDirty(false);
     setLoading(true);
   }, [pipelineId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -138,6 +145,14 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     const restoredParked = savedState.parkedSteps as ProcessStep[];
     setParkedSteps(restoredParked);
     savedParkedStepsRef.current = restoredParked;
+    const restoredCustom = (savedState.customLanes ?? []) as CustomLane[];
+    setCustomLanes(restoredCustom);
+    if (savedState.activeLanes) {
+      const allValidKeys = [...TEAM_ORDER, ...restoredCustom.map(l => l.key)];
+      setActiveLanes(savedState.activeLanes.filter(l => allValidKeys.includes(l)));
+    } else {
+      setActiveLanes([...TEAM_ORDER, ...restoredCustom.map(l => l.key)]);
+    }
     setIsDirty(false);
   }, [savedState, stateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -181,7 +196,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     });
 
     try {
-      await saveProcessState(pipelineId, { steps: state.steps, connections: state.connections, autoLinks, parkedSteps });
+      await saveProcessState(pipelineId, { steps: state.steps, connections: state.connections, autoLinks, parkedSteps, activeLanes, customLanes });
       setSaved(state);
       savedParkedStepsRef.current = parkedSteps;
       setIsDirty(false);
@@ -506,6 +521,88 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     setDismissedRenames(prev => new Set([...prev, stepId]));
   }
 
+  // ── Swimlane toggle / add / delete ────────────────────────────────────────
+  function handleToggleLane(laneKey: string) {
+    const isActive = activeLanes.includes(laneKey);
+    if (isActive) {
+      // Park steps that belong to this lane before hiding it
+      const stepsInLane = state.steps.filter(s => s.team === laneKey);
+      if (stepsInLane.length > 0) {
+        update(s => ({
+          ...s,
+          steps: s.steps.filter(x => x.team !== laneKey),
+          connections: s.connections.filter(c =>
+            !stepsInLane.some(sl => sl.id === c.fromStepId || sl.id === c.toStepId)
+          ),
+          automations: s.automations.map(a =>
+            stepsInLane.some(sl => sl.id === a.fromStepId || sl.id === a.toStepId)
+              ? { ...a, fromStepId: undefined, toStepId: undefined }
+              : a,
+          ),
+        }));
+        setParkedSteps(prev => [...prev, ...stepsInLane]);
+      }
+      setActiveLanes(prev => prev.filter(l => l !== laneKey));
+    } else {
+      // Re-add the lane — preserve current order, append if new
+      const allKeys = [...TEAM_ORDER, ...customLanes.map(l => l.key)];
+      setActiveLanes(allKeys.filter(l => l === laneKey || activeLanes.includes(l)));
+    }
+    setIsDirty(true);
+  }
+
+  function handleAddCustomLane() {
+    const name = newLaneName.trim();
+    if (!name) return;
+    const paletteIdx = customLanes.length % CUSTOM_LANE_PALETTE.length;
+    const newLane: CustomLane = {
+      key: `custom-${Date.now()}`,
+      label: name,
+      ...CUSTOM_LANE_PALETTE[paletteIdx],
+    };
+    setCustomLanes(prev => [...prev, newLane]);
+    setActiveLanes(prev => [...prev, newLane.key]);
+    setNewLaneName("");
+    setNewLaneDialogOpen(false);
+    setIsDirty(true);
+  }
+
+  function handleMoveLane(laneKey: string, direction: -1 | 1) {
+    setActiveLanes(prev => {
+      const idx = prev.indexOf(laneKey);
+      if (idx === -1) return prev;
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+      return next;
+    });
+    setIsDirty(true);
+  }
+
+  function handleDeleteCustomLane(laneKey: string) {
+    // Park steps in this lane, then remove the lane entirely
+    const stepsInLane = state.steps.filter(s => s.team === laneKey);
+    if (stepsInLane.length > 0) {
+      update(s => ({
+        ...s,
+        steps: s.steps.filter(x => x.team !== laneKey),
+        connections: s.connections.filter(c =>
+          !stepsInLane.some(sl => sl.id === c.fromStepId || sl.id === c.toStepId)
+        ),
+        automations: s.automations.map(a =>
+          stepsInLane.some(sl => sl.id === a.fromStepId || sl.id === a.toStepId)
+            ? { ...a, fromStepId: undefined, toStepId: undefined }
+            : a,
+        ),
+      }));
+      setParkedSteps(prev => [...prev, ...stepsInLane]);
+    }
+    setCustomLanes(prev => prev.filter(l => l.key !== laneKey));
+    setActiveLanes(prev => prev.filter(l => l !== laneKey));
+    setIsDirty(true);
+  }
+
   function handleAddBranch(automationId: string, toStepId: string) {
     // Branch = a regular Connection with fromAutomationId instead of fromStepId
     const newConn = {
@@ -577,9 +674,6 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
               </Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">
-            A-tot-Z klantreis · {breadcrumb}
-          </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
@@ -614,56 +708,151 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
             Opslaan
           </Button>
 
-          <Button
-            draggable
-            variant="outline" size="sm"
-            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "task")}
-            onClick={() => { setStepDefaults({ type: "task" }); setEditingStep(null); setStepDialogOpen(true); }}
-            className="gap-1.5 ml-1 cursor-grab active:cursor-grabbing"
-            title="Stap toevoegen"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Stap
-          </Button>
+          {/* ── Element palette ─────────────────────────────────────────── */}
+          <div className="flex items-center gap-0.5 ml-1 border border-border rounded-lg px-1.5 py-1 bg-muted/30">
+            <Button
+              draggable
+              variant="ghost" size="sm"
+              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "task")}
+              onClick={() => { setStepDefaults({ type: "task" }); setEditingStep(null); setStepDialogOpen(true); }}
+              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
+              title="Stap toevoegen — sleep naar canvas"
+            >
+              <svg width="14" height="10" viewBox="0 0 14 10" className="shrink-0">
+                <rect x="0.5" y="0.5" width="13" height="9" rx="2" fill="white" stroke="#e2e8f0"/>
+                <rect x="0" y="0" width="3" height="10" rx="1.5" fill="#3b82f6"/>
+              </svg>
+              Stap
+            </Button>
+            <Button
+              draggable
+              variant="ghost" size="sm"
+              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "decision")}
+              onClick={() => { setStepDefaults({ type: "decision" }); setEditingStep(null); setStepDialogOpen(true); }}
+              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
+              title="Beslissing toevoegen — sleep naar canvas"
+            >
+              <svg width="12" height="12" viewBox="-1 -1 14 14" className="shrink-0">
+                <polygon points="6,0 12,6 6,12 0,6" fill="white" stroke="#94a3b8" strokeWidth="1.5"/>
+              </svg>
+              Beslissing
+            </Button>
+            <Button
+              draggable
+              variant="ghost" size="sm"
+              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "start")}
+              onClick={() => handleAddEventStep("start")}
+              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
+              title="Startpunt toevoegen — sleep naar canvas"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
+                <circle cx="5" cy="5" r="4.5" fill="#dcfce7" stroke="#16a34a" strokeWidth="1.5"/>
+              </svg>
+              Start
+            </Button>
+            <Button
+              draggable
+              variant="ghost" size="sm"
+              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "end")}
+              onClick={() => handleAddEventStep("end")}
+              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
+              title="Eindpunt toevoegen — sleep naar canvas"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
+                <circle cx="5" cy="5" r="4.5" fill="#fee2e2" stroke="#dc2626" strokeWidth="2"/>
+              </svg>
+              Einde
+            </Button>
+          </div>
 
-          <Button
-            draggable
-            variant="outline" size="sm"
-            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "decision")}
-            onClick={() => { setStepDefaults({ type: "decision" }); setEditingStep(null); setStepDialogOpen(true); }}
-            className="gap-1.5 cursor-grab active:cursor-grabbing"
-            title="Beslissingspunt toevoegen"
-          >
-            ◇ Beslissing
-          </Button>
 
-          <Button
-            draggable
-            variant="outline" size="sm"
-            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "start")}
-            onClick={() => handleAddEventStep("start")}
-            className="gap-1.5 cursor-grab active:cursor-grabbing"
-            title="Startpunt toevoegen"
-          >
-            Start
-          </Button>
+          {/* ── Swimlane toggle ─────────────────────────────────────── */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground" title="Swimlanes beheren">
+                <Rows3 className="h-3.5 w-3.5" />
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 p-1">
+              {/* Active lanes — shown in current order with move controls */}
+              {activeLanes.map((laneKey, idx) => {
+                const isPreset = (TEAM_ORDER as string[]).includes(laneKey);
+                const label  = isPreset ? TEAM_CONFIG[laneKey as TeamKey].label : (customLanes.find(l => l.key === laneKey)?.label ?? laneKey);
+                const stroke = isPreset ? TEAM_CONFIG[laneKey as TeamKey].stroke : (customLanes.find(l => l.key === laneKey)?.stroke ?? "#888");
+                return (
+                  <div key={laneKey} className="flex items-center gap-0.5 px-1 py-1 rounded hover:bg-muted/50 group">
+                    <span className="w-2 h-2 rounded-full shrink-0 mr-1" style={{ background: stroke }} />
+                    <span className="flex-1 text-sm truncate">{label}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleMoveLane(laneKey, -1); }}
+                      disabled={idx === 0}
+                      className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 opacity-0 group-hover:opacity-100"
+                      title="Omhoog"
+                    >↑</button>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleMoveLane(laneKey, 1); }}
+                      disabled={idx === activeLanes.length - 1}
+                      className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 opacity-0 group-hover:opacity-100"
+                      title="Omlaag"
+                    >↓</button>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleToggleLane(laneKey); }}
+                      className="p-0.5 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100"
+                      title="Verberg"
+                    ><X className="h-3 w-3" /></button>
+                    {!isPreset && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDeleteCustomLane(laneKey); }}
+                        className="p-0.5 text-destructive/50 hover:text-destructive opacity-0 group-hover:opacity-100"
+                        title="Verwijder"
+                      >✕</button>
+                    )}
+                  </div>
+                );
+              })}
 
-          <Button
-            draggable
-            variant="outline" size="sm"
-            onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "end")}
-            onClick={() => handleAddEventStep("end")}
-            className="gap-1.5 cursor-grab active:cursor-grabbing"
-            title="Eindpunt toevoegen"
-          >
-            Einde
-          </Button>
+              {/* Hidden lanes */}
+              {(() => {
+                const allKeys = [...TEAM_ORDER, ...customLanes.map(l => l.key)];
+                const hidden  = allKeys.filter(k => !activeLanes.includes(k));
+                if (!hidden.length) return null;
+                return (
+                  <>
+                    <DropdownMenuSeparator className="my-1" />
+                    <p className="px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Verborgen</p>
+                    {hidden.map(laneKey => {
+                      const isPreset = (TEAM_ORDER as string[]).includes(laneKey);
+                      const label  = isPreset ? TEAM_CONFIG[laneKey as TeamKey].label : (customLanes.find(l => l.key === laneKey)?.label ?? laneKey);
+                      const stroke = isPreset ? TEAM_CONFIG[laneKey as TeamKey].stroke : (customLanes.find(l => l.key === laneKey)?.stroke ?? "#888");
+                      return (
+                        <div key={laneKey} className="flex items-center gap-1 px-1 py-1 rounded hover:bg-muted/50">
+                          <span className="w-2 h-2 rounded-full shrink-0 mr-1 opacity-40" style={{ background: stroke }} />
+                          <span className="flex-1 text-sm text-muted-foreground truncate">{label}</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); handleToggleLane(laneKey); }}
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                          >Toon</button>
+                          {!isPreset && (
+                            <button
+                              onClick={e => { e.stopPropagation(); handleDeleteCustomLane(laneKey); }}
+                              className="p-0.5 text-destructive/50 hover:text-destructive"
+                            ><X className="h-3 w-3" /></button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
 
-          <Button variant="ghost" size="sm" onClick={() => navigate("/brandy")}
-            className="gap-1.5 text-muted-foreground hover:text-foreground">
-            <Sparkles className="h-3.5 w-3.5" />
-            Brandy
-          </Button>
+              <DropdownMenuSeparator className="my-1" />
+              <DropdownMenuItem onClick={() => setNewLaneDialogOpen(true)} className="gap-2 text-sm font-medium">
+                <span className="text-base leading-none">+</span>
+                Nieuwe swimlane
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button variant="ghost" size="icon" onClick={() => setHelpOpen(true)}
             className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Uitleg">
@@ -688,6 +877,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
                 steps={state.steps}
                 connections={state.connections}
                 automations={state.automations}
+                activeLanes={activeLanes}
+                customLanes={customLanes}
                 onStepClick={handleStepClick}
                 onAutomationClick={handleAutoClick}
                 onAddConnection={handleAddConnection}
@@ -698,6 +889,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
                 onAddBranch={handleAddBranch}
                 onUpdateConnectionLabel={handleUpdateConnectionLabel}
                 onParkStep={handleParkStep}
+                onDeleteStep={handleDeleteStep}
                 onPlaceStagedStep={handlePlaceStep}
               />
             </div>
@@ -885,6 +1077,35 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
             <AlertDialogCancel onClick={() => blocker.reset?.()}>Blijven</AlertDialogCancel>
             <AlertDialogAction onClick={() => blocker.proceed?.()}>
               Weggaan zonder opslaan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Nieuwe swimlane dialog ───────────────────────────────────── */}
+      <AlertDialog open={newLaneDialogOpen} onOpenChange={setNewLaneDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Nieuwe swimlane</AlertDialogTitle>
+            <AlertDialogDescription>
+              Geef de swimlane een naam. Je kunt er daarna stappen in slepen.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="px-0 py-2">
+            <input
+              autoFocus
+              type="text"
+              value={newLaneName}
+              onChange={e => setNewLaneName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleAddCustomLane(); }}
+              placeholder="bijv. Klantenservice"
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setNewLaneName("")}>Annuleren</AlertDialogCancel>
+            <AlertDialogAction onClick={handleAddCustomLane} disabled={!newLaneName.trim()}>
+              Toevoegen
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

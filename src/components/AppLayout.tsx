@@ -86,7 +86,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <aside
         className={`fixed lg:sticky top-0 left-0 z-50 h-screen bg-sidebar border-r border-sidebar-border text-sidebar-foreground flex flex-col transition-all duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        } ${collapsed ? "w-[60px]" : "w-[220px]"}`}
+        } ${collapsed ? "w-[48px]" : "w-[176px]"}`}
       >
         {/* Logo */}
         {!collapsed && (
@@ -238,7 +238,7 @@ function BrandLogo() {
       src="/Brandlogo.png"
       alt="Brand Boekhouders"
       className="w-full h-auto object-contain object-left"
-      style={{ maxHeight: "52px" }}
+      style={{ maxHeight: "3.25rem" }}
     />
   );
 }
