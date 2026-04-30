@@ -342,9 +342,9 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
         onMouseDown={onStepMouseDown}
         onClick={onClick}
       />
-      <line x1={cx - h * 0.55} y1={cy - h * 0.55} x2={cx + h * 0.55} y2={cy + h * 0.55}
+      <line x1={cx - h * 0.45} y1={cy - h * 0.45} x2={cx + h * 0.45} y2={cy + h * 0.45}
         stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
-      <line x1={cx + h * 0.55} y1={cy - h * 0.55} x2={cx - h * 0.55} y2={cy + h * 0.55}
+      <line x1={cx + h * 0.45} y1={cy - h * 0.45} x2={cx - h * 0.45} y2={cy + h * 0.45}
         stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
       <text x={cx} y={cy + h + 10} textAnchor="middle" dominantBaseline="middle"
         fontSize="8" fontWeight="500" fill="#1e293b"
@@ -1230,9 +1230,25 @@ export function ProcessCanvas({
           if (isDecision(step)) {
             const str = getLaneConfig(step.team, customLanes).stroke;
             const pts = `${gx},${gy - DECISION_H} ${gx + DECISION_H},${gy} ${gx},${gy + DECISION_H} ${gx - DECISION_H},${gy}`;
+            const h = DECISION_H;
             return (
               <g opacity={0.65} style={{ pointerEvents: "none" }}>
                 <polygon points={pts} fill="white" stroke={str} strokeWidth="2" />
+                {step.type === "decision" ? (
+                  <>
+                    <line x1={gx - h * 0.45} y1={gy - h * 0.45} x2={gx + h * 0.45} y2={gy + h * 0.45}
+                      stroke={str} strokeWidth="2" />
+                    <line x1={gx + h * 0.45} y1={gy - h * 0.45} x2={gx - h * 0.45} y2={gy + h * 0.45}
+                      stroke={str} strokeWidth="2" />
+                  </>
+                ) : (
+                  <>
+                    <line x1={gx} y1={gy - h * 0.55} x2={gx} y2={gy + h * 0.55}
+                      stroke={str} strokeWidth="2" />
+                    <line x1={gx - h * 0.55} y1={gy} x2={gx + h * 0.55} y2={gy}
+                      stroke={str} strokeWidth="2" />
+                  </>
+                )}
                 {dragTarget && getColX(dragTarget.col) !== undefined && (
                   <polygon
                     points={`${getColX(dragTarget.col)!},${targetCY - DECISION_H - 6} ${getColX(dragTarget.col)! + DECISION_H + 6},${targetCY} ${getColX(dragTarget.col)!},${targetCY + DECISION_H + 6} ${getColX(dragTarget.col)! - DECISION_H - 6},${targetCY}`}
