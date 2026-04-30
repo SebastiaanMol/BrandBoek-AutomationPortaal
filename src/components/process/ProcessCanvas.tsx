@@ -342,7 +342,11 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
         onMouseDown={onStepMouseDown}
         onClick={onClick}
       />
-      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+      <line x1={cx - h * 0.55} y1={cy - h * 0.55} x2={cx + h * 0.55} y2={cy + h * 0.55}
+        stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
+      <line x1={cx + h * 0.55} y1={cy - h * 0.55} x2={cx - h * 0.55} y2={cy + h * 0.55}
+        stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
+      <text x={cx} y={cy + h + 10} textAnchor="middle" dominantBaseline="middle"
         fontSize="8" fontWeight="500" fill="#1e293b"
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}

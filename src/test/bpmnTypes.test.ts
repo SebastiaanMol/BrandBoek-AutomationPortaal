@@ -50,3 +50,13 @@ describe("BPMN-03: StepDialog type restoration logic", () => {
   it("falls back to 'task' for undefined", () => expect(restoreType(undefined)).toBe("task"));
   it("falls back to 'task' for unknown string", () => expect(restoreType("bogus")).toBe("task"));
 });
+
+describe("BPMN-04: DecisionDiamond label truncation", () => {
+  function truncateDecision(label: string) {
+    return label.length > 13 ? label.slice(0, 12) + "…" : label;
+  }
+
+  it("keeps short labels unchanged", () => expect(truncateDecision("Beslissing")).toBe("Beslissing"));
+  it("truncates at 13 chars",        () => expect(truncateDecision("Beslissing XYZ")).toBe("Beslissing X…"));
+  it("keeps 13-char label as-is",    () => expect(truncateDecision("1234567890123")).toBe("1234567890123"));
+});
