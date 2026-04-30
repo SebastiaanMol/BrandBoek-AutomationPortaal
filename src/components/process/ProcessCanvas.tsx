@@ -309,12 +309,13 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
 
 // ── DecisionDiamond ───────────────────────────────────────────────────────────
 
-function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, customLanes }: {
+function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, customLanes }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick?: () => void;
   onPortMouseDown?: (e: React.MouseEvent) => void;
   onStepMouseDown?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   customLanes?: CustomLane[];
 }) {
   const [hov, setHov] = useState(false);
@@ -326,7 +327,8 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
 
   return (
     <g style={{ opacity: isDragging ? 0.3 : 1 }}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onContextMenu={onContextMenu}>
       {isTarget && (
         <polygon points={ptsTarget} fill="none" stroke={cfg.stroke}
           strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
@@ -485,12 +487,13 @@ function ReceiveCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMous
 
 // ── AndDiamond ────────────────────────────────────────────────────────────────
 
-function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, customLanes }: {
+function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, customLanes }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick?: () => void;
   onPortMouseDown?: (e: React.MouseEvent) => void;
   onStepMouseDown?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   customLanes?: CustomLane[];
 }) {
   const [hov, setHov] = useState(false);
@@ -502,7 +505,8 @@ function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDo
 
   return (
     <g style={{ opacity: isDragging ? 0.3 : 1 }}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onContextMenu={onContextMenu}>
       {isTarget && (
         <polygon points={ptsTarget} fill="none" stroke={cfg.stroke}
           strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
@@ -1151,7 +1155,8 @@ export function ProcessCanvas({
                 customLanes={customLanes}
                 onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
                 onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
-                onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }} />
+                onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
           }
 
@@ -1162,7 +1167,8 @@ export function ProcessCanvas({
                 customLanes={customLanes}
                 onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
                 onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
-                onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }} />
+                onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
           }
 
