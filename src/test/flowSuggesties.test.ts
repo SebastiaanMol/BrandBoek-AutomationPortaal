@@ -14,7 +14,7 @@ describe("toZekerheid", () => {
     expect(toZekerheid(0)).toBe("ai");
   });
 
-  it("maps any value below 1 to ai", () => {
-    expect(toZekerheid(0.99)).toBe("ai");
+  it("maps confidence above 1.0 to webhook", () => {
+    expect(toZekerheid(1.1)).toBe("webhook");
   });
 });

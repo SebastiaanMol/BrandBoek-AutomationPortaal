@@ -54,7 +54,7 @@ export async function fetchAllConfirmedAutomationLinks(): Promise<
   return (data ?? []).map((r) => ({ sourceId: r.source_id, targetId: r.target_id }));
 }
 
-export interface FlowSuggestie {
+export type FlowSuggestie = {
   fromId: string;
   toId: string;
   fromNaam: string;
@@ -69,6 +69,8 @@ export function toZekerheid(confidence: number): "webhook" | "ai" {
   return confidence >= 1.0 ? "webhook" : "ai";
 }
 
+type AutoRef = { naam: string; categorie: string } | null;
+
 export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
   const { data, error } = await supabase
     .from("automatisering_ai_flows")
@@ -81,30 +83,30 @@ export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
   return (data ?? []).map((r) => ({
     fromId: r.from_id,
     toId: r.to_id,
-    fromNaam: (r.from_auto as { naam: string } | null)?.naam ?? "",
-    toNaam: (r.to_auto as { naam: string } | null)?.naam ?? "",
-    fromCategorie: (r.from_auto as { categorie: string } | null)?.categorie ?? "",
-    toCategorie: (r.to_auto as { categorie: string } | null)?.categorie ?? "",
+    fromNaam: (r.from_auto as AutoRef)?.naam ?? "",
+    toNaam: (r.to_auto as AutoRef)?.naam ?? "",
+    fromCategorie: (r.from_auto as AutoRef)?.categorie ?? "",
+    toCategorie: (r.to_auto as AutoRef)?.categorie ?? "",
     zekerheid: toZekerheid(r.confidence),
     redenering: r.reasoning ?? "",
   }));
 }
 
 export async function bevestigFlowSuggestie(fromId: string, toId: string): Promise<void> {
-  const { error: e1 } = await supabase
+  const { error: deleteError } = await supabase
     .from("automatisering_ai_flows")
     .delete()
     .eq("from_id", fromId)
     .eq("to_id", toId);
-  if (e1) throw e1;
+  if (deleteError) throw deleteError;
 
-  const { error: e2 } = await supabase.from("automation_links").insert({
+  const { error: insertError } = await supabase.from("automation_links").insert({
     source_id: fromId,
     target_id: toId,
     match_type: "ai_flow",
     confirmed: true,
   });
-  if (e2) throw e2;
+  if (insertError) throw insertError;
 }
 
 export async function verwerpFlowSuggestie(fromId: string, toId: string): Promise<void> {
