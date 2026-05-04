@@ -53,3 +53,65 @@ export async function fetchAllConfirmedAutomationLinks(): Promise<
   if (error) throw error;
   return (data ?? []).map((r) => ({ sourceId: r.source_id, targetId: r.target_id }));
 }
+
+export interface FlowSuggestie {
+  fromId: string;
+  toId: string;
+  fromNaam: string;
+  toNaam: string;
+  fromCategorie: string;
+  toCategorie: string;
+  zekerheid: "webhook" | "ai";
+  redenering: string;
+}
+
+export function toZekerheid(confidence: number): "webhook" | "ai" {
+  return confidence >= 1.0 ? "webhook" : "ai";
+}
+
+export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
+  const { data, error } = await supabase
+    .from("automatisering_ai_flows")
+    .select(
+      "from_id, to_id, confidence, reasoning, from_auto:automatiseringen!from_id(naam, categorie), to_auto:automatiseringen!to_id(naam, categorie)",
+    )
+    .eq("confirmed", false)
+    .eq("rejected", false);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    fromId: r.from_id,
+    toId: r.to_id,
+    fromNaam: (r.from_auto as { naam: string } | null)?.naam ?? "",
+    toNaam: (r.to_auto as { naam: string } | null)?.naam ?? "",
+    fromCategorie: (r.from_auto as { categorie: string } | null)?.categorie ?? "",
+    toCategorie: (r.to_auto as { categorie: string } | null)?.categorie ?? "",
+    zekerheid: toZekerheid(r.confidence),
+    redenering: r.reasoning ?? "",
+  }));
+}
+
+export async function bevestigFlowSuggestie(fromId: string, toId: string): Promise<void> {
+  const { error: e1 } = await supabase
+    .from("automatisering_ai_flows")
+    .delete()
+    .eq("from_id", fromId)
+    .eq("to_id", toId);
+  if (e1) throw e1;
+
+  const { error: e2 } = await supabase.from("automation_links").insert({
+    source_id: fromId,
+    target_id: toId,
+    match_type: "ai_flow",
+    confirmed: true,
+  });
+  if (e2) throw e2;
+}
+
+export async function verwerpFlowSuggestie(fromId: string, toId: string): Promise<void> {
+  const { error } = await supabase
+    .from("automatisering_ai_flows")
+    .delete()
+    .eq("from_id", fromId)
+    .eq("to_id", toId);
+  if (error) throw error;
+}
