@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useBlocker } from "react-router-dom";
-import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { RotateCcw, Save, ImageDown, FileDown, ChevronDown, HelpCircle, X, Rows3 } from "lucide-react";
+import { RotateCcw, Save, ImageDown, FileDown, ChevronDown, HelpCircle, X, Rows3, Plus } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,17 +22,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ProcessCanvas } from "@/components/process/ProcessCanvas";
 import { UnassignedPanel } from "@/components/process/UnassignedPanel";
 import { AutomationDetailPanel } from "@/components/process/AutomationDetailPanel";
 import { StepDialog } from "@/components/process/StepDialog";
 import type { ProcessStep, Automation, TeamKey, ProcessState, CustomLane } from "@/data/processData";
 import { initialState, stagesToProcessState, TEAM_ORDER, TEAM_CONFIG, CUSTOM_LANE_PALETTE } from "@/data/processData";
-import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
+import { useAutomatiseringen } from "@/lib/queryHooks/automations";
+import { usePipelines } from "@/lib/queryHooks/pipelines";
+import { useProcessState } from "@/lib/queryHooks/processState";
 import type { Automatisering, KlantFase } from "@/lib/types";
-import { saveProcessState } from "@/lib/supabaseStorage";
+import { saveProcessState } from "@/lib/storage/processState";
 import { detectDrift } from "@/lib/processDrift";
 import { StepStagingPanel } from "@/components/process/StepStagingPanel";
+import { exportProcessCanvasPdf, exportProcessCanvasPng } from "@/lib/processExport";
+import { buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
   Marketing:   "marketing",
@@ -72,6 +76,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
   const blocker = useBlocker(isDirty);
   const [loading, setLoading] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const savedLinksRef        = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
   const savedParkedStepsRef  = useRef<ProcessStep[]>([]);
 
@@ -187,16 +192,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
 
   // ── Save / Reset ───────────────────────────────────────────────────────────
   async function handleSave() {
-    // Build autoLinks map: only automations that are fully attached
-    const autoLinks: Record<string, { fromStepId: string; toStepId: string }> = {};
-    state.automations.forEach(a => {
-      if (a.fromStepId && a.toStepId) {
-        autoLinks[a.id] = { fromStepId: a.fromStepId, toStepId: a.toStepId };
-      }
-    });
-
     try {
-      await saveProcessState(pipelineId, { steps: state.steps, connections: state.connections, autoLinks, parkedSteps, activeLanes, customLanes });
+      await saveProcessState(
+        pipelineId,
+        buildSavedProcessState(state, parkedSteps, activeLanes, customLanes),
+      );
       setSaved(state);
       savedParkedStepsRef.current = parkedSteps;
       setIsDirty(false);
@@ -209,109 +209,29 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
   }
 
   function handleReset() {
-    // Restore steps & connections from saved, but keep current automations
-    // and restore only their link data (fromStepId/toStepId) from saved
-    setState(prev => ({
-      ...saved,
-      automations: prev.automations.map(a => {
-        const savedLink = saved.automations.find(s => s.id === a.id);
-        return savedLink
-          ? { ...a, fromStepId: savedLink.fromStepId, toStepId: savedLink.toStepId }
-          : { ...a, fromStepId: undefined, toStepId: undefined };
-      }),
-    }));
+    setState(prev => restoreSavedProcessState(prev, saved));
     setParkedSteps(savedParkedStepsRef.current);
     setIsDirty(false);
     toast.info("Teruggezet naar opgeslagen versie");
   }
 
-  function getSvgElement(): SVGSVGElement | null {
-    return document.querySelector(".process-canvas-wrap svg");
-  }
-
-  function svgToCanvas(svg: SVGSVGElement): Promise<HTMLCanvasElement> {
-    return new Promise((resolve, reject) => {
-      const w = Number(svg.getAttribute("width") ?? svg.viewBox.baseVal.width);
-      const h = Number(svg.getAttribute("height") ?? svg.viewBox.baseVal.height);
-
-      // Clone and sanitize: resolve CSS variables + strip external font refs
-      const clone = svg.cloneNode(true) as SVGSVGElement;
-      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-
-      // Inline computed styles on every element so CSS vars resolve
-      const liveEls = Array.from(svg.querySelectorAll("*"));
-      const cloneEls = Array.from(clone.querySelectorAll("*"));
-      liveEls.forEach((el, i) => {
-        const computed = window.getComputedStyle(el);
-        const attrs = ["fill", "stroke", "color", "background-color"];
-        attrs.forEach(attr => {
-          const val = computed.getPropertyValue(attr);
-          if (val && val !== "none" && val !== "") {
-            (cloneEls[i] as SVGElement).style.setProperty(attr, val);
-          }
-        });
-      });
-
-      // Add style block: use system fonts so external font load can't fail
-      const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-      style.textContent = `* { font-family: system-ui, Arial, sans-serif !important; }`;
-      clone.insertBefore(style, clone.firstChild);
-
-      const xml = new XMLSerializer().serializeToString(clone);
-      // Use base64 data URL to avoid cross-origin blob restrictions
-      const b64 = btoa(unescape(encodeURIComponent(xml)));
-      const dataUrl = `data:image/svg+xml;base64,${b64}`;
-
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = w * 2;
-        canvas.height = h * 2;
-        const ctx = canvas.getContext("2d")!;
-        ctx.scale(2, 2);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas);
-      };
-      img.onerror = (e) => {
-        console.error("SVG render error:", e);
-        reject(new Error("SVG kon niet worden gerenderd"));
-      };
-      img.src = dataUrl;
-    });
-  }
-
   async function exportPng() {
-    const svg = getSvgElement();
-    if (!svg) return toast.error("Canvas niet gevonden");
     try {
-      const canvas = await svgToCanvas(svg);
-      const a = document.createElement("a");
-      a.download = "proceskaart.png";
-      a.href = canvas.toDataURL("image/png");
-      a.click();
+      await exportProcessCanvasPng();
       toast.success("PNG gedownload");
-    } catch {
-      toast.error("Export mislukt");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export mislukt");
+      if (!(err instanceof Error) || err.message !== "Canvas niet gevonden") console.error(err);
     }
   }
 
   async function exportPdf() {
-    const svg = getSvgElement();
-    if (!svg) return toast.error("Canvas niet gevonden");
     try {
-      const canvas = await svgToCanvas(svg);
-      const imgData = canvas.toDataURL("image/png");
-      const w = canvas.width / 2;
-      const h = canvas.height / 2;
-      const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [w, h] });
-      pdf.addImage(imgData, "PNG", 0, 0, w, h);
-      pdf.save("proceskaart.pdf");
+      await exportProcessCanvasPdf();
       toast.success("PDF gedownload");
     } catch (err) {
-      console.error(err);
-      toast.error("Export mislukt");
+      toast.error(err instanceof Error ? err.message : "Export mislukt");
+      if (!(err instanceof Error) || err.message !== "Canvas niet gevonden") console.error(err);
     }
   }
 
@@ -709,61 +629,86 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
           </Button>
 
           {/* ── Element palette ─────────────────────────────────────────── */}
-          <div className="flex items-center gap-0.5 ml-1 border border-border rounded-lg px-1.5 py-1 bg-muted/30">
-            <Button
-              draggable
-              variant="ghost" size="sm"
-              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "task")}
-              onClick={() => { setStepDefaults({ type: "task" }); setEditingStep(null); setStepDialogOpen(true); }}
-              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
-              title="Stap toevoegen — sleep naar canvas"
-            >
-              <svg width="14" height="10" viewBox="0 0 14 10" className="shrink-0">
-                <rect x="0.5" y="0.5" width="13" height="9" rx="2" fill="white" stroke="#e2e8f0"/>
-                <rect x="0" y="0" width="3" height="10" rx="1.5" fill="#3b82f6"/>
-              </svg>
-              Stap
-            </Button>
-            <Button
-              draggable
-              variant="ghost" size="sm"
-              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "decision")}
-              onClick={() => { setStepDefaults({ type: "decision" }); setEditingStep(null); setStepDialogOpen(true); }}
-              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
-              title="Beslissing toevoegen — sleep naar canvas"
-            >
-              <svg width="12" height="12" viewBox="-1 -1 14 14" className="shrink-0">
-                <polygon points="6,0 12,6 6,12 0,6" fill="white" stroke="#94a3b8" strokeWidth="1.5"/>
-              </svg>
-              Beslissing
-            </Button>
-            <Button
-              draggable
-              variant="ghost" size="sm"
-              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "start")}
-              onClick={() => handleAddEventStep("start")}
-              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
-              title="Startpunt toevoegen — sleep naar canvas"
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
-                <circle cx="5" cy="5" r="4.5" fill="#dcfce7" stroke="#16a34a" strokeWidth="1.5"/>
-              </svg>
-              Start
-            </Button>
-            <Button
-              draggable
-              variant="ghost" size="sm"
-              onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "end")}
-              onClick={() => handleAddEventStep("end")}
-              className="gap-1.5 h-7 px-2 cursor-grab active:cursor-grabbing text-xs font-medium"
-              title="Eindpunt toevoegen — sleep naar canvas"
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
-                <circle cx="5" cy="5" r="4.5" fill="#fee2e2" stroke="#dc2626" strokeWidth="2"/>
-              </svg>
-              Einde
-            </Button>
-          </div>
+          <Popover open={paletteOpen} onOpenChange={setPaletteOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 h-7 px-2.5 text-xs font-medium">
+                <Plus className="h-3.5 w-3.5" />
+                Toevoegen
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-56 p-3">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Events</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      { type: "start",     label: "Start",     icon: <><circle cx="8" cy="8" r="7" fill="#dcfce7" stroke="#16a34a" strokeWidth="1.5"/></>, direct: true },
+                      { type: "end",       label: "Einde",     icon: <><circle cx="8" cy="8" r="7" fill="#fee2e2" stroke="#dc2626" strokeWidth="2"/></>, direct: true },
+                      { type: "terminate", label: "Terminate", icon: <><circle cx="8" cy="8" r="7" fill="white" stroke="#dc2626" strokeWidth="2"/><circle cx="8" cy="8" r="3.5" fill="#dc2626"/></>, direct: false },
+                      { type: "send",      label: "Sturen",    icon: <><circle cx="8" cy="8" r="7" fill="white" stroke="#64748b" strokeWidth="1.5"/><rect x="3" y="5" width="10" height="7" rx="1" fill="#64748b"/><polyline points="3,5 8,9.5 13,5" stroke="white" strokeWidth="1.2" fill="none"/></>, direct: false },
+                      { type: "receive",   label: "Ontv.",     icon: <><circle cx="8" cy="8" r="7" fill="white" stroke="#64748b" strokeWidth="1.5"/><rect x="3" y="5" width="10" height="7" rx="1" fill="none" stroke="#64748b" strokeWidth="1.2"/><polyline points="3,5 8,9.5 13,5" stroke="#64748b" strokeWidth="1.2" fill="none"/></>, direct: false },
+                    ] as { type: ProcessStep["type"]; label: string; icon: React.ReactNode; direct: boolean }[]).map(({ type, label, icon, direct }) => (
+                      <button
+                        key={type}
+                        type="button"
+                        draggable
+                        onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", type!)}
+                        onClick={() => {
+                          setPaletteOpen(false);
+                          if (direct) handleAddEventStep(type as "start" | "end");
+                          else { setStepDefaults({ type }); setEditingStep(null); setStepDialogOpen(true); }
+                        }}
+                        className="flex flex-col items-center gap-1 rounded-md border border-border px-1 py-1.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-foreground cursor-grab active:cursor-grabbing transition-colors"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">{icon}</svg>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Gateways</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      { type: "decision", label: "XOR", icon: <><polygon points="8,1 15,8 8,15 1,8" fill="white" stroke="#94a3b8" strokeWidth="1.5"/><line x1="4.65" y1="4.65" x2="11.35" y2="11.35" stroke="#64748b" strokeWidth="1.2"/><line x1="11.35" y1="4.65" x2="4.65" y2="11.35" stroke="#64748b" strokeWidth="1.2"/></> },
+                      { type: "and",      label: "AND", icon: <><polygon points="8,1 15,8 8,15 1,8" fill="white" stroke="#94a3b8" strokeWidth="1.5"/><line x1="8" y1="3.6" x2="8" y2="12.4" stroke="#64748b" strokeWidth="1.2"/><line x1="3.6" y1="8" x2="12.4" y2="8" stroke="#64748b" strokeWidth="1.2"/></> },
+                    ] as { type: ProcessStep["type"]; label: string; icon: React.ReactNode }[]).map(({ type, label, icon }) => (
+                      <button
+                        key={type}
+                        type="button"
+                        draggable
+                        onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", type!)}
+                        onClick={() => { setPaletteOpen(false); setStepDefaults({ type }); setEditingStep(null); setStepDialogOpen(true); }}
+                        className="flex flex-col items-center gap-1 rounded-md border border-border px-1 py-1.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-foreground cursor-grab active:cursor-grabbing transition-colors"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">{icon}</svg>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Activiteit</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("newStep", "task")}
+                      onClick={() => { setPaletteOpen(false); setStepDefaults({ type: "task" }); setEditingStep(null); setStepDialogOpen(true); }}
+                      className="flex flex-col items-center gap-1 rounded-md border border-border px-1 py-1.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-foreground cursor-grab active:cursor-grabbing transition-colors"
+                    >
+                      <svg width="20" height="14" viewBox="0 0 20 14" className="shrink-0">
+                        <rect x="0.5" y="0.5" width="19" height="13" rx="2.5" fill="white" stroke="#e2e8f0"/>
+                        <rect x="0" y="0" width="4" height="14" rx="2" fill="#3b82f6"/>
+                      </svg>
+                      Stap
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
 
 
           {/* ── Swimlane toggle ─────────────────────────────────────── */}

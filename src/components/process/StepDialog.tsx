@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Trash2 } from "lucide-react";
+import { Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import type { ProcessStep, TeamKey } from "@/data/processData";
 import { TEAM_CONFIG, TEAM_ORDER } from "@/data/processData";
 
@@ -121,13 +121,14 @@ interface StepDialogProps {
 }
 
 export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDelete, onClose }: StepDialogProps) {
-  const [label, setLabel]       = useState("");
-  const [team, setTeam]         = useState<TeamKey>("sales");
-  const [column, setColumn]     = useState(0);
-  const [row, setRow]           = useState(0);
-  const [description, setDesc]  = useState("");
-  const [stepType, setStepType] = useState<StepType>("task");
+  const [label, setLabel]           = useState("");
+  const [team, setTeam]             = useState<TeamKey>("sales");
+  const [column, setColumn]         = useState(0);
+  const [row, setRow]               = useState(0);
+  const [description, setDesc]      = useState("");
+  const [stepType, setStepType]     = useState<StepType>("task");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [typeExpanded, setTypeExpanded]   = useState(false);
 
   useEffect(() => {
     if (step) {
@@ -145,6 +146,7 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
       setDesc("");
       setStepType(defaultValues?.type ?? "task");
     }
+    setTypeExpanded(false);
   }, [step, open, maxColumn, defaultValues]);
 
   function handleSave() {
@@ -156,12 +158,13 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
       team,
       column,
       row: row > 0 ? row : undefined,
-      description: stepType === "task" ? (description.trim() || undefined) : undefined,
+      description: description.trim() || undefined,
     });
     onClose();
   }
 
   const isEditing = !!step;
+  const currentTypeLabel = TYPE_GROUPS.flatMap(g => g.types).find(t => t.value === stepType);
 
   return (
     <>
@@ -173,43 +176,23 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Type</Label>
-              <div className="space-y-3">
-                {TYPE_GROUPS.map(group => (
-                  <div key={group.label}>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-                      {group.label}
-                    </p>
-                    <div className="grid grid-cols-5 gap-1.5">
-                      {group.types.map(t => (
-                        <button
-                          key={t.value}
-                          type="button"
-                          onClick={() => setStepType(t.value)}
-                          className={[
-                            "flex flex-col items-center gap-1 rounded-lg border p-2 text-[9px] transition-colors",
-                            stepType === t.value
-                              ? "border-primary bg-primary/5 text-primary"
-                              : "border-border text-muted-foreground hover:border-primary/30",
-                          ].join(" ")}
-                        >
-                          <t.Icon />
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
               <Label>Naam</Label>
               <Input
                 value={label}
                 onChange={e => setLabel(e.target.value)}
                 placeholder="bijv. Intake gesprek"
                 onKeyDown={e => e.key === "Enter" && handleSave()}
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Beschrijving <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
+              <Textarea
+                value={description}
+                onChange={e => setDesc(e.target.value)}
+                placeholder="Korte toelichting op deze stap..."
+                rows={2}
               />
             </div>
 
@@ -235,17 +218,49 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
               </Select>
             </div>
 
-            {stepType === "task" && (
-              <div className="space-y-1.5">
-                <Label>Beschrijving <span className="text-muted-foreground font-normal">(optioneel)</span></Label>
-                <Textarea
-                  value={description}
-                  onChange={e => setDesc(e.target.value)}
-                  placeholder="Korte toelichting op deze stap..."
-                  rows={2}
-                />
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={() => setTypeExpanded(v => !v)}
+                className="flex w-full items-center justify-between rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  {currentTypeLabel && <currentTypeLabel.Icon />}
+                  <span>Type: <span className="font-medium text-foreground">{currentTypeLabel?.label}</span></span>
+                </span>
+                {typeExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </button>
+
+              {typeExpanded && (
+                <div className="space-y-3 pt-1">
+                  {TYPE_GROUPS.map(group => (
+                    <div key={group.label}>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                        {group.label}
+                      </p>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {group.types.map(t => (
+                          <button
+                            key={t.value}
+                            type="button"
+                            onClick={() => { setStepType(t.value); setTypeExpanded(false); }}
+                            className={[
+                              "flex flex-col items-center gap-1 rounded-lg border p-2 text-[9px] transition-colors",
+                              stepType === t.value
+                                ? "border-primary bg-primary/5 text-primary"
+                                : "border-border text-muted-foreground hover:border-primary/30",
+                            ].join(" ")}
+                          >
+                            <t.Icon />
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <DialogFooter className="flex items-center justify-between">
