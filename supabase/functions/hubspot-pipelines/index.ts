@@ -146,6 +146,8 @@ serve(async (req) => {
           naam:         pipeline.label,
           stages,
           synced_at:    now,
+          updated_at:   now,
+          source:       "hubspot",
           ...(beschrijving !== null ? { beschrijving } : {}),
         },
         { onConflict: "pipeline_id" },

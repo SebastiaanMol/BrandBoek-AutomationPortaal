@@ -47,8 +47,10 @@ export interface Pipeline {
   naam:         string;
   stages:       PipelineStage[];
   syncedAt:     string;
+  updatedAt:    string;
   beschrijving: string | null;
   isActive:     boolean;
+  source:       "hubspot" | "custom";
 }
 
 // ── Flow ─────────────────────────────────────────────────────────────────────

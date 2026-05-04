@@ -1,11 +1,30 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, ChevronRight, Layers2, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Layers2, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
 import { toast } from "sonner";
-import { usePipelines, useDescribePipeline, useSetPipelineActive } from "@/lib/hooks";
+import {
+  useDeleteCustomPipeline,
+  useDescribePipeline,
+  usePipelines,
+  useSetPipelineActive,
+  useUpdateCustomPipeline,
+} from "@/lib/queryHooks/pipelines";
 import { PIPELINE_COLORS } from "@/components/PipelineCard";
+import { CustomPipelineDialog } from "@/components/CustomPipelineDialog";
+import type { CustomPipelineInput } from "@/lib/storage/pipelines";
+import { canDeletePipeline } from "@/lib/storage/pipelines";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function PipelineDetail(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -13,6 +32,14 @@ export default function PipelineDetail(): ReactNode {
   const { data: pipelines = [], isLoading } = usePipelines();
   const describeMutation = useDescribePipeline();
   const setActiveMutation = useSetPipelineActive();
+  const updateCustomMutation = useUpdateCustomPipeline();
+  const deleteCustomMutation = useDeleteCustomPipeline();
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const pipelineIndex = pipelines.findIndex((p) => p.pipelineId === id);
+  const pipeline = pipelines[pipelineIndex];
+  const isCustom = pipeline?.source === "custom";
 
   function handleToggleActive() {
     if (!pipeline) return;
@@ -22,17 +49,34 @@ export default function PipelineDetail(): ReactNode {
     );
   }
 
-  const pipelineIndex = pipelines.findIndex((p) => p.pipelineId === id);
-  const pipeline = pipelines[pipelineIndex];
+  async function handleUpdateCustomPipeline(input: CustomPipelineInput): Promise<void> {
+    if (!pipeline) return;
+    try {
+      await updateCustomMutation.mutateAsync({ pipelineId: pipeline.pipelineId, ...input });
+      setEditOpen(false);
+      toast.success("Intern proces bijgewerkt");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kon intern proces niet opslaan");
+    }
+  }
+
+  async function handleDeleteCustomPipeline(): Promise<void> {
+    if (!pipeline || !canDeletePipeline(pipeline)) return;
+    try {
+      await deleteCustomMutation.mutateAsync(pipeline.pipelineId);
+      toast.success("Intern proces verwijderd");
+      navigate("/pipelines");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kon intern proces niet verwijderen");
+    }
+  }
 
   useEffect(() => {
-    if (pipeline && !pipeline.beschrijving && !describeMutation.isPending) {
+    if (pipeline && pipeline.source === "hubspot" && !pipeline.beschrijving && !describeMutation.isPending) {
       describeMutation.mutate(pipeline.pipelineId);
     }
-    // describeMutation is a stable ref; isPending intentionally omitted to avoid
-    // re-firing after the mutation completes (before query invalidation runs)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pipeline?.pipelineId, pipeline?.beschrijving]);
+  }, [pipeline?.pipelineId, pipeline?.beschrijving, pipeline?.source]);
 
   if (isLoading) {
     return (
@@ -64,11 +108,13 @@ export default function PipelineDetail(): ReactNode {
   const sortedStages = [...pipeline.stages].sort(
     (a, b) => a.display_order - b.display_order,
   );
+  const sourceLabel = isCustom ? "Intern proces" : "HubSpot";
+  const dateLabel = isCustom ? "Laatst bijgewerkt" : "Gesynchroniseerd";
+  const dateValue = isCustom ? pipeline.updatedAt : pipeline.syncedAt;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-[900px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
-        {/* Back button */}
         <button
           type="button"
           onClick={() => navigate("/pipelines")}
@@ -78,7 +124,6 @@ export default function PipelineDetail(): ReactNode {
           Terug naar Pipelines
         </button>
 
-        {/* Hero */}
         <div
           className="rounded-2xl p-6 mb-6"
           style={{
@@ -86,20 +131,25 @@ export default function PipelineDetail(): ReactNode {
           }}
         >
           <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{ background: "rgba(255,255,255,0.2)" }}
               >
                 <Layers2 className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <p
-                  className="text-xs font-semibold uppercase tracking-widest mb-0.5"
-                  style={{ color: "rgba(255,255,255,0.7)" }}
-                >
-                  HubSpot CRM · {sortedStages.length} stages
-                </p>
+              <div className="min-w-0">
+                <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white">
+                    {sourceLabel}
+                  </span>
+                  <span
+                    className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "rgba(255,255,255,0.7)" }}
+                  >
+                    {sortedStages.length} stages
+                  </span>
+                </div>
                 <h1 className="text-2xl font-bold text-white leading-tight">
                   {pipeline.naam}
                 </h1>
@@ -110,9 +160,9 @@ export default function PipelineDetail(): ReactNode {
                 className="text-[10px] text-right"
                 style={{ color: "rgba(255,255,255,0.6)" }}
               >
-                Gesynchroniseerd
+                {dateLabel}
                 <br />
-                {format(new Date(pipeline.syncedAt), "d MMM yyyy, HH:mm", {
+                {format(new Date(dateValue), "d MMM yyyy, HH:mm", {
                   locale: nl,
                 })}
               </p>
@@ -130,9 +180,29 @@ export default function PipelineDetail(): ReactNode {
                 <span className={["w-1.5 h-1.5 rounded-full", pipeline.isActive ? "bg-emerald-500" : "bg-slate-400"].join(" ")} />
                 {pipeline.isActive ? "Actief" : "Inactief"}
               </button>
+              {isCustom && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/25 transition-colors"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Bewerken
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/25 transition-colors"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Verwijderen
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-          {/* AI beschrijving */}
+
           <div
             className="mt-4 rounded-lg px-3 py-2.5"
             style={{ background: "rgba(255,255,255,0.15)" }}
@@ -146,7 +216,7 @@ export default function PipelineDetail(): ReactNode {
                 className="text-[9px] font-semibold uppercase tracking-widest"
                 style={{ color: "rgba(255,255,255,0.7)" }}
               >
-                AI Samenvatting
+                {isCustom ? "Beschrijving" : "AI Samenvatting"}
               </span>
             </div>
             {pipeline.beschrijving ? (
@@ -155,6 +225,13 @@ export default function PipelineDetail(): ReactNode {
                 style={{ color: "rgba(255,255,255,0.9)" }}
               >
                 {pipeline.beschrijving}
+              </p>
+            ) : isCustom ? (
+              <p
+                className="text-[11px] leading-relaxed"
+                style={{ color: "rgba(255,255,255,0.72)" }}
+              >
+                Geen beschrijving toegevoegd.
               </p>
             ) : (
               <div className="space-y-1.5 animate-pulse">
@@ -170,14 +247,13 @@ export default function PipelineDetail(): ReactNode {
                   className="text-[8px] mt-1"
                   style={{ color: "rgba(255,255,255,0.45)" }}
                 >
-                  Beschrijving wordt gegenereerd…
+                  Beschrijving wordt gegenereerd...
                 </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Horizontal flow track */}
         {sortedStages.length > 0 && (
           <div className="card-elevated overflow-hidden mb-4">
             <div className="px-6 py-5" style={{ background: color.tint }}>
@@ -216,7 +292,6 @@ export default function PipelineDetail(): ReactNode {
           </div>
         )}
 
-        {/* Numbered stage list */}
         <div className="card-elevated overflow-hidden">
           <div className="p-4 flex flex-col gap-1.5">
             {sortedStages.map((stage, i) => {
@@ -255,6 +330,35 @@ export default function PipelineDetail(): ReactNode {
           </div>
         </div>
       </div>
+
+      <CustomPipelineDialog
+        open={editOpen}
+        pipeline={pipeline}
+        isSaving={updateCustomMutation.isPending}
+        onOpenChange={setEditOpen}
+        onSubmit={handleUpdateCustomPipeline}
+      />
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Intern proces verwijderen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Dit verwijdert de pipeline en de opgeslagen canvas-state voor deze pipeline. Deze actie kan niet ongedaan worden gemaakt.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuleren</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCustomPipeline}
+              disabled={deleteCustomMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteCustomMutation.isPending ? "Verwijderen..." : "Verwijderen"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

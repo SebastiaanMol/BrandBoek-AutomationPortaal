@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync, usePortalSettings, useSavePortalSettings, useHubSpotPipelinesSync } from "@/lib/hooks";
+import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync } from "@/lib/queryHooks/integrations";
+import { usePortalSettings, useSavePortalSettings } from "@/lib/queryHooks/portalSettings";
+import { useHubSpotPipelinesSync } from "@/lib/queryHooks/pipelines";
 import type { Integration, PortalSettings } from "@/lib/types";
 import { DEFAULT_PORTAL_SETTINGS, STATUSSEN, CATEGORIEEN, VERPLICHTE_VELDEN } from "@/lib/types";
 import type { VerplichtVeld } from "@/lib/types";

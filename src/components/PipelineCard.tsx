@@ -21,6 +21,9 @@ export function PipelineCard({ pipeline, index }: PipelineCardProps) {
   const navigate = useNavigate();
   const color = PIPELINE_COLORS[index % PIPELINE_COLORS.length];
   const stageCount = pipeline.stages.length;
+  const sourceLabel = pipeline.source === "custom" ? "Intern proces" : "HubSpot";
+  const dateLabel = pipeline.source === "custom" ? "Laatst bijgewerkt" : "Gesynchroniseerd";
+  const dateValue = pipeline.source === "custom" ? pipeline.updatedAt : pipeline.syncedAt;
 
   return (
     <button
@@ -28,7 +31,6 @@ export function PipelineCard({ pipeline, index }: PipelineCardProps) {
       onClick={() => navigate(`/pipelines/${pipeline.pipelineId}`)}
       className="card-elevated overflow-hidden w-full text-left focus-ring hover:brightness-105 transition-[filter] duration-150"
     >
-      {/* Gradient header */}
       <div
         className="p-4"
         style={{ background: `linear-gradient(135deg, ${color.from} 0%, ${color.to} 100%)` }}
@@ -44,9 +46,14 @@ export function PipelineCard({ pipeline, index }: PipelineCardProps) {
             <p className="text-sm font-bold text-white leading-snug truncate">
               {pipeline.naam}
             </p>
-            <p className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
-              HubSpot CRM · {stageCount} stage{stageCount === 1 ? "" : "s"}
-            </p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white">
+                {sourceLabel}
+              </span>
+              <span className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
+                {stageCount} stage{stageCount === 1 ? "" : "s"}
+              </span>
+            </div>
           </div>
           <ChevronRight
             className="w-4 h-4 flex-shrink-0"
@@ -54,11 +61,10 @@ export function PipelineCard({ pipeline, index }: PipelineCardProps) {
           />
         </div>
       </div>
-      {/* Footer */}
       <div className="px-4 py-2.5 flex items-center justify-between gap-3">
         <p className="text-[10px] text-muted-foreground">
-          Gesynchroniseerd{" "}
-          {format(new Date(pipeline.syncedAt), "d MMM yyyy, HH:mm", { locale: nl })}
+          {dateLabel}{" "}
+          {format(new Date(dateValue), "d MMM yyyy, HH:mm", { locale: nl })}
         </p>
         <span
           className={[

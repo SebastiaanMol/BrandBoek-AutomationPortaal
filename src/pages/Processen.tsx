@@ -5,12 +5,14 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useAutomatiseringen, usePipelines, useProcessState } from "@/lib/hooks";
+import { useAutomatiseringen } from "@/lib/queryHooks/automations";
+import { usePipelines } from "@/lib/queryHooks/pipelines";
+import { useProcessState } from "@/lib/queryHooks/processState";
 import { ProcessenView } from "@/components/process/ProcessenView";
 import { ProcessenEditor } from "@/components/process/ProcessenEditor";
 import { stagesToProcessState } from "@/data/processData";
 import type { Automation, ProcessState, TeamKey } from "@/data/processData";
-import type { SavedProcessState } from "@/lib/supabaseStorage";
+import type { SavedProcessState } from "@/lib/storage/processState";
 import type { Automatisering, KlantFase } from "@/lib/types";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {

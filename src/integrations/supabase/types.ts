@@ -398,24 +398,30 @@ export type Database = {
           is_active: boolean
           naam: string
           pipeline_id: string
+          source: string
           stages: Json
           synced_at: string
+          updated_at: string
         }
         Insert: {
           beschrijving?: string | null
           is_active?: boolean
           naam: string
           pipeline_id: string
+          source?: string
           stages?: Json
           synced_at?: string
+          updated_at?: string
         }
         Update: {
           beschrijving?: string | null
           is_active?: boolean
           naam?: string
           pipeline_id?: string
+          source?: string
           stages?: Json
           synced_at?: string
+          updated_at?: string
         }
         Relationships: []
       }

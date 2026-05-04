@@ -6,7 +6,8 @@ import { X, Zap, ExternalLink, Unlink, ArrowRight, User, Clock, Layers, Lightbul
 import type { Automation, Connection } from "@/data/processData";
 import { TEAM_CONFIG } from "@/data/processData";
 import type { Automatisering } from "@/lib/types";
-import { useAutomatiseringen, usePipelines } from "@/lib/hooks";
+import { useAutomatiseringen } from "@/lib/queryHooks/automations";
+import { usePipelines } from "@/lib/queryHooks/pipelines";
 
 interface AutomationDetailPanelProps {
   automation: Automation | null;
