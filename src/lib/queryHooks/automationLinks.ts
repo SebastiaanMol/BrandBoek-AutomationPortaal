@@ -4,6 +4,12 @@ import {
   fetchAllConfirmedAutomationLinks,
   fetchAutomationLinks,
 } from "../supabaseStorage";
+import {
+  bevestigFlowSuggestie,
+  fetchFlowSuggesties,
+  verwerpFlowSuggestie,
+} from "../storage/automationLinks";
+import { invokeEdgeFunction } from "../storage/edgeFunctions";
 
 export function useAutomationLinks(id: string) {
   return useQuery({
@@ -25,5 +31,41 @@ export function useAllConfirmedAutomationLinks() {
   return useQuery({
     queryKey: ["confirmedAutomationLinks"],
     queryFn: fetchAllConfirmedAutomationLinks,
+  });
+}
+
+export function useFlowSuggesties() {
+  return useQuery({
+    queryKey: ["flowSuggesties"],
+    queryFn: fetchFlowSuggesties,
+  });
+}
+
+export function useDetecteerSuggesties() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => invokeEdgeFunction("detect-flow-links"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] }),
+  });
+}
+
+export function useBevestigFlowSuggestie() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fromId, toId }: { fromId: string; toId: string }) =>
+      bevestigFlowSuggestie(fromId, toId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
+      queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
+    },
+  });
+}
+
+export function useVerwerpFlowSuggestie() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fromId, toId }: { fromId: string; toId: string }) =>
+      verwerpFlowSuggestie(fromId, toId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] }),
   });
 }
