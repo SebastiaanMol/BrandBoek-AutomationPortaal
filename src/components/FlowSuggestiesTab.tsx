@@ -57,7 +57,7 @@ export function FlowSuggestiesTab() {
         </div>
         <div className="flex gap-2">
           {webhookSuggesties.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleBulkBevestig}>
+            <Button variant="outline" size="sm" onClick={handleBulkBevestig} disabled={bevestig.isPending}>
               Alle hoge zekerheid bevestigen
             </Button>
           )}
