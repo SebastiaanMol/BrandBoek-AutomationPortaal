@@ -12,6 +12,8 @@ import { detectFlows } from "@/lib/detectFlows";
 import type { Automatisering, Systeem } from "@/lib/types";
 import { FlowCard } from "@/components/FlowCard";
 import { FlowConfirmDialog } from "@/components/FlowConfirmDialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FlowSuggestiesTab } from "@/components/FlowSuggestiesTab";
 
 interface ConfirmState {
   automationIds: string[];
@@ -205,100 +207,113 @@ export default function Flows(): React.ReactNode {
           </div>
         </header>
 
-        {/* Proposals */}
-        {newProposals.length > 0 && (
-          <div className="mb-8">
-            <p className="label-uppercase mb-3">Nieuwe voorstellen</p>
-            <div className="space-y-2">
-              {newProposals.map((proposal) => {
-                const names = proposal.automationIds.map((id) => autoMap.get(id)?.naam ?? id);
-                return (
-                  <div
-                    key={proposal.automationIds.join("|")}
-                    className="card-elevated p-4 flex items-center justify-between gap-4"
-                  >
-                    <p className="text-sm text-muted-foreground truncate">{names.join(" → ")}</p>
-                    <button
-                      type="button"
-                      className="text-sm px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shrink-0 focus-ring"
-                      onClick={() => handleBevestig(proposal.automationIds)}
-                    >
-                      Bevestig
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <Tabs defaultValue="bevestigd" className="mt-4">
+          <TabsList>
+            <TabsTrigger value="bevestigd">Bevestigd</TabsTrigger>
+            <TabsTrigger value="suggesties">Suggesties</TabsTrigger>
+          </TabsList>
 
-        {/* Search + filters */}
-        {flows.length > 0 && (
-          <div className="card-elevated p-3 mb-6 flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Zoek op naam of beschrijving…"
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground focus-ring"
-              />
-            </div>
-            <select
-              value={filterSysteem}
-              onChange={(e) => setFilterSysteem(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
-            >
-              <option value="">Alle systemen</option>
-              {allSystems.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
-            >
-              <option value="">Alle statussen</option>
-              <option value="actief">Actief</option>
-              <option value="update">Update beschikbaar</option>
-            </select>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as "recent" | "naam")}
-              className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
-            >
-              <option value="recent">Recent</option>
-              <option value="naam">Naam A–Z</option>
-            </select>
-          </div>
-        )}
+          <TabsContent value="bevestigd" className="mt-4">
+            {/* Proposals */}
+            {newProposals.length > 0 && (
+              <div className="mb-8">
+                <p className="label-uppercase mb-3">Nieuwe voorstellen</p>
+                <div className="space-y-2">
+                  {newProposals.map((proposal) => {
+                    const names = proposal.automationIds.map((id) => autoMap.get(id)?.naam ?? id);
+                    return (
+                      <div
+                        key={proposal.automationIds.join("|")}
+                        className="card-elevated p-4 flex items-center justify-between gap-4"
+                      >
+                        <p className="text-sm text-muted-foreground truncate">{names.join(" → ")}</p>
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shrink-0 focus-ring"
+                          onClick={() => handleBevestig(proposal.automationIds)}
+                        >
+                          Bevestig
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-        {/* Grid */}
-        {filteredFlows.length > 0 ? (
-          <>
-            <p className="text-sm text-muted-foreground mb-4">
-              {filteredFlows.length} flow{filteredFlows.length === 1 ? "" : "s"} gevonden
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {filteredFlows.map(({ flow, hasUpdate }) => (
-                <FlowCard key={flow.id} flow={flow} autoMap={autoMap} hasUpdate={hasUpdate} />
-              ))}
-            </div>
-          </>
-        ) : flows.length === 0 ? (
-          <div className="card-elevated p-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              Geen flows gevonden. Voeg koppelingen toe aan je automatiseringen om flows te detecteren.
-            </p>
-          </div>
-        ) : (
-          <div className="card-elevated p-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              Geen flows gevonden met deze zoekopdracht.
-            </p>
-          </div>
-        )}
+            {/* Search + filters */}
+            {flows.length > 0 && (
+              <div className="card-elevated p-3 mb-6 flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Zoek op naam of beschrijving…"
+                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground focus-ring"
+                  />
+                </div>
+                <select
+                  value={filterSysteem}
+                  onChange={(e) => setFilterSysteem(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
+                >
+                  <option value="">Alle systemen</option>
+                  {allSystems.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
+                >
+                  <option value="">Alle statussen</option>
+                  <option value="actief">Actief</option>
+                  <option value="update">Update beschikbaar</option>
+                </select>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as "recent" | "naam")}
+                  className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus-ring"
+                >
+                  <option value="recent">Recent</option>
+                  <option value="naam">Naam A–Z</option>
+                </select>
+              </div>
+            )}
+
+            {/* Grid */}
+            {filteredFlows.length > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {filteredFlows.length} flow{filteredFlows.length === 1 ? "" : "s"} gevonden
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {filteredFlows.map(({ flow, hasUpdate }) => (
+                    <FlowCard key={flow.id} flow={flow} autoMap={autoMap} hasUpdate={hasUpdate} />
+                  ))}
+                </div>
+              </>
+            ) : flows.length === 0 ? (
+              <div className="card-elevated p-12 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Geen flows gevonden. Voeg koppelingen toe aan je automatiseringen om flows te detecteren.
+                </p>
+              </div>
+            ) : (
+              <div className="card-elevated p-12 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Geen flows gevonden met deze zoekopdracht.
+                </p>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="suggesties" className="mt-4">
+            <FlowSuggestiesTab />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {confirmState && !confirmState.loading && (
