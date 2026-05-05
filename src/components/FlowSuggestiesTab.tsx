@@ -372,11 +372,11 @@ function FlowKandidaatCard({
           </div>
           <MiniChain group={group} />
         </div>
-        <div className="flex shrink-0 items-center gap-2 mt-0.5">
-          <span className="text-[10px] font-medium text-muted-foreground">
-            {group.confirmedCount} van {group.totalCount} bevestigd
+        <div className="mt-0.5 grid shrink-0 grid-cols-[5.75rem_4.25rem] items-center gap-2">
+          <span className="inline-flex h-7 items-center justify-center rounded-md bg-muted px-2 text-[10px] font-semibold tabular-nums text-muted-foreground">
+            {group.confirmedCount}/{group.totalCount} geselecteerd
           </span>
-          <span className="rounded-md border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground">
+          <span className="inline-flex h-7 items-center justify-center rounded-md border border-border px-2 text-[10px] font-semibold text-muted-foreground">
             {open ? "Sluiten" : "Details"}
           </span>
         </div>
@@ -401,17 +401,15 @@ function FlowKandidaatCard({
       )}
 
       {open && (
-        <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-3 bg-muted/20">
-          <p className="text-xs text-muted-foreground">
-            {group.confirmedCount === 0
-              ? "Selecteer eerst minimaal één koppeling om als flow op te slaan"
-              : `${group.confirmedCount} koppeling${group.confirmedCount !== 1 ? "en" : ""} geselecteerd`}
+        <div className="grid min-h-[3.5rem] grid-cols-[minmax(0,1fr)_9.75rem] items-center gap-3 border-t border-border bg-muted/20 px-4 py-3">
+          <p className="truncate text-xs text-muted-foreground">
+            Selecteer koppelingen en sla daarna op als flow.
           </p>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex h-8 w-full items-center justify-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={group.confirmedCount === 0}
-            title={group.confirmedCount === 0 ? "Selecteer eerst minimaal één koppeling" : undefined}
+            title={group.confirmedCount === 0 ? "Selecteer eerst minimaal een koppeling" : undefined}
             onClick={(e) => {
               e.stopPropagation();
               onAccepteer(group);
@@ -700,7 +698,7 @@ function SuggestieRij({
       </button>
 
       {s.confirmed ? (
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-[12rem] shrink-0 items-center justify-end gap-2">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white shadow-sm">
             <CheckCircle2 className="h-4 w-4" />
           </span>
@@ -720,7 +718,7 @@ function SuggestieRij({
           </button>
         </div>
       ) : s.rejected ? (
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-[12rem] shrink-0 items-center justify-end gap-2">
           <XCircle className="h-4 w-4 text-red-500" />
           <button
             type="button"
@@ -737,7 +735,7 @@ function SuggestieRij({
           </button>
         </div>
       ) : (
-        <div className="flex shrink-0 gap-1.5">
+        <div className="flex w-[12rem] shrink-0 justify-end gap-1.5">
           <Button
             variant="outline"
             size="sm"
@@ -773,3 +771,4 @@ function SuggestieRij({
     </div>
   );
 }
+
