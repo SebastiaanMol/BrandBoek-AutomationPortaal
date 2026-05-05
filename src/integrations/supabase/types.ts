@@ -35,6 +35,8 @@ export type Database = {
           geverifieerd_door: string
           gitlab_file_path: string | null
           gitlab_last_commit: string | null
+          hubspot_last_run_at: string | null
+          hubspot_run_count_365d: number | null
           id: string
           import_proposal: Json | null
           import_source: string | null
@@ -79,6 +81,8 @@ export type Database = {
           geverifieerd_door?: string
           gitlab_file_path?: string | null
           gitlab_last_commit?: string | null
+          hubspot_last_run_at?: string | null
+          hubspot_run_count_365d?: number | null
           id: string
           import_proposal?: Json | null
           import_source?: string | null
@@ -123,6 +127,8 @@ export type Database = {
           geverifieerd_door?: string
           gitlab_file_path?: string | null
           gitlab_last_commit?: string | null
+          hubspot_last_run_at?: string | null
+          hubspot_run_count_365d?: number | null
           id?: string
           import_proposal?: Json | null
           import_source?: string | null

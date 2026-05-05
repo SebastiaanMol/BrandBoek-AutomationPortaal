@@ -10,7 +10,7 @@ import {
   triggerZapierSync,
 } from "../supabaseStorage";
 
-type SyncResult = { inserted: number; updated: number; deactivated: number; total: number };
+type SyncResult = { inserted: number; updated: number; deactivated: number; deletedRejected?: number; total: number };
 
 export function useIntegration(type: string) {
   return useQuery({
@@ -48,6 +48,7 @@ function useIntegrationSync(
     mutationFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
+      queryClient.invalidateQueries({ queryKey: ["rejected-hubspot-automations"] });
       queryClient.invalidateQueries({ queryKey: ["integration", integrationKey] });
     },
   });

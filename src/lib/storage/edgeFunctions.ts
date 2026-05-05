@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-type SyncResult = { inserted: number; updated: number; deactivated: number; total: number };
+type SyncResult = { inserted: number; updated: number; deactivated: number; deletedRejected?: number; total: number };
 
 export async function invokeEdgeFunction<T = SyncResult>(
   name: string,

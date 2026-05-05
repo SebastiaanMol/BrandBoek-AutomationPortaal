@@ -6,8 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import Dashboard from "./pages/Dashboard";
-import NieuweAutomatiseringPage from "./pages/NieuweAutomatiseringPage";
-import AlleAutomatiseringen from "./pages/AlleAutomatiseringen";
+import AutomationsPage from "./pages/AutomationsPage";
 import Analyse from "./pages/Analyse";
 import BewerkAutomatisering from "./pages/BewerkAutomatisering";
 import AuthPage from "./pages/AuthPage";
@@ -42,10 +41,10 @@ function ProtectedRoutes() {
     <AppLayout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/nieuw" element={<NieuweAutomatiseringPage />} />
-        <Route path="/alle" element={<AlleAutomatiseringen />} />
+        <Route path="/nieuw" element={<Navigate to="/alle?tab=new" replace />} />
+        <Route path="/alle" element={<AutomationsPage />} />
         <Route path="/bewerk/:id" element={<BewerkAutomatisering />} />
-<Route path="/analyse" element={<Analyse />} />
+        <Route path="/analyse" element={<Analyse />} />
         <Route path="/instellingen" element={<Instellingen />} />
         <Route path="/processen" element={<Processen />} />
         <Route path="/imports" element={<Imports />} />

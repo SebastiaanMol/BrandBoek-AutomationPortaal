@@ -88,12 +88,16 @@ export interface Automatisering {
   externalId?: string;
   source?: string;
   lastSyncedAt?: string | null;
+  hubspotLastRunAt?: string | null;
+  hubspotRunCount365d?: number | null;
   branches?: AutomationBranch[];
   beschrijvingInSimpeleTaal?: string[];
   gitlabFilePath?: string;
   gitlabLastCommit?: string;
   aiDescription?: string;
   aiDescriptionUpdatedAt?: string | null;
+  cleanupDeleteCandidate?: boolean;
+  cleanupDeleteCandidateAt?: string | null;
   pipelineId?:            string;
   stageId?:               string;
 }

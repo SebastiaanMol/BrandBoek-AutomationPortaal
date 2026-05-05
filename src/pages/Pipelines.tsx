@@ -1,9 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { Layers2, Plus, RefreshCw } from "lucide-react";
 import { useCreateCustomPipeline, useHubSpotPipelinesSync, usePipelines } from "@/lib/queryHooks/pipelines";
 import { PipelineCard } from "@/components/PipelineCard";
 import { CustomPipelineDialog } from "@/components/CustomPipelineDialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CustomPipelineInput } from "@/lib/storage/pipelines";
 
 type PipelineFilter = "all" | "hubspot" | "custom" | "inactive";
@@ -58,77 +60,71 @@ export default function Pipelines(): ReactNode {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
-        <header className="relative overflow-hidden rounded-2xl border border-border bg-gradient-hero mb-8">
-          <div className="px-8 py-8">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
-                <Layers2 className="w-4 h-4" />
-              </span>
-              <span className="text-[11px] uppercase tracking-[0.14em] font-semibold text-primary">
-                Pipelines
-              </span>
-            </div>
-            <div className="flex items-end justify-between gap-4 flex-wrap">
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+        <Tabs value={filter} onValueChange={(v) => setFilter(v as PipelineFilter)}>
+          <div className="rounded-2xl border border-border overflow-hidden mb-8">
+            <header className="relative bg-gradient-hero px-8 py-8">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
+                  <Layers2 className="w-4 h-4" />
+                </span>
+                <span className="text-[11px] uppercase tracking-[0.14em] font-semibold text-primary">
                   Pipelines
-                </h1>
-                <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-                  Deal-pipelines vanuit HubSpot en handmatige processen buiten HubSpot.
-                </p>
+                </span>
               </div>
-              <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-2">
-                <button
-                  type="button"
-                  className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 sm:w-44"
-                  onClick={handleSync}
-                  disabled={syncMutation.isPending}
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-                  {syncMutation.isPending ? "Bezig..." : "Sync HubSpot"}
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-44"
-                  onClick={() => setCustomDialogOpen(true)}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Intern proces
-                </button>
+              <div className="flex items-end justify-between gap-4 flex-wrap">
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+                    Pipelines
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+                    Deal-pipelines vanuit HubSpot en handmatige processen buiten HubSpot.
+                  </p>
+                </div>
+                <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-2">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 sm:w-44"
+                    onClick={handleSync}
+                    disabled={syncMutation.isPending}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                    {syncMutation.isPending ? "Bezig..." : "Sync HubSpot"}
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-44"
+                    onClick={() => setCustomDialogOpen(true)}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Intern proces
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <StatBadge label="Actief" value={activePipelineCount} />
-              <StatBadge label="Pipelines" value={pipelines.length} />
-              <StatBadge label="Stages" value={totalStages} />
-              <StatBadge label="HubSpot" value={hubspotPipelines.length} />
-              <StatBadge label="Intern" value={customPipelines.length} />
+              <div className="mt-6 flex flex-wrap gap-3">
+                <StatBadge label="Actief" value={activePipelineCount} />
+                <StatBadge label="Pipelines" value={pipelines.length} />
+                <StatBadge label="Stages" value={totalStages} />
+                <StatBadge label="HubSpot" value={hubspotPipelines.length} />
+                <StatBadge label="Intern" value={customPipelines.length} />
+              </div>
+            </header>
+            <div className="border-t border-border bg-card px-6">
+              <TabsList className="h-auto bg-transparent p-0 gap-0 rounded-none">
+                <TabsTrigger value="all" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                  Alles
+                </TabsTrigger>
+                <TabsTrigger value="hubspot" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                  HubSpot
+                </TabsTrigger>
+                <TabsTrigger value="custom" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                  Intern
+                </TabsTrigger>
+                <TabsTrigger value="inactive" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                  Inactief
+                </TabsTrigger>
+              </TabsList>
             </div>
           </div>
-        </header>
-
-        {pipelines.length > 0 && (
-          <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border bg-card/80 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Weergave</p>
-              <p className="text-xs text-muted-foreground">Filter op bron of status.</p>
-            </div>
-            <div className="grid w-full grid-cols-2 gap-2 rounded-xl border border-border bg-muted/40 p-1.5 sm:inline-grid sm:w-auto sm:grid-cols-4">
-              <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
-                Alles
-              </FilterButton>
-              <FilterButton active={filter === "hubspot"} onClick={() => setFilter("hubspot")}>
-                HubSpot
-              </FilterButton>
-              <FilterButton active={filter === "custom"} onClick={() => setFilter("custom")}>
-                Intern
-              </FilterButton>
-              <FilterButton active={filter === "inactive"} onClick={() => setFilter("inactive")}>
-                Inactief
-              </FilterButton>
-            </div>
-          </div>
-        )}
 
         {pipelines.length === 0 && (
           <div className="card-elevated p-12 text-center">
@@ -186,6 +182,7 @@ export default function Pipelines(): ReactNode {
             </div>
           </div>
         )}
+        </Tabs>
       </div>
 
       <CustomPipelineDialog
@@ -209,25 +206,3 @@ const StatBadge = ({ label, value }: { label: string; value: number }) => (
   </div>
 );
 
-const FilterButton = ({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: ReactNode;
-  onClick: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={[
-      "min-h-8 min-w-[78px] rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      active
-        ? "border border-primary/40 bg-primary text-primary-foreground shadow-sm"
-        : "border border-transparent text-muted-foreground hover:bg-background/70 hover:text-foreground",
-    ].join(" ")}
-  >
-    {children}
-  </button>
-);
