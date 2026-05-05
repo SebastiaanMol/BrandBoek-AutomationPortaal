@@ -8,9 +8,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
+  useAccepteerFlowKandidaat,
   useBevestigFlowSuggestie,
   useDetecteerSuggesties,
   useFlowSuggesties,
@@ -18,10 +19,24 @@ import {
   useOngedaanVerwerpFlowSuggestie,
   useVerwerpFlowSuggestie,
 } from "@/lib/queryHooks/automationLinks";
+import { useCreateFlow } from "@/lib/queryHooks/flows";
+import { nameFlow } from "@/lib/storage/flows";
+import { FlowConfirmDialog } from "@/components/FlowConfirmDialog";
+import type { Automatisering, Systeem } from "@/lib/types";
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
 import { groupFlowSuggesties } from "@/lib/flowSuggestionGroups";
 import type { FlowSuggestionGroup } from "@/lib/flowSuggestionGroups";
 import { useAutomatiseringen } from "@/lib/queryHooks/automations";
+
+interface AcceptState {
+  group: FlowSuggestionGroup;
+  automationIds: string[];
+  aiName: string;
+  aiBeschrijving: string;
+  aiError: boolean;
+  loading: boolean;
+  saving: boolean;
+}
 
 export function FlowSuggestiesTab() {
   const { data: suggesties = [], isLoading } = useFlowSuggesties();
@@ -30,10 +45,19 @@ export function FlowSuggestiesTab() {
   const verwerp = useVerwerpFlowSuggestie();
   const ongedaanBevestig = useOngedaanBevestigFlowSuggestie();
   const ongedaanVerwerp = useOngedaanVerwerpFlowSuggestie();
+  const { data: automations = [] } = useAutomatiseringen();
+  const createFlow = useCreateFlow();
+  const accepteerKandidaat = useAccepteerFlowKandidaat();
+  const autoMap = useMemo(
+    () => new Map(automations.map((a) => [a.id, a])),
+    [automations],
+  );
 
   const [selected, setSelected] = useState<FlowSuggestie | null>(null);
 
-  const groups = groupFlowSuggesties(suggesties);
+  const [acceptState, setAcceptState] = useState<AcceptState | null>(null);
+
+  const groups = useMemo(() => groupFlowSuggesties(suggesties), [suggesties]);
 
   function handleDetect() {
     detecteer.mutate(undefined, {
@@ -57,6 +81,81 @@ export function FlowSuggestiesTab() {
     )
       .then(() => toast.success(`${unreviewed.length} koppelingen bevestigd`))
       .catch(() => toast.error("Kon niet alle koppelingen bevestigen"));
+  }
+
+  async function handleAccepteer(group: FlowSuggestionGroup): Promise<void> {
+    const confirmedSuggesties = group.suggestions.filter((s) => s.confirmed);
+    const confirmedNodeIds = new Set([
+      ...confirmedSuggesties.map((s) => s.fromId),
+      ...confirmedSuggesties.map((s) => s.toId),
+    ]);
+    const orderedIds = group.nodes
+      .filter((n) => confirmedNodeIds.has(n.id))
+      .map((n) => n.id);
+    const autos = orderedIds
+      .map((id) => autoMap.get(id))
+      .filter((a): a is Automatisering => a !== undefined);
+
+    setAcceptState({
+      group,
+      automationIds: orderedIds,
+      aiName: "",
+      aiBeschrijving: "",
+      aiError: false,
+      loading: true,
+      saving: false,
+    });
+
+    try {
+      const result = await nameFlow(autos);
+      setAcceptState((prev) =>
+        prev ? { ...prev, aiName: result.naam, aiBeschrijving: result.beschrijving, loading: false } : null,
+      );
+    } catch {
+      setAcceptState((prev) => (prev ? { ...prev, aiError: true, loading: false } : null));
+    }
+  }
+
+  async function handleRetryAi(): Promise<void> {
+    if (!acceptState) return;
+    setAcceptState((prev) => (prev ? { ...prev, aiError: false, loading: true } : null));
+    try {
+      const autos = acceptState.automationIds
+        .map((id) => autoMap.get(id))
+        .filter((a): a is Automatisering => a !== undefined);
+      const result = await nameFlow(autos);
+      setAcceptState((prev) =>
+        prev ? { ...prev, aiName: result.naam, aiBeschrijving: result.beschrijving, loading: false } : null,
+      );
+    } catch {
+      setAcceptState((prev) => (prev ? { ...prev, aiError: true, loading: false } : null));
+    }
+  }
+
+  async function handleSaveFlow(naam: string, beschrijving: string): Promise<void> {
+    if (!acceptState) return;
+    setAcceptState((prev) => (prev ? { ...prev, saving: true } : null));
+    try {
+      const autos = acceptState.automationIds
+        .map((id) => autoMap.get(id))
+        .filter((a): a is Automatisering => a !== undefined);
+      const systemen = [...new Set(autos.flatMap((a) => a.systemen))] as Systeem[];
+      const newFlow = await createFlow.mutateAsync({
+        naam,
+        beschrijving,
+        automationIds: acceptState.automationIds,
+        systemen,
+      });
+      await accepteerKandidaat.mutateAsync({
+        nodeIds: acceptState.group.nodes.map((n) => n.id),
+        flowId: newFlow.id,
+      });
+      toast.success(`Flow "${naam}" aangemaakt`);
+      setAcceptState(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Opslaan mislukt");
+      setAcceptState((prev) => (prev ? { ...prev, saving: false } : null));
+    }
   }
 
   return (
@@ -120,7 +219,7 @@ export function FlowSuggestiesTab() {
           onOngedaanBevestig={ongedaanBevestig}
           onOngedaanVerwerp={ongedaanVerwerp}
           onOpenDetail={setSelected}
-          onAccepteer={() => {}}
+          onAccepteer={handleAccepteer}
         />
       ))}
 
@@ -140,6 +239,21 @@ export function FlowSuggestiesTab() {
           }}
           bevestigPending={bevestig.isPending}
           verwerpPending={verwerp.isPending}
+        />
+      )}
+
+      {acceptState && !acceptState.loading && (
+        <FlowConfirmDialog
+          automations={acceptState.automationIds
+            .map((id) => autoMap.get(id))
+            .filter((a): a is Automatisering => a !== undefined)}
+          initialName={acceptState.aiName}
+          initialBeschrijving={acceptState.aiBeschrijving}
+          aiError={acceptState.aiError}
+          onRetryAi={handleRetryAi}
+          onSave={handleSaveFlow}
+          onCancel={() => setAcceptState(null)}
+          saving={acceptState.saving}
         />
       )}
     </div>
