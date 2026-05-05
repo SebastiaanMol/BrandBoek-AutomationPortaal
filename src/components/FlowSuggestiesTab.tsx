@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   useBevestigFlowSuggestie,
@@ -42,15 +42,20 @@ export function FlowSuggestiesTab() {
     });
   }
 
-  const webhookSuggesties = suggesties.filter((s) => s.zekerheid === "webhook");
+  const webhookSuggesties = suggesties.filter(
+    (s) => s.zekerheid === "webhook" && !s.confirmed && !s.rejected,
+  );
 
   function handleBulkBevestig() {
+    const unreviewed = suggesties.filter(
+      (s) => s.zekerheid === "webhook" && !s.confirmed && !s.rejected,
+    );
     Promise.all(
-      webhookSuggesties.map((s) =>
+      unreviewed.map((s) =>
         bevestig.mutateAsync({ fromId: s.fromId, toId: s.toId }),
       ),
     )
-      .then(() => toast.success(`${webhookSuggesties.length} koppelingen bevestigd`))
+      .then(() => toast.success(`${unreviewed.length} koppelingen bevestigd`))
       .catch(() => toast.error("Kon niet alle koppelingen bevestigen"));
   }
 
@@ -68,15 +73,15 @@ export function FlowSuggestiesTab() {
               {webhookSuggesties.length} hoge zekerheid
             </span>
           )}
-          {suggesties.filter((s) => s.zekerheid === "ai").length > 0 && (
+          {suggesties.filter((s) => s.zekerheid === "ai" && !s.confirmed && !s.rejected).length > 0 && (
             <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-700">
-              {suggesties.filter((s) => s.zekerheid === "ai").length} AI-suggestie
+              {suggesties.filter((s) => s.zekerheid === "ai" && !s.confirmed && !s.rejected).length} AI-suggestie
             </span>
           )}
         </div>
         <div className="flex gap-2">
           {webhookSuggesties.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleBulkBevestig} disabled={bevestig.isPending}>
+            <Button variant="outline" size="sm" onClick={handleBulkBevestig} disabled={bevestig.isPending || ongedaanBevestig.isPending}>
               Alle hoge zekerheid bevestigen
             </Button>
           )}
@@ -115,6 +120,7 @@ export function FlowSuggestiesTab() {
           onOngedaanBevestig={ongedaanBevestig}
           onOngedaanVerwerp={ongedaanVerwerp}
           onOpenDetail={setSelected}
+          onAccepteer={() => {}}
         />
       ))}
 
@@ -160,6 +166,7 @@ function FlowKandidaatCard({
   onOngedaanBevestig,
   onOngedaanVerwerp,
   onOpenDetail,
+  onAccepteer,
 }: {
   group: FlowSuggestionGroup;
   onBevestig: ReturnType<typeof useBevestigFlowSuggestie>;
@@ -167,20 +174,86 @@ function FlowKandidaatCard({
   onOngedaanBevestig: ReturnType<typeof useOngedaanBevestigFlowSuggestie>;
   onOngedaanVerwerp: ReturnType<typeof useOngedaanVerwerpFlowSuggestie>;
   onOpenDetail: (suggestie: FlowSuggestie) => void;
+  onAccepteer: (group: FlowSuggestionGroup) => void;
 }) {
+  const [open, setOpen] = useState(true);
+  const first = group.nodes[0];
+  const last = group.nodes[group.nodes.length - 1];
+
   return (
-    <div className="rounded-lg border divide-y divide-border">
-      {group.suggestions.map((suggestie) => (
-        <SuggestieRij
-          key={`${suggestie.fromId}-${suggestie.toId}`}
-          suggestie={suggestie}
-          onBevestig={onBevestig}
-          onVerwerp={onVerwerp}
-          onOngedaanBevestig={onOngedaanBevestig}
-          onOngedaanVerwerp={onOngedaanVerwerp}
-          onOpenDetail={() => onOpenDetail(suggestie)}
-        />
-      ))}
+    <div className="rounded-lg border overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left hover:bg-muted/30 transition-colors"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">
+              {first?.naam ?? "Onbekende start"} naar {last?.naam ?? "onbekend einde"}
+            </span>
+            <CountBadge>{group.nodes.length} automations</CountBadge>
+            <CountBadge>{group.suggestions.length} koppelingen</CountBadge>
+            {group.webhookCount > 0 && (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                {group.webhookCount} webhook
+              </span>
+            )}
+            {group.aiCount > 0 && (
+              <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold text-yellow-700">
+                {group.aiCount} AI
+              </span>
+            )}
+          </div>
+          <MiniChain group={group} />
+        </div>
+        <div className="flex shrink-0 items-center gap-2 mt-0.5">
+          <span className="text-[10px] font-medium text-muted-foreground">
+            {group.confirmedCount} van {group.totalCount} bevestigd
+          </span>
+          <span className="rounded-md border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground">
+            {open ? "Sluiten" : "Details"}
+          </span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="divide-y divide-border border-t border-border">
+          {group.suggestions.map((suggestie) => (
+            <SuggestieRij
+              key={`${suggestie.fromId}-${suggestie.toId}`}
+              suggestie={suggestie}
+              onBevestig={onBevestig}
+              onVerwerp={onVerwerp}
+              onOngedaanBevestig={onOngedaanBevestig}
+              onOngedaanVerwerp={onOngedaanVerwerp}
+              onOpenDetail={() => onOpenDetail(suggestie)}
+            />
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-3 bg-muted/20">
+          <p className="text-xs text-muted-foreground">
+            {group.confirmedCount === 0
+              ? "Bevestig eerst minimaal één koppeling om als flow op te slaan"
+              : `${group.confirmedCount} koppeling${group.confirmedCount !== 1 ? "en" : ""} bevestigd`}
+          </p>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={group.confirmedCount === 0}
+            title={group.confirmedCount === 0 ? "Bevestig eerst minimaal één koppeling" : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAccepteer(group);
+            }}
+          >
+            Accepteer als Flow
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -338,6 +411,46 @@ function AutomatiseringCard({
       ) : (
         <p className="text-xs text-muted-foreground italic">Details niet beschikbaar</p>
       )}
+    </div>
+  );
+}
+
+function CountBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function MiniChain({ group }: { group: FlowSuggestionGroup }) {
+  return (
+    <div className="flex items-center gap-1.5 overflow-hidden pb-1">
+      {group.nodes.map((node, index) => {
+        const next = group.nodes[index + 1];
+        const edge = next
+          ? group.suggestions.find((s) => s.fromId === node.id && s.toId === next.id)
+          : undefined;
+        return (
+          <div key={node.id} className="flex items-center gap-1.5 shrink-0">
+            <span className="max-w-[150px] truncate rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
+              {node.naam}
+            </span>
+            {next && (
+              <span
+                className={[
+                  "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  edge?.zekerheid === "webhook"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-yellow-100 text-yellow-700",
+                ].join(" ")}
+              >
+                {edge?.zekerheid === "webhook" ? "webhook" : "AI"}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
