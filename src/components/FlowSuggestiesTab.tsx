@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo, useRef, type ReactNode, type PointerEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -593,8 +593,58 @@ function CountBadge({ children }: { children: ReactNode }) {
 }
 
 function MiniChain({ group }: { group: FlowSuggestionGroup }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({
+    active: false,
+    moved: false,
+    startX: 0,
+    scrollLeft: 0,
+  });
+
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    const container = scrollRef.current;
+    if (!container) return;
+    dragRef.current = {
+      active: true,
+      moved: false,
+      startX: event.clientX,
+      scrollLeft: container.scrollLeft,
+    };
+    container.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    const container = scrollRef.current;
+    const drag = dragRef.current;
+    if (!container || !drag.active) return;
+    const delta = event.clientX - drag.startX;
+    if (Math.abs(delta) > 3) drag.moved = true;
+    container.scrollLeft = drag.scrollLeft - delta;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
+    const container = scrollRef.current;
+    dragRef.current.active = false;
+    container?.releasePointerCapture(event.pointerId);
+    event.stopPropagation();
+  }
+
   return (
-    <div className="w-full overflow-x-auto pb-2 pr-2">
+    <div
+      ref={scrollRef}
+      className="w-full cursor-grab select-none overflow-x-auto pb-2 pr-2 active:cursor-grabbing [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
       <div className="flex min-w-max items-center gap-2">
       {group.nodes.map((node, index) => {
         const next = group.nodes[index + 1];
