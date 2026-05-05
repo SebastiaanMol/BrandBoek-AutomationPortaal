@@ -14,6 +14,51 @@ export interface FlowSuggestionGroup {
   totalCount: number;
 }
 
+function orderNodes(
+  nodeIds: Set<string>,
+  suggestions: FlowSuggestie[],
+  nodeMap: Map<string, { naam: string; categorie: string }>,
+): Array<{ id: string; naam: string; categorie: string }> {
+  const ids = [...nodeIds];
+  const indegree = new Map(ids.map((id) => [id, 0]));
+  const outgoing = new Map(ids.map((id) => [id, [] as string[]]));
+
+  for (const suggestion of suggestions) {
+    if (!nodeIds.has(suggestion.fromId) || !nodeIds.has(suggestion.toId)) continue;
+    outgoing.get(suggestion.fromId)?.push(suggestion.toId);
+    indegree.set(suggestion.toId, (indegree.get(suggestion.toId) ?? 0) + 1);
+  }
+
+  for (const targets of outgoing.values()) {
+    targets.sort((a, b) =>
+      (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl"),
+    );
+  }
+
+  const queue = ids
+    .filter((id) => (indegree.get(id) ?? 0) === 0)
+    .sort((a, b) => (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl"));
+  const ordered: string[] = [];
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    ordered.push(id);
+    for (const target of outgoing.get(id) ?? []) {
+      const nextIndegree = (indegree.get(target) ?? 0) - 1;
+      indegree.set(target, nextIndegree);
+      if (nextIndegree === 0) queue.push(target);
+    }
+    queue.sort((a, b) => (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl"));
+  }
+
+  const orderedIds = ordered.length === ids.length ? ordered : ids;
+  return orderedIds.map((id) => ({
+    id,
+    naam: nodeMap.get(id)?.naam ?? "",
+    categorie: nodeMap.get(id)?.categorie ?? "",
+  }));
+}
+
 /**
  * Groups FlowSuggestie items into connected components using union-find.
  * Each group represents a cluster of automations that are all interconnected
@@ -81,11 +126,13 @@ export function groupFlowSuggesties(suggestions: FlowSuggestie[]): FlowSuggestio
       }
     }
 
-    const nodes = Array.from(nodesSet).map((id) => ({
-      id,
-      naam: nodeMap.get(id)?.naam ?? "",
-      categorie: nodeMap.get(id)?.categorie ?? "",
-    }));
+    const nodes = orderNodes(nodesSet, componentSuggestions, nodeMap);
+    const nodeOrder = new Map(nodes.map((node, index) => [node.id, index]));
+    componentSuggestions.sort((a, b) => {
+      const fromDelta = (nodeOrder.get(a.fromId) ?? 0) - (nodeOrder.get(b.fromId) ?? 0);
+      if (fromDelta !== 0) return fromDelta;
+      return (nodeOrder.get(a.toId) ?? 0) - (nodeOrder.get(b.toId) ?? 0);
+    });
 
     // Count webhook vs AI suggestions
     let webhookCount = 0;

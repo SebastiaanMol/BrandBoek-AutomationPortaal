@@ -9,11 +9,11 @@ import {
 } from "@/components/ui/dialog";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { useState, useMemo, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useAccepteerFlowKandidaat,
   useBevestigFlowSuggestie,
-  useDetecteerSuggesties,
   useFlowSuggesties,
   useOngedaanBevestigFlowSuggestie,
   useOngedaanVerwerpFlowSuggestie,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/queryHooks/automationLinks";
 import { useCreateFlow } from "@/lib/queryHooks/flows";
 import { nameFlow } from "@/lib/storage/flows";
+import { invokeEdgeFunction } from "@/lib/storage/edgeFunctions";
 import { FlowConfirmDialog } from "@/components/FlowConfirmDialog";
 import type { Automatisering, Systeem } from "@/lib/types";
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
@@ -38,9 +39,20 @@ interface AcceptState {
   saving: boolean;
 }
 
+type DetectProgress = {
+  label: string;
+  current: number;
+  total: number;
+};
+
+type DetectMetaResult = {
+  aiTotal: number;
+  batches: number;
+};
+
 export function FlowSuggestiesTab() {
+  const queryClient = useQueryClient();
   const { data: suggesties = [], isLoading } = useFlowSuggesties();
-  const detecteer = useDetecteerSuggesties();
   const bevestig = useBevestigFlowSuggestie();
   const verwerp = useVerwerpFlowSuggestie();
   const ongedaanBevestig = useOngedaanBevestigFlowSuggestie();
@@ -56,32 +68,54 @@ export function FlowSuggestiesTab() {
   const [selected, setSelected] = useState<FlowSuggestie | null>(null);
 
   const [acceptState, setAcceptState] = useState<AcceptState | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [progress, setProgress] = useState<DetectProgress | null>(null);
 
   const groups = useMemo(() => groupFlowSuggesties(suggesties), [suggesties]);
 
-  function handleDetect() {
-    detecteer.mutate(undefined, {
-      onSuccess: () => toast.success("Suggesties gedetecteerd"),
-      onError: (e) => toast.error(e instanceof Error ? e.message : "Detectie mislukt"),
-    });
+  async function handleDetect() {
+    const batchSize = 10;
+    setIsDetecting(true);
+    setProgress({ label: "Voorbereiden", current: 0, total: 1 });
+
+    try {
+      const meta = await invokeEdgeFunction<DetectMetaResult>("detect-flow-links", {
+        mode: "meta",
+        limit: batchSize,
+      });
+      const totalBatches = Math.max(1, meta.batches || Math.ceil((meta.aiTotal ?? 0) / batchSize));
+      const totalSteps = 1 + totalBatches;
+
+      setProgress({ label: "Webhook matches controleren", current: 0, total: totalSteps });
+      await invokeEdgeFunction("detect-flow-links", { mode: "webhook", limit: batchSize });
+
+      for (let batch = 0; batch < totalBatches; batch += 1) {
+        setProgress({
+          label: `AI batch ${batch + 1} van ${totalBatches}`,
+          current: 1 + batch,
+          total: totalSteps,
+        });
+        await invokeEdgeFunction("detect-flow-links", {
+          mode: "ai",
+          offset: batch * batchSize,
+          limit: batchSize,
+        });
+      }
+
+      setProgress({ label: "Suggesties verversen", current: totalSteps, total: totalSteps });
+      await queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
+      toast.success("Suggesties gedetecteerd");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Detectie mislukt");
+    } finally {
+      setIsDetecting(false);
+      setProgress(null);
+    }
   }
 
   const webhookSuggesties = suggesties.filter(
     (s) => s.zekerheid === "webhook" && !s.confirmed && !s.rejected,
   );
-
-  function handleBulkBevestig() {
-    const unreviewed = suggesties.filter(
-      (s) => s.zekerheid === "webhook" && !s.confirmed && !s.rejected,
-    );
-    Promise.all(
-      unreviewed.map((s) =>
-        bevestig.mutateAsync({ fromId: s.fromId, toId: s.toId }),
-      ),
-    )
-      .then(() => toast.success(`${unreviewed.length} koppelingen bevestigd`))
-      .catch(() => toast.error("Kon niet alle koppelingen bevestigen"));
-  }
 
   async function handleAccepteer(group: FlowSuggestionGroup): Promise<void> {
     const confirmedSuggesties = group.suggestions.filter((s) => s.confirmed);
@@ -178,24 +212,19 @@ export function FlowSuggestiesTab() {
             </span>
           )}
         </div>
-        <div className="flex gap-2">
-          {webhookSuggesties.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleBulkBevestig} disabled={bevestig.isPending || ongedaanBevestig.isPending}>
-              Alle hoge zekerheid bevestigen
-            </Button>
+        <Button size="sm" onClick={handleDetect} disabled={isDetecting}>
+          {isDetecting ? (
+            <>
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              Detecteren...
+            </>
+          ) : (
+            "Detecteer suggesties"
           )}
-          <Button size="sm" onClick={handleDetect} disabled={detecteer.isPending}>
-            {detecteer.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                Detecteren...
-              </>
-            ) : (
-              "Detecteer suggesties"
-            )}
-          </Button>
-        </div>
+        </Button>
       </div>
+
+      {isDetecting && progress && <DetectionProgress progress={progress} />}
 
       {isLoading && (
         <div className="flex justify-center py-10">
@@ -260,6 +289,27 @@ export function FlowSuggestiesTab() {
   );
 }
 
+function DetectionProgress({ progress }: { progress: DetectProgress }) {
+  const percentage = Math.min(100, Math.max(6, Math.round((progress.current / Math.max(1, progress.total)) * 100)));
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+      <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+        <span className="font-medium text-foreground">{progress.label}</span>
+        <span className="shrink-0 text-muted-foreground">
+          {Math.min(progress.current, progress.total)} / {progress.total}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-background">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-300"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 const CATEGORIE_COLORS: Record<string, string> = {
   "HubSpot Workflow": "bg-blue-50 text-blue-600",
   "GitLab Script": "bg-green-50 text-green-700",
@@ -293,6 +343,7 @@ function FlowKandidaatCard({
   const [open, setOpen] = useState(true);
   const first = group.nodes[0];
   const last = group.nodes[group.nodes.length - 1];
+  const nodeStepLabels = new Map(group.nodes.map((node, index) => [node.id, stepLabel(index)]));
 
   return (
     <div className="rounded-lg border overflow-hidden">
@@ -337,6 +388,8 @@ function FlowKandidaatCard({
             <SuggestieRij
               key={`${suggestie.fromId}-${suggestie.toId}`}
               suggestie={suggestie}
+              fromStep={nodeStepLabels.get(suggestie.fromId) ?? "?"}
+              toStep={nodeStepLabels.get(suggestie.toId) ?? "?"}
               onBevestig={onBevestig}
               onVerwerp={onVerwerp}
               onOngedaanBevestig={onOngedaanBevestig}
@@ -548,6 +601,9 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
         return (
           <div key={node.id} className="flex items-center gap-1.5 shrink-0">
             <span className="max-w-[150px] truncate rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
+              <span className="mr-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                {stepLabel(index)}
+              </span>
               {node.naam}
             </span>
             {next && (
@@ -569,8 +625,20 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
   );
 }
 
+function stepLabel(index: number): string {
+  let value = "";
+  let n = index;
+  do {
+    value = String.fromCharCode(65 + (n % 26)) + value;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return value;
+}
+
 function SuggestieRij({
   suggestie: s,
+  fromStep,
+  toStep,
   onBevestig,
   onVerwerp,
   onOngedaanBevestig,
@@ -578,6 +646,8 @@ function SuggestieRij({
   onOpenDetail,
 }: {
   suggestie: FlowSuggestie;
+  fromStep: string;
+  toStep: string;
   onBevestig: ReturnType<typeof useBevestigFlowSuggestie>;
   onVerwerp: ReturnType<typeof useVerwerpFlowSuggestie>;
   onOngedaanBevestig: ReturnType<typeof useOngedaanBevestigFlowSuggestie>;
@@ -598,9 +668,15 @@ function SuggestieRij({
         onClick={onOpenDetail}
       >
         <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+            {fromStep}
+          </span>
           <CategorieBadge categorie={s.fromCategorie} />
           <span className="truncate font-medium text-foreground">{s.fromNaam}</span>
           <span className="text-xs text-muted-foreground">naar</span>
+          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+            {toStep}
+          </span>
           <CategorieBadge categorie={s.toCategorie} />
           <span className="truncate font-medium text-foreground">{s.toNaam}</span>
         </div>

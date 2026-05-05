@@ -66,4 +66,20 @@ describe("groupFlowSuggesties — confirmedCount / totalCount", () => {
     expect(groups).toHaveLength(2);
     groups.forEach((g) => expect(g.totalCount).toBe(1));
   });
+
+  it("orders shuffled chain suggestions as A to B to C to D", () => {
+    const suggestions = [
+      makeSuggestie("c", "d", { fromNaam: "C", toNaam: "D" }),
+      makeSuggestie("a", "b", { fromNaam: "A", toNaam: "B" }),
+      makeSuggestie("b", "c", { fromNaam: "B", toNaam: "C" }),
+    ];
+    const groups = groupFlowSuggesties(suggestions);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].nodes.map((node) => node.id)).toEqual(["a", "b", "c", "d"]);
+    expect(groups[0].suggestions.map((suggestion) => `${suggestion.fromId}->${suggestion.toId}`)).toEqual([
+      "a->b",
+      "b->c",
+      "c->d",
+    ]);
+  });
 });
