@@ -63,6 +63,8 @@ export type FlowSuggestie = {
   toCategorie: string;
   zekerheid: "webhook" | "ai";
   redenering: string;
+  confirmed: boolean;
+  rejected: boolean;
 }
 
 export function toZekerheid(confidence: number): "webhook" | "ai" {
@@ -75,10 +77,9 @@ export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
   const { data, error } = await supabase
     .from("automatisering_ai_flows")
     .select(
-      "from_id, to_id, confidence, reasoning, from_auto:automatiseringen!from_id(naam, categorie), to_auto:automatiseringen!to_id(naam, categorie)",
+      "from_id, to_id, confidence, reasoning, confirmed, rejected, from_auto:automatiseringen!from_id(naam, categorie), to_auto:automatiseringen!to_id(naam, categorie)",
     )
-    .eq("confirmed", false)
-    .eq("rejected", false);
+    .is("flow_id", null);
   if (error) throw error;
   return (data ?? []).map((r) => ({
     fromId: r.from_id,
@@ -89,31 +90,89 @@ export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
     toCategorie: (r.to_auto as AutoRef)?.categorie ?? "",
     zekerheid: toZekerheid(r.confidence),
     redenering: r.reasoning ?? "",
+    confirmed: r.confirmed,
+    rejected: r.rejected,
   }));
 }
 
 export async function bevestigFlowSuggestie(fromId: string, toId: string): Promise<void> {
-  const { error: deleteError } = await supabase
+  const { error: updateError } = await supabase
     .from("automatisering_ai_flows")
-    .delete()
+    .update({ confirmed: true })
     .eq("from_id", fromId)
     .eq("to_id", toId);
-  if (deleteError) throw deleteError;
+  if (updateError) throw updateError;
 
-  const { error: insertError } = await supabase.from("automation_links").insert({
-    source_id: fromId,
-    target_id: toId,
-    match_type: "ai_flow",
-    confirmed: true,
-  });
+  const { error: insertError } = await supabase
+    .from("automation_links")
+    .upsert(
+      { source_id: fromId, target_id: toId, match_type: "manual", confirmed: true },
+      { onConflict: "source_id,target_id" },
+    );
   if (insertError) throw insertError;
 }
 
 export async function verwerpFlowSuggestie(fromId: string, toId: string): Promise<void> {
   const { error } = await supabase
     .from("automatisering_ai_flows")
-    .delete()
+    .update({ rejected: true })
     .eq("from_id", fromId)
     .eq("to_id", toId);
   if (error) throw error;
+}
+
+export async function ongedaanBevestigFlowSuggestie(fromId: string, toId: string): Promise<void> {
+  const { error: updateError } = await supabase
+    .from("automatisering_ai_flows")
+    .update({ confirmed: false })
+    .eq("from_id", fromId)
+    .eq("to_id", toId);
+  if (updateError) throw updateError;
+
+  const { error: deleteError } = await supabase
+    .from("automation_links")
+    .delete()
+    .eq("source_id", fromId)
+    .eq("target_id", toId);
+  if (deleteError) throw deleteError;
+}
+
+export async function ongedaanVerwerpFlowSuggestie(fromId: string, toId: string): Promise<void> {
+  const { error } = await supabase
+    .from("automatisering_ai_flows")
+    .update({ rejected: false })
+    .eq("from_id", fromId)
+    .eq("to_id", toId);
+  if (error) throw error;
+}
+
+export async function accepteerFlowKandidaat(nodeIds: string[], flowId: string): Promise<void> {
+  const { error } = await supabase
+    .from("automatisering_ai_flows")
+    .update({ flow_id: flowId })
+    .in("from_id", nodeIds);
+  if (error) throw error;
+}
+
+export async function fetchOpenSuggestiesVoorFlow(flowId: string): Promise<FlowSuggestie[]> {
+  const { data, error } = await supabase
+    .from("automatisering_ai_flows")
+    .select(
+      "from_id, to_id, confidence, reasoning, confirmed, rejected, from_auto:automatiseringen!from_id(naam, categorie), to_auto:automatiseringen!to_id(naam, categorie)",
+    )
+    .eq("flow_id", flowId)
+    .eq("confirmed", false);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    fromId: r.from_id,
+    toId: r.to_id,
+    fromNaam: (r.from_auto as AutoRef)?.naam ?? "",
+    toNaam: (r.to_auto as AutoRef)?.naam ?? "",
+    fromCategorie: (r.from_auto as AutoRef)?.categorie ?? "",
+    toCategorie: (r.to_auto as AutoRef)?.categorie ?? "",
+    zekerheid: toZekerheid(r.confidence),
+    redenering: r.reasoning ?? "",
+    confirmed: false,
+    rejected: r.rejected,
+  }));
 }

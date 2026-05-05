@@ -5,8 +5,12 @@ import {
   fetchAutomationLinks,
 } from "../supabaseStorage";
 import {
+  accepteerFlowKandidaat,
   bevestigFlowSuggestie,
   fetchFlowSuggesties,
+  fetchOpenSuggestiesVoorFlow,
+  ongedaanBevestigFlowSuggestie,
+  ongedaanVerwerpFlowSuggestie,
   verwerpFlowSuggestie,
 } from "../storage/automationLinks";
 import { invokeEdgeFunction } from "../storage/edgeFunctions";
@@ -57,6 +61,7 @@ export function useBevestigFlowSuggestie() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
       queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
+      queryClient.invalidateQueries({ queryKey: ["openSuggestiesVoorFlow"] });
     },
   });
 }
@@ -67,5 +72,46 @@ export function useVerwerpFlowSuggestie() {
     mutationFn: ({ fromId, toId }: { fromId: string; toId: string }) =>
       verwerpFlowSuggestie(fromId, toId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] }),
+  });
+}
+
+export function useOngedaanBevestigFlowSuggestie() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fromId, toId }: { fromId: string; toId: string }) =>
+      ongedaanBevestigFlowSuggestie(fromId, toId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
+      queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
+    },
+  });
+}
+
+export function useOngedaanVerwerpFlowSuggestie() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fromId, toId }: { fromId: string; toId: string }) =>
+      ongedaanVerwerpFlowSuggestie(fromId, toId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] }),
+  });
+}
+
+export function useAccepteerFlowKandidaat() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ nodeIds, flowId }: { nodeIds: string[]; flowId: string }) =>
+      accepteerFlowKandidaat(nodeIds, flowId),
+    onSuccess: (_, { flowId }) => {
+      queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
+      queryClient.invalidateQueries({ queryKey: ["openSuggestiesVoorFlow", flowId] });
+    },
+  });
+}
+
+export function useOpenSuggestiesVoorFlow(flowId: string | undefined) {
+  return useQuery({
+    queryKey: ["openSuggestiesVoorFlow", flowId],
+    queryFn: () => fetchOpenSuggestiesVoorFlow(flowId!),
+    enabled: !!flowId,
   });
 }

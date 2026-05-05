@@ -155,6 +155,7 @@ export type Database = {
           confidence: number
           confirmed: boolean
           created_at: string
+          flow_id: string | null
           from_id: string
           id: string
           reasoning: string | null
@@ -166,6 +167,7 @@ export type Database = {
           confidence?: number
           confirmed?: boolean
           created_at?: string
+          flow_id?: string | null
           from_id: string
           id?: string
           reasoning?: string | null
@@ -177,6 +179,7 @@ export type Database = {
           confidence?: number
           confirmed?: boolean
           created_at?: string
+          flow_id?: string | null
           from_id?: string
           id?: string
           reasoning?: string | null

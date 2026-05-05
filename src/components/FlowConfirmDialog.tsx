@@ -55,7 +55,7 @@ export function FlowConfirmDialog({
         {aiError && (
           <div className="mb-4 p-3 bg-destructive/10 rounded text-xs text-destructive">
             AI-naamgeving mislukt.{" "}
-            <button className="underline font-medium" onClick={onRetryAi}>
+            <button type="button" className="underline font-medium" onClick={onRetryAi}>
               Probeer opnieuw
             </button>
           </div>

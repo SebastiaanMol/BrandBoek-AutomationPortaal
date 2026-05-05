@@ -1,22 +1,63 @@
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { useState, useMemo, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
+  useAccepteerFlowKandidaat,
   useBevestigFlowSuggestie,
   useDetecteerSuggesties,
   useFlowSuggesties,
+  useOngedaanBevestigFlowSuggestie,
+  useOngedaanVerwerpFlowSuggestie,
   useVerwerpFlowSuggestie,
 } from "@/lib/queryHooks/automationLinks";
+import { useCreateFlow } from "@/lib/queryHooks/flows";
+import { nameFlow } from "@/lib/storage/flows";
+import { FlowConfirmDialog } from "@/components/FlowConfirmDialog";
+import type { Automatisering, Systeem } from "@/lib/types";
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
+import { groupFlowSuggesties } from "@/lib/flowSuggestionGroups";
+import type { FlowSuggestionGroup } from "@/lib/flowSuggestionGroups";
+import { useAutomatiseringen } from "@/lib/queryHooks/automations";
+
+interface AcceptState {
+  group: FlowSuggestionGroup;
+  automationIds: string[];
+  aiName: string;
+  aiBeschrijving: string;
+  aiError: boolean;
+  loading: boolean;
+  saving: boolean;
+}
 
 export function FlowSuggestiesTab() {
   const { data: suggesties = [], isLoading } = useFlowSuggesties();
   const detecteer = useDetecteerSuggesties();
   const bevestig = useBevestigFlowSuggestie();
   const verwerp = useVerwerpFlowSuggestie();
+  const ongedaanBevestig = useOngedaanBevestigFlowSuggestie();
+  const ongedaanVerwerp = useOngedaanVerwerpFlowSuggestie();
+  const { data: automations = [] } = useAutomatiseringen();
+  const createFlow = useCreateFlow();
+  const accepteerKandidaat = useAccepteerFlowKandidaat();
+  const autoMap = useMemo(
+    () => new Map(automations.map((a) => [a.id, a])),
+    [automations],
+  );
 
-  const webhookSuggesties = suggesties.filter((s) => s.zekerheid === "webhook");
-  const aiSuggesties = suggesties.filter((s) => s.zekerheid === "ai");
+  const [selected, setSelected] = useState<FlowSuggestie | null>(null);
+
+  const [acceptState, setAcceptState] = useState<AcceptState | null>(null);
+
+  const groups = useMemo(() => groupFlowSuggesties(suggesties), [suggesties]);
 
   function handleDetect() {
     detecteer.mutate(undefined, {
@@ -25,14 +66,96 @@ export function FlowSuggestiesTab() {
     });
   }
 
+  const webhookSuggesties = suggesties.filter(
+    (s) => s.zekerheid === "webhook" && !s.confirmed && !s.rejected,
+  );
+
   function handleBulkBevestig() {
+    const unreviewed = suggesties.filter(
+      (s) => s.zekerheid === "webhook" && !s.confirmed && !s.rejected,
+    );
     Promise.all(
-      webhookSuggesties.map((s) =>
+      unreviewed.map((s) =>
         bevestig.mutateAsync({ fromId: s.fromId, toId: s.toId }),
       ),
     )
-      .then(() => toast.success(`${webhookSuggesties.length} koppelingen bevestigd`))
+      .then(() => toast.success(`${unreviewed.length} koppelingen bevestigd`))
       .catch(() => toast.error("Kon niet alle koppelingen bevestigen"));
+  }
+
+  async function handleAccepteer(group: FlowSuggestionGroup): Promise<void> {
+    const confirmedSuggesties = group.suggestions.filter((s) => s.confirmed);
+    const confirmedNodeIds = new Set([
+      ...confirmedSuggesties.map((s) => s.fromId),
+      ...confirmedSuggesties.map((s) => s.toId),
+    ]);
+    const orderedIds = group.nodes
+      .filter((n) => confirmedNodeIds.has(n.id))
+      .map((n) => n.id);
+    const autos = orderedIds
+      .map((id) => autoMap.get(id))
+      .filter((a): a is Automatisering => a !== undefined);
+
+    setAcceptState({
+      group,
+      automationIds: orderedIds,
+      aiName: "",
+      aiBeschrijving: "",
+      aiError: false,
+      loading: true,
+      saving: false,
+    });
+
+    try {
+      const result = await nameFlow(autos);
+      setAcceptState((prev) =>
+        prev ? { ...prev, aiName: result.naam, aiBeschrijving: result.beschrijving, loading: false } : null,
+      );
+    } catch {
+      setAcceptState((prev) => (prev ? { ...prev, aiError: true, loading: false } : null));
+    }
+  }
+
+  async function handleRetryAi(): Promise<void> {
+    if (!acceptState) return;
+    setAcceptState((prev) => (prev ? { ...prev, aiError: false, loading: true } : null));
+    try {
+      const autos = acceptState.automationIds
+        .map((id) => autoMap.get(id))
+        .filter((a): a is Automatisering => a !== undefined);
+      const result = await nameFlow(autos);
+      setAcceptState((prev) =>
+        prev ? { ...prev, aiName: result.naam, aiBeschrijving: result.beschrijving, loading: false } : null,
+      );
+    } catch {
+      setAcceptState((prev) => (prev ? { ...prev, aiError: true, loading: false } : null));
+    }
+  }
+
+  async function handleSaveFlow(naam: string, beschrijving: string): Promise<void> {
+    if (!acceptState) return;
+    setAcceptState((prev) => (prev ? { ...prev, saving: true } : null));
+    try {
+      const autos = acceptState.automationIds
+        .map((id) => autoMap.get(id))
+        .filter((a): a is Automatisering => a !== undefined);
+      const systemen = [...new Set(autos.flatMap((a) => a.systemen))] as Systeem[];
+      const newFlow = await createFlow.mutateAsync({
+        naam,
+        beschrijving,
+        automationIds: acceptState.automationIds,
+        systemen,
+      });
+      await accepteerKandidaat.mutateAsync({
+        nodeIds: acceptState.group.nodes.map((n) => n.id),
+        flowId: newFlow.id,
+      });
+      toast.success(`Flow "${naam}" aangemaakt`);
+      setAcceptState(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Opslaan mislukt");
+      setAcceptState((prev) => (prev ? { ...prev, saving: false } : null));
+    }
   }
 
   return (
@@ -49,15 +172,15 @@ export function FlowSuggestiesTab() {
               {webhookSuggesties.length} hoge zekerheid
             </span>
           )}
-          {aiSuggesties.length > 0 && (
+          {suggesties.filter((s) => s.zekerheid === "ai" && !s.confirmed && !s.rejected).length > 0 && (
             <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-700">
-              {aiSuggesties.length} AI-suggestie
+              {suggesties.filter((s) => s.zekerheid === "ai" && !s.confirmed && !s.rejected).length} AI-suggestie
             </span>
           )}
         </div>
         <div className="flex gap-2">
           {webhookSuggesties.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleBulkBevestig} disabled={bevestig.isPending}>
+            <Button variant="outline" size="sm" onClick={handleBulkBevestig} disabled={bevestig.isPending || ongedaanBevestig.isPending}>
               Alle hoge zekerheid bevestigen
             </Button>
           )}
@@ -87,40 +210,51 @@ export function FlowSuggestiesTab() {
         </div>
       )}
 
-      {webhookSuggesties.length > 0 && (
-        <section className="space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Hoge zekerheid — webhook match
-          </p>
-          <div className="divide-y divide-border rounded-lg border">
-            {webhookSuggesties.map((s) => (
-              <SuggestieRij
-                key={`${s.fromId}-${s.toId}`}
-                suggestie={s}
-                onBevestig={bevestig}
-                onVerwerp={verwerp}
-              />
-            ))}
-          </div>
-        </section>
+      {groups.map((group) => (
+        <FlowKandidaatCard
+          key={group.id}
+          group={group}
+          onBevestig={bevestig}
+          onVerwerp={verwerp}
+          onOngedaanBevestig={ongedaanBevestig}
+          onOngedaanVerwerp={ongedaanVerwerp}
+          onOpenDetail={setSelected}
+          onAccepteer={handleAccepteer}
+        />
+      ))}
+
+      {selected && (
+        <SuggestieDetailDialog
+          suggestie={selected}
+          onClose={() => setSelected(null)}
+          onBevestig={(s) => {
+            bevestig.mutate({ fromId: s.fromId, toId: s.toId }, {
+              onSuccess: () => setSelected(null),
+            });
+          }}
+          onVerwerp={(s) => {
+            verwerp.mutate({ fromId: s.fromId, toId: s.toId }, {
+              onSuccess: () => setSelected(null),
+            });
+          }}
+          bevestigPending={bevestig.isPending}
+          verwerpPending={verwerp.isPending}
+        />
       )}
 
-      {aiSuggesties.length > 0 && (
-        <section className="space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            AI-suggestie — semantische analyse
-          </p>
-          <div className="divide-y divide-border rounded-lg border">
-            {aiSuggesties.map((s) => (
-              <SuggestieRij
-                key={`${s.fromId}-${s.toId}`}
-                suggestie={s}
-                onBevestig={bevestig}
-                onVerwerp={verwerp}
-              />
-            ))}
-          </div>
-        </section>
+      {acceptState && !acceptState.loading && (
+        <FlowConfirmDialog
+          automations={acceptState.automationIds
+            .map((id) => autoMap.get(id))
+            .filter((a): a is Automatisering => a !== undefined)}
+          initialName={acceptState.aiName}
+          initialBeschrijving={acceptState.aiBeschrijving}
+          aiError={acceptState.aiError}
+          onRetryAi={handleRetryAi}
+          onSave={handleSaveFlow}
+          onCancel={() => setAcceptState(null)}
+          saving={acceptState.saving}
+        />
       )}
     </div>
   );
@@ -139,24 +273,334 @@ function CategorieBadge({ categorie }: { categorie: string }) {
   );
 }
 
+function FlowKandidaatCard({
+  group,
+  onBevestig,
+  onVerwerp,
+  onOngedaanBevestig,
+  onOngedaanVerwerp,
+  onOpenDetail,
+  onAccepteer,
+}: {
+  group: FlowSuggestionGroup;
+  onBevestig: ReturnType<typeof useBevestigFlowSuggestie>;
+  onVerwerp: ReturnType<typeof useVerwerpFlowSuggestie>;
+  onOngedaanBevestig: ReturnType<typeof useOngedaanBevestigFlowSuggestie>;
+  onOngedaanVerwerp: ReturnType<typeof useOngedaanVerwerpFlowSuggestie>;
+  onOpenDetail: (suggestie: FlowSuggestie) => void;
+  onAccepteer: (group: FlowSuggestionGroup) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const first = group.nodes[0];
+  const last = group.nodes[group.nodes.length - 1];
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left hover:bg-muted/30 transition-colors"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">
+              {first?.naam ?? "Onbekende start"} naar {last?.naam ?? "onbekend einde"}
+            </span>
+            <CountBadge>{group.nodes.length} automations</CountBadge>
+            <CountBadge>{group.suggestions.length} koppelingen</CountBadge>
+            {group.webhookCount > 0 && (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                {group.webhookCount} webhook
+              </span>
+            )}
+            {group.aiCount > 0 && (
+              <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold text-yellow-700">
+                {group.aiCount} AI
+              </span>
+            )}
+          </div>
+          <MiniChain group={group} />
+        </div>
+        <div className="flex shrink-0 items-center gap-2 mt-0.5">
+          <span className="text-[10px] font-medium text-muted-foreground">
+            {group.confirmedCount} van {group.totalCount} bevestigd
+          </span>
+          <span className="rounded-md border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground">
+            {open ? "Sluiten" : "Details"}
+          </span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="divide-y divide-border border-t border-border">
+          {group.suggestions.map((suggestie) => (
+            <SuggestieRij
+              key={`${suggestie.fromId}-${suggestie.toId}`}
+              suggestie={suggestie}
+              onBevestig={onBevestig}
+              onVerwerp={onVerwerp}
+              onOngedaanBevestig={onOngedaanBevestig}
+              onOngedaanVerwerp={onOngedaanVerwerp}
+              onOpenDetail={() => onOpenDetail(suggestie)}
+            />
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-3 bg-muted/20">
+          <p className="text-xs text-muted-foreground">
+            {group.confirmedCount === 0
+              ? "Bevestig eerst minimaal één koppeling om als flow op te slaan"
+              : `${group.confirmedCount} koppeling${group.confirmedCount !== 1 ? "en" : ""} bevestigd`}
+          </p>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={group.confirmedCount === 0}
+            title={group.confirmedCount === 0 ? "Bevestig eerst minimaal één koppeling" : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAccepteer(group);
+            }}
+          >
+            Accepteer als Flow
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SuggestieDetailDialog({
+  suggestie: s,
+  onClose,
+  onBevestig,
+  onVerwerp,
+  bevestigPending,
+  verwerpPending,
+}: {
+  suggestie: FlowSuggestie;
+  onClose: () => void;
+  onBevestig: (s: FlowSuggestie) => void;
+  onVerwerp: (s: FlowSuggestie) => void;
+  bevestigPending: boolean;
+  verwerpPending: boolean;
+}) {
+  const { data: automations = [] } = useAutomatiseringen();
+  const from = automations.find((a) => a.id === s.fromId);
+  const to = automations.find((a) => a.id === s.toId);
+  const pending = bevestigPending || verwerpPending;
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 flex-wrap text-base">
+            <CategorieBadge categorie={s.fromCategorie} />
+            <span>{s.fromNaam}</span>
+            <span className="text-muted-foreground">naar</span>
+            <CategorieBadge categorie={s.toCategorie} />
+            <span>{s.toNaam}</span>
+          </DialogTitle>
+          <DialogDescription>
+            Bekijk waarom deze koppeling wordt voorgesteld en bevestig of verwerp de suggestie.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className={[
+          "rounded-lg px-4 py-3 text-sm",
+          s.zekerheid === "webhook"
+            ? "bg-green-50 border border-green-200"
+            : "bg-yellow-50 border border-yellow-200",
+        ].join(" ")}>
+          <p className={[
+            "text-[10px] font-semibold uppercase tracking-wide mb-1",
+            s.zekerheid === "webhook" ? "text-green-700" : "text-yellow-700",
+          ].join(" ")}>
+            {s.zekerheid === "webhook" ? "Hoge zekerheid, webhook match" : "AI-suggestie"}
+          </p>
+          {s.zekerheid === "webhook" ? (
+            <p className="text-foreground">
+              Webhook van <strong>{s.fromNaam}</strong> eindigt op endpoint{" "}
+              <code className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] border border-green-200">
+                {s.redenering}
+              </code>{" "}
+              van <strong>{s.toNaam}</strong>.
+            </p>
+          ) : (
+            <p className="text-foreground italic">{s.redenering}</p>
+          )}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AutomatiseringCard
+            label="Van"
+            naam={s.fromNaam}
+            categorie={s.fromCategorie}
+            automation={from}
+          />
+          <AutomatiseringCard
+            label="Naar"
+            naam={s.toNaam}
+            categorie={s.toCategorie}
+            automation={to}
+          />
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() => onVerwerp(s)}
+          >
+            Verwerpen
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+            disabled={pending}
+            onClick={() => onBevestig(s)}
+          >
+            {bevestigPending ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                Bevestigen...
+              </>
+            ) : (
+              "Bevestigen"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AutomatiseringCard({
+  label,
+  naam,
+  categorie,
+  automation,
+}: {
+  label: string;
+  naam: string;
+  categorie: string;
+  automation: { doel: string; trigger: string; systemen: string[] } | undefined;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{label}</span>
+        <CategorieBadge categorie={categorie} />
+      </div>
+      <p className="font-medium text-sm text-foreground leading-snug">{naam}</p>
+      {automation ? (
+        <dl className="space-y-1.5 text-xs text-muted-foreground">
+          {automation.doel && (
+            <div>
+              <dt className="font-medium text-foreground/70">Doel</dt>
+              <dd className="mt-0.5 leading-relaxed">{automation.doel}</dd>
+            </div>
+          )}
+          {automation.trigger && (
+            <div>
+              <dt className="font-medium text-foreground/70">Trigger</dt>
+              <dd className="mt-0.5 leading-relaxed">{automation.trigger}</dd>
+            </div>
+          )}
+          {automation.systemen.length > 0 && (
+            <div>
+              <dt className="font-medium text-foreground/70">Systemen</dt>
+              <dd className="mt-0.5 flex flex-wrap gap-1">
+                {automation.systemen.map((sys) => (
+                  <span key={sys} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{sys}</span>
+                ))}
+              </dd>
+            </div>
+          )}
+        </dl>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">Details niet beschikbaar</p>
+      )}
+    </div>
+  );
+}
+
+function CountBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function MiniChain({ group }: { group: FlowSuggestionGroup }) {
+  return (
+    <div className="flex items-center gap-1.5 overflow-hidden pb-1">
+      {group.nodes.map((node, index) => {
+        const next = group.nodes[index + 1];
+        const edge = next
+          ? group.suggestions.find((s) => s.fromId === node.id && s.toId === next.id)
+          : undefined;
+        return (
+          <div key={node.id} className="flex items-center gap-1.5 shrink-0">
+            <span className="max-w-[150px] truncate rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
+              {node.naam}
+            </span>
+            {next && (
+              <span
+                className={[
+                  "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  edge?.zekerheid === "webhook"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-yellow-100 text-yellow-700",
+                ].join(" ")}
+              >
+                {edge?.zekerheid === "webhook" ? "webhook" : "AI"}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SuggestieRij({
   suggestie: s,
   onBevestig,
   onVerwerp,
+  onOngedaanBevestig,
+  onOngedaanVerwerp,
+  onOpenDetail,
 }: {
   suggestie: FlowSuggestie;
   onBevestig: ReturnType<typeof useBevestigFlowSuggestie>;
   onVerwerp: ReturnType<typeof useVerwerpFlowSuggestie>;
+  onOngedaanBevestig: ReturnType<typeof useOngedaanBevestigFlowSuggestie>;
+  onOngedaanVerwerp: ReturnType<typeof useOngedaanVerwerpFlowSuggestie>;
+  onOpenDetail: () => void;
 }) {
-  const pending = onBevestig.isPending || onVerwerp.isPending;
+  const anyPending =
+    onBevestig.isPending ||
+    onVerwerp.isPending ||
+    onOngedaanBevestig.isPending ||
+    onOngedaanVerwerp.isPending;
 
   return (
     <div className="flex items-start gap-3 p-3">
-      <div className="min-w-0 flex-1 space-y-1">
+      <button
+        type="button"
+        className="min-w-0 flex-1 space-y-1 text-left hover:opacity-70 transition-opacity"
+        onClick={onOpenDetail}
+      >
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <CategorieBadge categorie={s.fromCategorie} />
           <span className="truncate font-medium text-foreground">{s.fromNaam}</span>
-          <span className="text-xs text-muted-foreground">→</span>
+          <span className="text-xs text-muted-foreground">naar</span>
           <CategorieBadge categorie={s.toCategorie} />
           <span className="truncate font-medium text-foreground">{s.toNaam}</span>
         </div>
@@ -164,35 +608,83 @@ function SuggestieRij({
           {s.zekerheid === "webhook" ? (
             <>
               Webhook{" "}
-              <code className="rounded bg-muted px-1 text-[10px]">{s.redenering}</code> —
-              exact match op endpoint
+              <code className="rounded bg-muted px-1 text-[10px]">{s.redenering}</code>
+              {" "}exact match op endpoint
             </>
           ) : (
-            <>
-              AI: <em>{s.redenering}</em>
-            </>
+            <>AI: <em>{s.redenering}</em></>
           )}
         </p>
-      </div>
-      <div className="flex shrink-0 gap-1.5">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pending}
-          onClick={() => onVerwerp.mutate({ fromId: s.fromId, toId: s.toId })}
-        >
-          ✕
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
-          disabled={pending}
-          onClick={() => onBevestig.mutate({ fromId: s.fromId, toId: s.toId })}
-        >
-          ✓ Bevestigen
-        </Button>
-      </div>
+      </button>
+
+      {s.confirmed ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-green-600" />
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground underline disabled:opacity-50"
+            disabled={anyPending}
+            onClick={() =>
+              onOngedaanBevestig.mutate(
+                { fromId: s.fromId, toId: s.toId },
+                { onError: (e) => toast.error(e instanceof Error ? e.message : "Ongedaan maken mislukt") },
+              )
+            }
+          >
+            Ongedaan maken
+          </button>
+        </div>
+      ) : s.rejected ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <XCircle className="h-4 w-4 text-red-500" />
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground underline disabled:opacity-50"
+            disabled={anyPending}
+            onClick={() =>
+              onOngedaanVerwerp.mutate(
+                { fromId: s.fromId, toId: s.toId },
+                { onError: (e) => toast.error(e instanceof Error ? e.message : "Ongedaan maken mislukt") },
+              )
+            }
+          >
+            Ongedaan maken
+          </button>
+        </div>
+      ) : (
+        <div className="flex shrink-0 gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={anyPending}
+            onClick={() =>
+              onVerwerp.mutate(
+                { fromId: s.fromId, toId: s.toId },
+                { onError: (e) => toast.error(e instanceof Error ? e.message : "Verwerpen mislukt") },
+              )
+            }
+          >
+            Verwerp
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+            disabled={anyPending}
+            onClick={() =>
+              onBevestig.mutate(
+                { fromId: s.fromId, toId: s.toId },
+                {
+                  onSuccess: () => toast.success("Koppeling bevestigd"),
+                  onError: (e) => toast.error(e instanceof Error ? e.message : "Bevestigen mislukt"),
+                },
+              )
+            }
+          >
+            Bevestig
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
