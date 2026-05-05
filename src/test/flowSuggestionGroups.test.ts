@@ -82,4 +82,24 @@ describe("groupFlowSuggesties — confirmedCount / totalCount", () => {
       "c->d",
     ]);
   });
+
+  it("keeps group order stable when incoming rows are shuffled or confirmed changes", () => {
+    const suggestions = [
+      makeSuggestie("x", "y", { fromNaam: "Xray", toNaam: "Yankee" }),
+      makeSuggestie("a", "b", { fromNaam: "Alpha", toNaam: "Beta" }),
+      makeSuggestie("b", "c", { fromNaam: "Beta", toNaam: "Charlie" }),
+    ];
+
+    const firstOrder = groupFlowSuggesties(suggestions).map((group) => group.id);
+    const shuffledOrder = groupFlowSuggesties([...suggestions].reverse()).map((group) => group.id);
+    const confirmedOrder = groupFlowSuggesties(
+      [...suggestions].reverse().map((suggestie) =>
+        suggestie.fromId === "a" ? { ...suggestie, confirmed: true } : suggestie,
+      ),
+    ).map((group) => group.id);
+
+    expect(firstOrder).toEqual(["a__b__c", "x__y"]);
+    expect(shuffledOrder).toEqual(firstOrder);
+    expect(confirmedOrder).toEqual(firstOrder);
+  });
 });

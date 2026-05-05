@@ -30,14 +30,12 @@ function orderNodes(
   }
 
   for (const targets of outgoing.values()) {
-    targets.sort((a, b) =>
-      (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl"),
-    );
+    targets.sort((a, b) => compareNodeIds(a, b, nodeMap));
   }
 
   const queue = ids
     .filter((id) => (indegree.get(id) ?? 0) === 0)
-    .sort((a, b) => (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl"));
+    .sort((a, b) => compareNodeIds(a, b, nodeMap));
   const ordered: string[] = [];
 
   while (queue.length > 0) {
@@ -48,7 +46,7 @@ function orderNodes(
       indegree.set(target, nextIndegree);
       if (nextIndegree === 0) queue.push(target);
     }
-    queue.sort((a, b) => (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl"));
+    queue.sort((a, b) => compareNodeIds(a, b, nodeMap));
   }
 
   const orderedIds = ordered.length === ids.length ? ordered : ids;
@@ -57,6 +55,25 @@ function orderNodes(
     naam: nodeMap.get(id)?.naam ?? "",
     categorie: nodeMap.get(id)?.categorie ?? "",
   }));
+}
+
+function compareNodeIds(
+  a: string,
+  b: string,
+  nodeMap: Map<string, { naam: string; categorie: string }>,
+): number {
+  const nameDelta = (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl");
+  return nameDelta !== 0 ? nameDelta : a.localeCompare(b, "nl");
+}
+
+function compareGroups(a: FlowSuggestionGroup, b: FlowSuggestionGroup): number {
+  const aFirst = a.nodes[0];
+  const bFirst = b.nodes[0];
+  const firstNameDelta = (aFirst?.naam ?? "").localeCompare(bFirst?.naam ?? "", "nl");
+  if (firstNameDelta !== 0) return firstNameDelta;
+  const firstIdDelta = (aFirst?.id ?? "").localeCompare(bFirst?.id ?? "", "nl");
+  if (firstIdDelta !== 0) return firstIdDelta;
+  return a.id.localeCompare(b.id, "nl");
 }
 
 /**
@@ -126,35 +143,38 @@ export function groupFlowSuggesties(suggestions: FlowSuggestie[]): FlowSuggestio
       }
     }
 
-    const nodes = orderNodes(nodesSet, componentSuggestions, nodeMap);
+    const suggestionsInGroup = [...componentSuggestions];
+    const nodes = orderNodes(nodesSet, suggestionsInGroup, nodeMap);
     const nodeOrder = new Map(nodes.map((node, index) => [node.id, index]));
-    componentSuggestions.sort((a, b) => {
+    suggestionsInGroup.sort((a, b) => {
       const fromDelta = (nodeOrder.get(a.fromId) ?? 0) - (nodeOrder.get(b.fromId) ?? 0);
       if (fromDelta !== 0) return fromDelta;
-      return (nodeOrder.get(a.toId) ?? 0) - (nodeOrder.get(b.toId) ?? 0);
+      const toDelta = (nodeOrder.get(a.toId) ?? 0) - (nodeOrder.get(b.toId) ?? 0);
+      if (toDelta !== 0) return toDelta;
+      return `${a.fromId}->${a.toId}`.localeCompare(`${b.fromId}->${b.toId}`, "nl");
     });
 
     // Count webhook vs AI suggestions
     let webhookCount = 0;
     let aiCount = 0;
-    for (const s of componentSuggestions) {
+    for (const s of suggestionsInGroup) {
       if (s.zekerheid === "webhook") webhookCount++;
       else aiCount++;
     }
 
     // Count confirmed suggestions
-    const confirmedCount = componentSuggestions.filter((s) => s.confirmed).length;
+    const confirmedCount = suggestionsInGroup.filter((s) => s.confirmed).length;
 
     groups.push({
       id: nodes.map((node) => node.id).join("__"),
-      suggestions: componentSuggestions,
+      suggestions: suggestionsInGroup,
       nodes,
       webhookCount,
       aiCount,
       confirmedCount,
-      totalCount: componentSuggestions.length,
+      totalCount: suggestionsInGroup.length,
     });
   }
 
-  return groups;
+  return groups.sort(compareGroups);
 }
