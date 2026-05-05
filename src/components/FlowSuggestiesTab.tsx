@@ -797,19 +797,6 @@ function SuggestieRij({
           <Button
             variant="outline"
             size="sm"
-            disabled={anyPending}
-            onClick={() =>
-              onVerwerp.mutate(
-                { fromId: s.fromId, toId: s.toId },
-                { onError: (e) => toast.error(e instanceof Error ? e.message : "Verwerpen mislukt") },
-              )
-            }
-          >
-            Verwerp
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
             className="border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
             disabled={anyPending}
             onClick={() =>
@@ -823,6 +810,19 @@ function SuggestieRij({
             }
           >
             Bevestig
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={anyPending}
+            onClick={() =>
+              onVerwerp.mutate(
+                { fromId: s.fromId, toId: s.toId },
+                { onError: (e) => toast.error(e instanceof Error ? e.message : "Verwerpen mislukt") },
+              )
+            }
+          >
+            Verwerp
           </Button>
         </div>
       )}
