@@ -346,13 +346,13 @@ function FlowKandidaatCard({
   const nodeStepLabels = new Map(group.nodes.map((node, index) => [node.id, stepLabel(index)]));
 
   return (
-    <div className="rounded-lg border overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <button
         type="button"
-        className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left hover:bg-muted/30 transition-colors"
+        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-6 px-5 py-4 text-left transition-colors hover:bg-muted/30"
         onClick={() => setOpen((value) => !value)}
       >
-        <div className="min-w-0 flex-1 space-y-3">
+        <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-foreground">
               {first?.naam ?? "Onbekende start"} naar {last?.naam ?? "onbekend einde"}
@@ -372,8 +372,8 @@ function FlowKandidaatCard({
           </div>
           <MiniChain group={group} />
         </div>
-        <div className="mt-0.5 grid shrink-0 grid-cols-[5.75rem_4.25rem] items-center gap-2">
-          <span className="inline-flex h-7 items-center justify-center rounded-md bg-muted px-2 text-[10px] font-semibold tabular-nums text-muted-foreground">
+        <div className="mt-0.5 grid shrink-0 grid-cols-[8rem_4.25rem] items-center gap-2">
+          <span className="inline-flex h-7 items-center justify-center whitespace-nowrap rounded-md bg-muted px-2 text-[10px] font-semibold tabular-nums text-muted-foreground">
             {group.confirmedCount}/{group.totalCount} geselecteerd
           </span>
           <span className="inline-flex h-7 items-center justify-center rounded-md border border-border px-2 text-[10px] font-semibold text-muted-foreground">
@@ -383,20 +383,24 @@ function FlowKandidaatCard({
       </button>
 
       {open && (
-        <div className="divide-y divide-border border-t border-border">
-          {group.suggestions.map((suggestie) => (
-            <SuggestieRij
-              key={`${suggestie.fromId}-${suggestie.toId}`}
-              suggestie={suggestie}
-              fromStep={nodeStepLabels.get(suggestie.fromId) ?? "?"}
-              toStep={nodeStepLabels.get(suggestie.toId) ?? "?"}
-              onBevestig={onBevestig}
-              onVerwerp={onVerwerp}
-              onOngedaanBevestig={onOngedaanBevestig}
-              onOngedaanVerwerp={onOngedaanVerwerp}
-              onOpenDetail={() => onOpenDetail(suggestie)}
-            />
-          ))}
+        <div className="border-t border-border">
+          <div className="overflow-x-auto">
+            <div className="min-w-[980px] divide-y divide-border">
+              {group.suggestions.map((suggestie) => (
+                <SuggestieRij
+                  key={`${suggestie.fromId}-${suggestie.toId}`}
+                  suggestie={suggestie}
+                  fromStep={nodeStepLabels.get(suggestie.fromId) ?? "?"}
+                  toStep={nodeStepLabels.get(suggestie.toId) ?? "?"}
+                  onBevestig={onBevestig}
+                  onVerwerp={onVerwerp}
+                  onOngedaanBevestig={onOngedaanBevestig}
+                  onOngedaanVerwerp={onOngedaanVerwerp}
+                  onOpenDetail={() => onOpenDetail(suggestie)}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -590,15 +594,16 @@ function CountBadge({ children }: { children: ReactNode }) {
 
 function MiniChain({ group }: { group: FlowSuggestionGroup }) {
   return (
-    <div className="flex items-center gap-1.5 overflow-hidden pb-1">
+    <div className="w-full overflow-x-auto pb-2 pr-2">
+      <div className="flex min-w-max items-center gap-2">
       {group.nodes.map((node, index) => {
         const next = group.nodes[index + 1];
         const edge = next
           ? group.suggestions.find((s) => s.fromId === node.id && s.toId === next.id)
           : undefined;
         return (
-          <div key={node.id} className="flex items-center gap-1.5 shrink-0">
-            <span className="max-w-[150px] truncate rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
+          <div key={node.id} className="flex items-center gap-2 shrink-0">
+            <span className="max-w-[220px] truncate rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
               <span className="mr-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
                 {stepLabel(index)}
               </span>
@@ -619,6 +624,7 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -661,14 +667,14 @@ function SuggestieRij({
   return (
     <div
       className={[
-        "flex items-start gap-3 p-3 transition-colors",
+        "grid grid-cols-[minmax(0,1fr)_12rem] items-start gap-4 p-3.5 transition-colors",
         s.confirmed ? "bg-green-50/70" : "",
         s.rejected ? "bg-red-50/50" : "",
       ].join(" ")}
     >
       <button
         type="button"
-        className="min-w-0 flex-1 space-y-1 text-left hover:opacity-70 transition-opacity"
+        className="min-w-0 space-y-1 text-left transition-opacity hover:opacity-70"
         onClick={onOpenDetail}
       >
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -698,7 +704,7 @@ function SuggestieRij({
       </button>
 
       {s.confirmed ? (
-        <div className="flex w-[12rem] shrink-0 items-center justify-end gap-2">
+        <div className="flex w-full items-center justify-end gap-2">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white shadow-sm">
             <CheckCircle2 className="h-4 w-4" />
           </span>
@@ -718,7 +724,7 @@ function SuggestieRij({
           </button>
         </div>
       ) : s.rejected ? (
-        <div className="flex w-[12rem] shrink-0 items-center justify-end gap-2">
+        <div className="flex w-full items-center justify-end gap-2">
           <XCircle className="h-4 w-4 text-red-500" />
           <button
             type="button"
@@ -735,7 +741,7 @@ function SuggestieRij({
           </button>
         </div>
       ) : (
-        <div className="flex w-[12rem] shrink-0 justify-end gap-1.5">
+        <div className="flex w-full justify-end gap-1.5">
           <Button
             variant="outline"
             size="sm"
