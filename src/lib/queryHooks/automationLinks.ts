@@ -67,7 +67,6 @@ export function useBevestigFlowSuggestie() {
         ),
       );
       queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
-      queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
       queryClient.invalidateQueries({ queryKey: ["openSuggestiesVoorFlow"] });
     },
   });
@@ -96,7 +95,6 @@ export function useOngedaanBevestigFlowSuggestie() {
         ),
       );
       queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
-      queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
     },
   });
 }
@@ -117,6 +115,7 @@ export function useAccepteerFlowKandidaat() {
       accepteerFlowKandidaat(nodeIds, flowId),
     onSuccess: (_, { flowId }) => {
       queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
+      queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
       queryClient.invalidateQueries({ queryKey: ["openSuggestiesVoorFlow", flowId] });
     },
   });

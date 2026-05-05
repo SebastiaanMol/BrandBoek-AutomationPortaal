@@ -102,14 +102,6 @@ export async function bevestigFlowSuggestie(fromId: string, toId: string): Promi
     .eq("from_id", fromId)
     .eq("to_id", toId);
   if (updateError) throw updateError;
-
-  const { error: insertError } = await supabase
-    .from("automation_links")
-    .upsert(
-      { source_id: fromId, target_id: toId, match_type: "manual", confirmed: true },
-      { onConflict: "source_id,target_id" },
-    );
-  if (insertError) throw insertError;
 }
 
 export async function verwerpFlowSuggestie(fromId: string, toId: string): Promise<void> {
@@ -128,13 +120,6 @@ export async function ongedaanBevestigFlowSuggestie(fromId: string, toId: string
     .eq("from_id", fromId)
     .eq("to_id", toId);
   if (updateError) throw updateError;
-
-  const { error: deleteError } = await supabase
-    .from("automation_links")
-    .delete()
-    .eq("source_id", fromId)
-    .eq("target_id", toId);
-  if (deleteError) throw deleteError;
 }
 
 export async function ongedaanVerwerpFlowSuggestie(fromId: string, toId: string): Promise<void> {
@@ -147,6 +132,29 @@ export async function ongedaanVerwerpFlowSuggestie(fromId: string, toId: string)
 }
 
 export async function accepteerFlowKandidaat(nodeIds: string[], flowId: string): Promise<void> {
+  const { data: confirmedSuggestions, error: fetchError } = await supabase
+    .from("automatisering_ai_flows")
+    .select("from_id, to_id")
+    .in("from_id", nodeIds)
+    .eq("confirmed", true)
+    .eq("rejected", false);
+  if (fetchError) throw fetchError;
+
+  if (confirmedSuggestions?.length) {
+    const { error: insertError } = await supabase
+      .from("automation_links")
+      .upsert(
+        confirmedSuggestions.map((suggestion) => ({
+          source_id: suggestion.from_id,
+          target_id: suggestion.to_id,
+          match_type: "manual",
+          confirmed: true,
+        })),
+        { onConflict: "source_id,target_id" },
+      );
+    if (insertError) throw insertError;
+  }
+
   const { error } = await supabase
     .from("automatisering_ai_flows")
     .update({ flow_id: flowId })
