@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { Check, Loader2, XCircle } from "lucide-react";
 import { useState, useMemo, useRef, type ReactNode, type PointerEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -756,8 +756,8 @@ function SuggestieRij({
       {s.confirmed ? (
         <div className="flex w-full items-center justify-end gap-2">
           <span className="inline-flex h-8 min-w-[7.25rem] items-center justify-center gap-1.5 rounded-full bg-green-100 px-2.5 text-xs font-semibold text-green-700">
-            <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-white bg-green-600 text-white shadow-sm">
-              <CheckCircle2 className="h-3.5 w-3.5" />
+            <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-green-600 text-white shadow-sm ring-2 ring-white">
+              <Check className="h-3.5 w-3.5 stroke-[3]" />
             </span>
             Geselecteerd
           </span>
