@@ -755,13 +755,15 @@ function SuggestieRij({
 
       {s.confirmed ? (
         <div className="flex w-full items-center justify-end gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white shadow-sm">
-            <CheckCircle2 className="h-4 w-4" />
+          <span className="inline-flex h-8 min-w-[7.25rem] items-center justify-center gap-1.5 rounded-full bg-green-100 px-2.5 text-xs font-semibold text-green-700">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-green-600 text-white">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </span>
+            Geselecteerd
           </span>
-          <span className="hidden text-xs font-semibold text-green-700 sm:inline">Geselecteerd</span>
           <button
             type="button"
-            className="rounded-md border border-green-200 bg-white px-2.5 py-1 text-xs font-medium text-green-700 shadow-sm hover:bg-green-50 disabled:opacity-50"
+            className="inline-flex h-8 min-w-[6.75rem] items-center justify-center rounded-lg border border-green-200 bg-white px-3 text-xs font-semibold text-green-700 shadow-sm transition-colors hover:bg-green-50 disabled:opacity-50"
             disabled={anyPending}
             onClick={() =>
               onOngedaanBevestig.mutate(
@@ -770,7 +772,7 @@ function SuggestieRij({
               )
             }
           >
-            Ongedaan maken
+            Ongedaan
           </button>
         </div>
       ) : s.rejected ? (
