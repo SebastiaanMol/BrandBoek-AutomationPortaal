@@ -61,6 +61,7 @@ export function useBevestigFlowSuggestie() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
       queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
+      queryClient.invalidateQueries({ queryKey: ["openSuggestiesVoorFlow"] });
     },
   });
 }

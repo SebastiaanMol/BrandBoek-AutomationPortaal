@@ -1,13 +1,20 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Info, LayoutGrid, ListOrdered } from "lucide-react";
+import { Info, LayoutGrid, ListOrdered, XCircle } from "lucide-react";
 import {
   useFlows,
   useAutomatiseringen,
   useUpdateFlow,
   useDeleteFlow,
 } from "@/lib/hooks";
+import {
+  useBevestigFlowSuggestie,
+  useVerwerpFlowSuggestie,
+  useOngedaanVerwerpFlowSuggestie,
+  useOpenSuggestiesVoorFlow,
+} from "@/lib/queryHooks/automationLinks";
+import type { FlowSuggestie } from "@/lib/storage/automationLinks";
 import type { Automatisering, Systeem } from "@/lib/types";
 import { FlowHeader } from "@/components/flows/FlowHeader";
 import { FlowCanvas } from "@/components/flows/FlowCanvas";
@@ -220,6 +227,23 @@ export default function FlowDetail(): React.ReactNode {
               )}
             </div>
 
+            <OpenSuggestiesCard
+              flowId={flow.id}
+              automationIds={flow.automationIds}
+              onBevestig={async (fromId: string, toId: string) => {
+                const newIds = [...new Set([...flow.automationIds, fromId, toId])];
+                const newAutos = newIds
+                  .map((id) => autoMap.get(id))
+                  .filter((a): a is Automatisering => a !== undefined);
+                const newSystemen = [...new Set(newAutos.flatMap((a) => a.systemen))] as Systeem[];
+                await updateFlow.mutateAsync({
+                  id: flow.id,
+                  automationIds: newIds,
+                  systemen: newSystemen,
+                });
+              }}
+            />
+
             <div className="card-elevated p-4">
               {showDeleteConfirm ? (
                 <div className="flex items-center gap-3">
@@ -279,3 +303,134 @@ const ToggleBtn = ({
     {label}
   </button>
 );
+
+function OpenSuggestiesCard({
+  flowId,
+  automationIds,
+  onBevestig,
+}: {
+  flowId: string;
+  automationIds: string[];
+  onBevestig: (fromId: string, toId: string) => Promise<void>;
+}) {
+  const { data: suggesties = [] } = useOpenSuggestiesVoorFlow(flowId);
+  const bevestig = useBevestigFlowSuggestie();
+  const verwerp = useVerwerpFlowSuggestie();
+  const ongedaanVerwerp = useOngedaanVerwerpFlowSuggestie();
+
+  const nogTeBeoordelen = suggesties.filter((s) => !s.rejected);
+  const afgewezen = suggesties.filter((s) => s.rejected);
+
+  if (suggesties.length === 0) return null;
+
+  const anyPending = bevestig.isPending || verwerp.isPending || ongedaanVerwerp.isPending;
+
+  async function handleBevestig(s: FlowSuggestie): Promise<void> {
+    try {
+      await onBevestig(s.fromId, s.toId);
+      await bevestig.mutateAsync({ fromId: s.fromId, toId: s.toId });
+      toast.success("Koppeling bevestigd");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Bevestigen mislukt");
+    }
+  }
+
+  return (
+    <div className="card-elevated p-4 space-y-3">
+      <p className="px-1 pb-1 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
+        Openstaande suggesties
+      </p>
+
+      {nogTeBeoordelen.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-foreground">
+            Nog te beoordelen ({nogTeBeoordelen.length})
+          </p>
+          {nogTeBeoordelen.map((s) => (
+            <div
+              key={`${s.fromId}-${s.toId}`}
+              className="flex items-center gap-2 rounded-lg border border-border bg-background p-2"
+            >
+              <div className="min-w-0 flex-1 text-xs">
+                <span className="font-medium text-foreground truncate">{s.fromNaam}</span>
+                <span className="text-muted-foreground mx-1">→</span>
+                <span className="font-medium text-foreground truncate">{s.toNaam}</span>
+              </div>
+              <ZekerheidBadge zekerheid={s.zekerheid} />
+              <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  className="rounded border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+                  disabled={anyPending}
+                  onClick={() =>
+                    verwerp.mutate(
+                      { fromId: s.fromId, toId: s.toId },
+                      { onError: (e) => toast.error(e instanceof Error ? e.message : "Verwerpen mislukt") },
+                    )
+                  }
+                >
+                  Verwerp
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
+                  disabled={anyPending}
+                  onClick={() => handleBevestig(s)}
+                >
+                  Bevestig
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {afgewezen.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-foreground">
+            Afgewezen ({afgewezen.length})
+          </p>
+          {afgewezen.map((s) => (
+            <div
+              key={`${s.fromId}-${s.toId}`}
+              className="flex items-center gap-2 rounded-lg border border-border bg-background p-2 opacity-60"
+            >
+              <XCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+              <div className="min-w-0 flex-1 text-xs">
+                <span className="font-medium text-foreground truncate">{s.fromNaam}</span>
+                <span className="text-muted-foreground mx-1">→</span>
+                <span className="font-medium text-foreground truncate">{s.toNaam}</span>
+              </div>
+              <ZekerheidBadge zekerheid={s.zekerheid} />
+              <button
+                type="button"
+                className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground underline disabled:opacity-50"
+                disabled={anyPending}
+                onClick={() =>
+                  ongedaanVerwerp.mutate(
+                    { fromId: s.fromId, toId: s.toId },
+                    { onError: (e) => toast.error(e instanceof Error ? e.message : "Ongedaan maken mislukt") },
+                  )
+                }
+              >
+                Ongedaan maken
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ZekerheidBadge({ zekerheid }: { zekerheid: "webhook" | "ai" }) {
+  return zekerheid === "webhook" ? (
+    <span className="shrink-0 rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">
+      webhook
+    </span>
+  ) : (
+    <span className="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700">
+      AI
+    </span>
+  );
+}
