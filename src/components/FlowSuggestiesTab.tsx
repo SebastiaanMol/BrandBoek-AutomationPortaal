@@ -340,7 +340,7 @@ function FlowKandidaatCard({
   onOpenDetail: (suggestie: FlowSuggestie) => void;
   onAccepteer: (group: FlowSuggestionGroup) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const first = group.nodes[0];
   const last = group.nodes[group.nodes.length - 1];
   const nodeStepLabels = new Map(group.nodes.map((node, index) => [node.id, stepLabel(index)]));
