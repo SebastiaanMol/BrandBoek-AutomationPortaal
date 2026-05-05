@@ -125,6 +125,38 @@ function flattenActions(actions: any[]): any[] {
 function extractStappen(actions: any[]): string[] {
   return actions.map((a) => {
     const t = a.type ?? a.actionType ?? "";
+    if (t === "WEBHOOK") {
+      const rawUrl = a.url ?? a.webhookUrl ?? "";
+      const known = describeKnownWebhook(rawUrl);
+      return known?.step ?? `Webhook -> ${rawUrl || "?"}`;
+    }
+    if (t === "SINGLE_CONNECTION") {
+      const actionTypeId = String(a.actionTypeId ?? "");
+      const fields = a.fields ?? {};
+      if (actionTypeId === "0-14" || Array.isArray(fields.properties)) {
+        const objectLabel = OBJECT_TYPE_LABEL[fields.object_type_id ?? ""] ?? "record";
+        const props = (fields.properties ?? [])
+          .map((p: any) => p.targetProperty)
+          .filter(Boolean)
+          .slice(0, 4)
+          .join(", ");
+        return props ? `Maak of update ${objectLabel} met velden: ${props}` : `Maak of update ${objectLabel}`;
+      }
+      if (actionTypeId === "0-15" || fields.flow_id) {
+        return `Schrijf object in voor workflow ${fields.flow_id ?? "?"}`;
+      }
+      if (fields.property_name) {
+        return `Stel '${fields.property_name}' in`;
+      }
+      if (fields.value && fields.property_name) {
+        return `Stel '${fields.property_name}' in`;
+      }
+      return "Voer HubSpot-actie uit";
+    }
+    if (t === "LIST_BRANCH") {
+      const branches = a.listBranches ?? a.branches ?? a.filterBranches ?? [];
+      return `Splits in ${branches.length || "meerdere"} paden op basis van criteria`;
+    }
     if (t === "DELAY") {
       const ms = a.delayMillis ?? a.delayTime ?? 0;
       return `Wacht ${msToHuman(ms)}`;
@@ -192,6 +224,16 @@ const OPERATOR_LABEL: Record<string, string> = {
   LT: "kleiner is dan", LTE: "kleiner of gelijk is aan",
   IS_KNOWN: "is ingevuld", IS_NOT_KNOWN: "leeg is",
   HAS_EVER_BEEN_EQUAL_TO: "ooit gelijk is geweest aan",
+  IS_EQUAL_TO: "gelijk is aan",
+  IS_ANY_OF: "een van deze waarden is",
+  IS_NONE_OF: "niet een van deze waarden is",
+};
+
+const OBJECT_TYPE_LABEL: Record<string, string> = {
+  "0-1": "contact",
+  "0-2": "bedrijf",
+  "0-3": "deal",
+  "0-8": "regelitem",
 };
 
 const KNOWN_EXTENSIONS: Record<string, string> = {
@@ -201,11 +243,58 @@ const KNOWN_EXTENSIONS: Record<string, string> = {
   "11798": "een HubSpot Payments-actie",
 };
 
+const KNOWN_WEBHOOK_PATHS: Record<string, { step: string; story: string }> = {
+  "/properties/vpb/finished_webhook": {
+    step: "Werk de gekoppelde VA VPB-deal bij naar 'VPB ingediend'",
+    story: "De backend zoekt de bijbehorende VA VPB-deal en zet die door naar 'VPB ingediend'. Zo blijft de voorlopige aanslag-pipeline gelijklopen met de afgeronde VPB-deal.",
+  },
+  "/properties/va_vpb/finished_webhook": {
+    step: "Markeer op de VPB-deal dat de VA VPB is ingediend",
+    story: "De backend zoekt de gekoppelde VPB-deal en zet daarop de indicatie dat de VA VPB is ingediend.",
+  },
+  "/properties/ib/finished_webhook": {
+    step: "Werk de gekoppelde VA IB-deal bij naar 'IB ingediend'",
+    story: "De backend zoekt de bijbehorende VA IB-deal en zet die door naar 'IB ingediend'.",
+  },
+  "/properties/va_ib/finished_webhook": {
+    step: "Markeer op de IB-deal dat de VA IB is ingediend",
+    story: "De backend zoekt de gekoppelde IB-deal en zet daarop de indicatie dat de VA IB is ingediend.",
+  },
+  "/properties/btw/finished_webhook": {
+    step: "Neem controleur en eigenaar over naar toekomstige BTW-deals",
+    story: "De backend kopieert controleur en eigenaar van deze afgeronde BTW-deal naar latere BTW-deals van dezelfde klant.",
+  },
+  "/properties/btw/update_next_quarter_prev2m": {
+    step: "Werk de volgende BTW-deal bij met de vorige-twee-maanden status",
+    story: "De backend werkt de volgende BTW-kwartaaldeal bij op basis van de status van de voorgaande periode.",
+  },
+  "/properties/update_jr_stage_from_btw_geboekt": {
+    step: "Werk de Jaarrekening-stage bij op basis van geboekte BTW-kwartalen",
+    story: "De backend kijkt welke BTW-kwartalen geboekt zijn en zet de gekoppelde Jaarrekening-deal naar de passende prioriteit/stage.",
+  },
+};
+
+function describeKnownWebhook(rawUrl: string): { step: string; story: string } | null {
+  try {
+    const path = new URL(rawUrl).pathname;
+    return KNOWN_WEBHOOK_PATHS[path] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function filterToNl(f: any): string {
-  const family = f.filterFamily ?? f.type ?? "";
+  const operation = f.operation ?? {};
+  const family = f.filterFamily ?? f.filterType ?? f.type ?? "";
   const prop   = f.property ?? f.propertyName ?? "";
-  const val    = f.value ?? f.propertyValue ?? "";
-  const opNl   = OPERATOR_LABEL[f.operator ?? ""] ?? "is";
+  const rawVal = operation.values ?? operation.value ?? f.value ?? f.propertyValue ?? "";
+  const val    = Array.isArray(rawVal) ? rawVal.join(", ") : rawVal;
+  const opNl   = OPERATOR_LABEL[operation.operator ?? f.operator ?? ""] ?? "is";
+  const objectLabel = OBJECT_TYPE_LABEL[f.objectTypeId ?? ""] ?? "object";
+  if (family === "PROPERTY") {
+    if (prop && val) return `de ${objectLabel}-eigenschap '${prop}' ${opNl} '${val}'`;
+    if (prop) return `de ${objectLabel}-eigenschap '${prop}' verandert`;
+  }
   if (["ContactProperty","CONTACT_PROPERTY_CHANGE","CONTACT_PROPERTY"].includes(family)) {
     if (prop && val) return `de contacteigenschap '${prop}' ${opNl} '${val}'`;
     if (prop) return `de contacteigenschap '${prop}' verandert`;
@@ -233,7 +322,20 @@ function filterToNl(f: any): string {
   return "";
 }
 
+function collectFiltersFromBranch(branch: any, result: any[] = []): any[] {
+  for (const f of branch?.filters ?? []) result.push(f);
+  for (const child of branch?.filterBranches ?? []) collectFiltersFromBranch(child, result);
+  return result;
+}
+
 function extractTriggerDetail(wf: any): string {
+  const enrollmentBranch = wf.enrollmentCriteria?.listFilterBranch;
+  if (enrollmentBranch) {
+    for (const f of collectFiltersFromBranch(enrollmentBranch)) {
+      const r = filterToNl(f);
+      if (r) return r;
+    }
+  }
   for (const sources of [wf.triggerSets ?? [], wf.reEnrollmentTriggerSets ?? []]) {
     for (const ts of sources) {
       for (const f of ts.filters ?? []) { const r = filterToNl(f); if (r) return r; }
@@ -248,6 +350,12 @@ function extractTriggerDetail(wf: any): string {
 
 /** Short label for categorie/display */
 function extractTrigger(wf: any): string {
+  if (wf.enrollmentCriteria?.type) {
+    const filters = collectFiltersFromBranch(wf.enrollmentCriteria.listFilterBranch);
+    const first = filters[0];
+    if (first?.filterType === "PROPERTY") return `${OBJECT_TYPE_LABEL[first.objectTypeId ?? wf.objectTypeId ?? ""] ?? "Object"} eigenschap`;
+    return wf.enrollmentCriteria.type === "LIST_BASED" ? "Lijst/gefilterde criteria" : wf.enrollmentCriteria.type;
+  }
   for (const ts of wf.triggerSets ?? []) {
     for (const f of ts.filters ?? []) {
       const kind = f.filterFamily ?? f.type ?? f.filterType ?? "";
@@ -267,7 +375,7 @@ function extractTrigger(wf: any): string {
       if (kind) return TRIGGER_LABEL_MAP[kind] ?? kind;
     }
   }
-  return WORKFLOW_TYPE_TRIGGER_MAP[wf.type ?? ""] ?? "Onbekend";
+  return WORKFLOW_TYPE_TRIGGER_MAP[wf.type ?? ""] ?? WORKFLOW_TYPE_TRIGGER_MAP[wf.flowType ?? ""] ?? "Onbekend";
 }
 
 /** Infer KlantFase values from workflow name keywords */
@@ -284,17 +392,48 @@ function inferFasen(wf: any): string[] {
 
 function inferCategorie(actions: any[]): string {
   const types = new Set(actions.map((a) => a.type ?? a.actionType ?? ""));
+  const hasRecordAction = actions.some((a) => (a.type ?? a.actionType) === "SINGLE_CONNECTION" && (a.fields?.properties || a.fields?.property_name));
   if (types.has("EMAIL") || types.has("SEND_EMAIL")) return "E-mail marketing";
   if (types.has("WEBHOOK") || types.has("EXTENSION")) return "Integratie";
   if (types.has("SALESFORCE_CREATE") || types.has("SALESFORCE_UPDATE")) return "CRM synchronisatie";
   if (types.has("SLACK_NOTIFICATION"))                return "Notificaties";
-  if (types.has("SET_CONTACT_PROPERTY") || types.has("SET_DEAL_PROPERTY") || types.has("SET_COMPANY_PROPERTY")) return "Data beheer";
+  if (types.has("SET_CONTACT_PROPERTY") || types.has("SET_DEAL_PROPERTY") || types.has("SET_COMPANY_PROPERTY") || hasRecordAction) return "Data beheer";
   if (types.has("CREATE_TASK"))                       return "Taakbeheer";
   return "Algemeen";
 }
 
 /** Generates a plain-Dutch numbered story for non-IT end users */
 function actionToZin(t: string, a: any, step: number): string | null {
+  if (t === "SINGLE_CONNECTION") {
+    const actionTypeId = String(a.actionTypeId ?? "");
+    const fields = a.fields ?? {};
+    if (actionTypeId === "0-14" || Array.isArray(fields.properties)) {
+      const objectLabel = OBJECT_TYPE_LABEL[fields.object_type_id ?? ""] ?? "record";
+      const properties = fields.properties ?? [];
+      const props = properties
+        .map((p: any) => p.targetProperty)
+        .filter(Boolean)
+        .slice(0, 5);
+      const assocCount = (fields.associations ?? []).length;
+      const details: string[] = [];
+      if (props.length) details.push(`velden: ${props.join(", ")}`);
+      if (assocCount) details.push(`${assocCount} koppeling(en) met gerelateerde records`);
+      return `Stap ${step}: HubSpot maakt of werkt automatisch een ${objectLabel} bij${details.length ? ` (${details.join("; ")})` : ""}.`;
+    }
+    if (actionTypeId === "0-15" || fields.flow_id) {
+      return `Stap ${step}: Het object wordt automatisch ingeschreven in workflow ${fields.flow_id ?? "?"}.`;
+    }
+    if (fields.property_name) {
+      const value = fields.value?.staticValue ?? fields.value?.propertyName ?? "";
+      return value
+        ? `Stap ${step}: HubSpot vult '${fields.property_name}' automatisch met '${value}'.`
+        : `Stap ${step}: HubSpot werkt '${fields.property_name}' automatisch bij.`;
+    }
+    return `Stap ${step}: HubSpot voert automatisch een interne workflow-actie uit.`;
+  }
+  if (t === "LIST_BRANCH") {
+    return `Stap ${step}: HubSpot splitst de workflow in meerdere paden op basis van ingestelde criteria.`;
+  }
   if (t === "DELAY") {
     const ms = a.delayMillis ?? a.delayTime ?? 0;
     const anchor = a.anchorSetting ?? {};
@@ -337,6 +476,8 @@ function actionToZin(t: string, a: any, step: number): string | null {
   }
   if (t === "WEBHOOK") {
     const url = a.url ?? a.webhookUrl ?? ""; const method = (a.method ?? "POST").toUpperCase();
+    const known = describeKnownWebhook(url);
+    if (known) return `Stap ${step}: ${known.story}`;
     return url ? `Stap ${step}: Er wordt een ${method}-verzoek gestuurd naar '${url}' om een extern systeem te informeren.` : `Stap ${step}: Er wordt een automatisch signaal (webhook) gestuurd naar een extern systeem.`;
   }
   if (t === "EXTENSION") {
@@ -376,7 +517,7 @@ function generateSimpeleTaal(wf: any, actions: any[], trigger: string, enrollmen
   const contactLists: any = (wf.metaData ?? {}).contactListIds ?? {};
   const triggerDetail = extractTriggerDetail(wf);
 
-  sentences.push(`Deze automatisering heet '${wf.name ?? "Naamloze workflow"}' en is ${wf.enabled ? "actief" : "momenteel uitgeschakeld"}.`);
+  sentences.push(`Deze automatisering heet '${wf.name ?? "Naamloze workflow"}' en is ${isWorkflowEnabled(wf) ? "actief" : "momenteel uitgeschakeld"}.`);
 
   if (triggerDetail) {
     sentences.push(`Stap ${step}: De automatisering start zodra ${triggerDetail}.`); step++;
@@ -390,6 +531,7 @@ function generateSimpeleTaal(wf: any, actions: any[], trigger: string, enrollmen
   if (wfType === "DRIP_DELAY") sentences.push("Tussen de stappen zitten wachttijden: het systeem wacht steeds tot het juiste moment voordat het doorgaat naar de volgende actie.");
   else if (wfType === "PROPERTY_ANCHOR_EVENT_BASED") sentences.push("De automatisering is gekoppeld aan een specifieke eigenschap van een contact en reageert zodra die eigenschap verandert.");
   else if (wfType === "CONTACT_DATE_PROPERTY") sentences.push("De automatisering is gekoppeld aan een datum in het contactprofiel (zoals een verjaardag of contractvervaldatum) en start automatisch op of rond die datum.");
+  else if (enrollment.objectType) sentences.push(`Deze workflow werkt op HubSpot-${enrollment.objectType}records.`);
 
   for (const a of actions) {
     const t: string = a.type ?? a.actionType ?? "";
@@ -412,6 +554,7 @@ function generateSimpeleTaal(wf: any, actions: any[], trigger: string, enrollmen
   }
 
   if (enrollment.allowContactToTriggerMultipleTimes) sentences.push("Let op: Deze automatisering kan meerdere keren worden doorlopen door dezelfde klant — elke keer dat de startvoorwaarde opnieuw van toepassing is.");
+  if (enrollment.shouldReEnroll) sentences.push("Let op: re-enrollment staat aan; hetzelfde object kan opnieuw instromen wanneer de ingestelde criteria opnieuw gelden.");
   if (enrollment.allowEnrollmentFromMerge) sentences.push("Als twee contacten worden samengevoegd in HubSpot, start het samengevoegde contact automatisch opnieuw in deze automatisering.");
   const triggeredBy: any[] = enrollment.triggeredByWorkflowIds ?? [];
   if (triggeredBy.length > 0) {
@@ -436,6 +579,97 @@ function extractWebhookPaths(actions: any[]): string[] {
     });
 }
 
+function getWorkflowId(wf: any): string | null {
+  const id = wf.id ?? wf.workflowId ?? wf.flowId;
+  return id == null ? null : String(id);
+}
+
+function getWorkflowPerformanceId(wf: any): string | null {
+  const hybridMatch = typeof wf.uuid === "string" ? wf.uuid.match(/hybrid-execution-wf-(\d+)/i) : null;
+  if (hybridMatch) return hybridMatch[1];
+  const id = wf.workflowId ?? wf.flowId;
+  return id == null ? null : String(id);
+}
+
+function normalizeAutomationName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function makeUniqueAutomationName(name: string, externalId: string, claimedNames: Set<string>): string {
+  const normalized = normalizeAutomationName(name);
+  if (!claimedNames.has(normalized)) {
+    claimedNames.add(normalized);
+    return name;
+  }
+
+  const fallback = `${name} (HubSpot ${externalId})`;
+  claimedNames.add(normalizeAutomationName(fallback));
+  return fallback;
+}
+
+function isWorkflowEnabled(wf: any): boolean {
+  return Boolean(wf.enabled ?? wf.isEnabled ?? wf.active ?? false);
+}
+
+interface WorkflowUsage {
+  lastRunAt: string | null;
+  runCount365d: number | null;
+}
+
+function asDate(value: unknown): Date | null {
+  if (typeof value === "number") {
+    const date = new Date(value < 10_000_000_000 ? value * 1000 : value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && /^\d+$/.test(value)) return asDate(numeric);
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function extractWorkflowUsage(performance: any): WorkflowUsage {
+  let lastRunAt: Date | null = null;
+  let runCount365d = 0;
+
+  function visit(value: any): void {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+
+    const entries = Object.entries(value);
+    const recordDate = entries
+      .map(([key, entryValue]) => /date|time|bucket|period|start/i.test(key) ? asDate(entryValue) : null)
+      .find((date): date is Date => Boolean(date));
+
+    const series = typeof value.series === "string" ? value.series.toLowerCase() : "";
+    const recordCount = entries.reduce((total, [key, entryValue]) => {
+      if (typeof entryValue !== "number" || !Number.isFinite(entryValue)) return total;
+      if (/frequency/i.test(key) && /enrolled|completed/.test(series)) return total + entryValue;
+      if (/enroll|complete|execute|execution|started|run/i.test(key)) return total + entryValue;
+      return total;
+    }, 0);
+
+    if (recordCount > 0) {
+      runCount365d += recordCount;
+      if (recordDate && (!lastRunAt || recordDate > lastRunAt)) lastRunAt = recordDate;
+    }
+
+    entries.forEach(([, entryValue]) => visit(entryValue));
+  }
+
+  visit(performance);
+
+  return {
+    lastRunAt: lastRunAt?.toISOString() ?? null,
+    runCount365d: runCount365d > 0 ? runCount365d : 0,
+  };
+}
+
 function mapWorkflow(wf: any) {
   const actions = flattenActions(wf.actions ?? []);
   const stappen   = extractStappen(actions);
@@ -451,7 +685,11 @@ function mapWorkflow(wf: any) {
     allowContactToTriggerMultipleTimes: wf.allowContactToTriggerMultipleTimes ?? false,
     allowEnrollmentFromMerge:          wf.allowEnrollmentFromMerge ?? false,
     listening:                         wf.listening ?? false,
-    workflowType:                      wf.type ?? "",
+    workflowType:                      wf.type ?? wf.flowType ?? "",
+    objectTypeId:                      wf.objectTypeId ?? null,
+    objectType:                        OBJECT_TYPE_LABEL[wf.objectTypeId ?? ""] ?? null,
+    enrollmentType:                    wf.enrollmentCriteria?.type ?? null,
+    shouldReEnroll:                    wf.enrollmentCriteria?.shouldReEnroll ?? false,
     contactListIds:                    wf.metaData?.contactListIds ?? {},
     triggeredByWorkflowIds:            wf.metaData?.triggeredByWorkflowIds ?? [],
   };
@@ -475,7 +713,7 @@ function mapWorkflow(wf: any) {
 
   return {
     naam,
-    status:                       wf.enabled ? "Actief" : "Uitgeschakeld",
+    status:                       isWorkflowEnabled(wf) ? "Actief" : "Uitgeschakeld",
     beschrijving,
     doel:                         naam ? `Automatisch gegenereerd op basis van naam: '${naam}'` : "",
     trigger,
@@ -522,44 +760,138 @@ serve(async (req) => {
       );
     }
 
-    // Fetch workflows from HubSpot
-    const hubspotRes = await fetch("https://api.hubapi.com/automation/v3/workflows", {
-      headers: { Authorization: `Bearer ${integration.token}` },
-    });
+    const token = integration.token;
 
-    if (!hubspotRes.ok) {
-      const errText = await hubspotRes.text();
-      const errorMessage = hubspotRes.status === 401
-        ? "Ongeldige HubSpot token."
-        : `HubSpot API fout (${hubspotRes.status}): ${errText.slice(0, 200)}`;
-      await db.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
-      return new Response(JSON.stringify({ error: errorMessage }), {
-        status: hubspotRes.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    async function fetchWorkflowSummaries(endpoint: string): Promise<{ workflows: any[]; pages: number }> {
+      const workflows: any[] = [];
+      let after: string | null = null;
+      let pages = 0;
+
+      while (true) {
+        const pageUrl = new URL(endpoint);
+        pageUrl.searchParams.set("limit", "100");
+        if (after) pageUrl.searchParams.set("after", after);
+
+        const pageRes = await fetch(pageUrl.toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!pageRes.ok) {
+          const errText = await pageRes.text();
+          throw { status: pageRes.status, text: errText };
+        }
+
+        const body = await pageRes.json();
+        const page: any[] = body.workflows ?? body.results ?? [];
+        workflows.push(...page);
+        pages++;
+
+        const nextAfter = body.paging?.next?.after
+          ?? (body.paging?.next?.link ? new URL(body.paging.next.link, endpoint).searchParams.get("after") : null);
+
+        if (!nextAfter) return { workflows, pages };
+        after = String(nextAfter);
+
+        if (pages > 100) {
+          throw { status: 500, text: "HubSpot pagination bleef doorlopen; sync afgebroken." };
+        }
+      }
     }
 
-    const body = await hubspotRes.json();
-    const workflowList: any[] = body.workflows ?? body.results ?? [];
+    let workflowList: any[] = [];
+    let workflowListPages = 0;
+    let workflowListEndpoint = "automation/v4/flows";
+
+    try {
+      const result = await fetchWorkflowSummaries("https://api.hubapi.com/automation/v4/flows");
+      workflowList = result.workflows;
+      workflowListPages = result.pages;
+    } catch (error: any) {
+      const canFallbackToV3 = error?.status === 404 || error?.status === 405;
+      if (!canFallbackToV3) {
+        const errorMessage = error?.status === 401
+          ? "Ongeldige HubSpot token."
+          : `HubSpot API fout (${error?.status ?? "onbekend"}): ${String(error?.text ?? error).slice(0, 200)}`;
+        await db.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
+        return new Response(JSON.stringify({ error: errorMessage }), {
+          status: error?.status ?? 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      workflowListEndpoint = "automation/v3/workflows";
+      try {
+        const result = await fetchWorkflowSummaries("https://api.hubapi.com/automation/v3/workflows");
+        workflowList = result.workflows;
+        workflowListPages = result.pages;
+      } catch (fallbackError: any) {
+        const errorMessage = fallbackError?.status === 401
+          ? "Ongeldige HubSpot token."
+          : `HubSpot API fout (${fallbackError?.status ?? "onbekend"}): ${String(fallbackError?.text ?? fallbackError).slice(0, 200)}`;
+        await db.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
+        return new Response(JSON.stringify({ error: errorMessage }), {
+          status: fallbackError?.status ?? 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Fetch full details for each workflow (list endpoint omits actions/triggers)
-    const token = integration.token;
     async function fetchDetail(wfId: number | string): Promise<any> {
-      const r = await fetch(`https://api.hubapi.com/automation/v3/workflows/${wfId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) return null;
-      return r.json();
+      for (const endpoint of [
+        `https://api.hubapi.com/automation/v3/workflows/${wfId}`,
+        `https://api.hubapi.com/automation/v4/flows/${wfId}`,
+      ]) {
+        const r = await fetch(endpoint, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (r.ok) return r.json();
+      }
+      return null;
+    }
+
+    async function fetchUsage(wfId: number | string): Promise<WorkflowUsage> {
+      const end = Date.now();
+      const start = end - 365 * 24 * 60 * 60 * 1000;
+
+      try {
+        const r = await fetch(
+          `https://api.hubapi.com/automation/v3/performance/workflow/${wfId}?start=${start}&end=${end}&bucket=DAY`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (r.ok) return extractWorkflowUsage(await r.json());
+      } catch {
+        // Usage data is helpful for cleanup advice, but should never block the sync.
+      }
+
+      return { lastRunAt: null, runCount365d: null };
     }
 
     // Fetch details in batches of 15 to avoid rate limiting
     const workflows: any[] = [];
     for (let i = 0; i < workflowList.length; i += 15) {
       const batch = workflowList.slice(i, i + 15);
-      const details = await Promise.all(batch.map((wf) => fetchDetail(wf.id)));
+      const details = await Promise.all(batch.map((wf) => {
+        const workflowId = getWorkflowId(wf);
+        return workflowId ? fetchDetail(workflowId) : Promise.resolve(null);
+      }));
       for (let j = 0; j < batch.length; j++) {
         // Merge list metadata with detail (detail may be null if fetch failed)
         workflows.push(details[j] ?? batch[j]);
+      }
+    }
+
+    const usageByWorkflowId: Record<string, WorkflowUsage> = {};
+    for (let i = 0; i < workflows.length; i += 10) {
+      const batch = workflows.slice(i, i + 10);
+      const usageResults = await Promise.all(batch.map((wf) => {
+        const workflowId = getWorkflowId(wf);
+        const performanceId = getWorkflowPerformanceId(wf);
+        return workflowId && performanceId ? fetchUsage(performanceId) : Promise.resolve({ lastRunAt: null, runCount365d: null });
+      }));
+      for (let j = 0; j < batch.length; j++) {
+        const workflowId = getWorkflowId(batch[j]);
+        if (workflowId) usageByWorkflowId[workflowId] = usageResults[j];
       }
     }
 
@@ -570,11 +902,15 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           debug: true,
+          workflow_list_endpoint: workflowListEndpoint,
+          workflow_list_pages: workflowListPages,
+          workflow_list_total: workflowList.length,
           total_workflows: workflows.length,
           first_workflow_keys: sample ? Object.keys(sample) : [],
           first_workflow_actions_sample: sample?.actions?.slice(0, 3) ?? [],
           first_workflow_triggerSets: sample?.triggerSets ?? null,
           first_workflow_segmentCriteria: sample?.segmentCriteria ?? null,
+          first_workflow_usage: sample ? usageByWorkflowId[getWorkflowId(sample) ?? ""] ?? null : null,
           mapped_result: mappedSample,
         }, null, 2),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -584,15 +920,23 @@ serve(async (req) => {
     // Get existing automations from this source
     const { data: existing } = await db
       .from("automatiseringen")
-      .select("id, external_id, status, import_status")
+      .select("id, external_id, status, import_status, naam")
       .eq("source", "hubspot");
 
-    const existingMap: Record<string, { id: string; status: string; import_status: string }> = {};
+    const existingMap: Record<string, { id: string; status: string; import_status: string; naam: string }> = {};
+    const existingNameMap: Record<string, { id: string; status: string; import_status: string; naam: string }> = {};
+    const claimedNames = new Set<string>();
     for (const row of existing ?? []) {
       if (row.external_id) existingMap[row.external_id] = row;
+      if (row.naam) {
+        const normalizedName = normalizeAutomationName(row.naam);
+        existingNameMap[normalizedName] = row;
+        claimedNames.add(normalizedName);
+      }
     }
 
     const syncedIds = new Set<string>();
+    const syncedDbIds = new Set<string>();
     const insertedIds: string[] = [];
 
     // Build insert/update batches — no sequential awaits per workflow
@@ -601,37 +945,52 @@ serve(async (req) => {
     const now = new Date().toISOString();
 
     for (const wf of workflows) {
-      const externalId = String(wf.id);
+      const externalId = getWorkflowId(wf);
+      if (!externalId) continue;
       syncedIds.add(externalId);
+      const usage = usageByWorkflowId[externalId] ?? { lastRunAt: null, runCount365d: null };
       const { pipelineId, stageId } = extractPipelineStage(wf);
       const mapped = mapWorkflow(wf);
+      const existingRow = existingMap[externalId] ?? existingNameMap[normalizeAutomationName(mapped.naam)];
 
-      if (existingMap[externalId]) {
+      if (existingRow) {
+        syncedDbIds.add(existingRow.id);
+        const currentNameKey = normalizeAutomationName(existingRow.naam);
+        const mappedNameKey = normalizeAutomationName(mapped.naam);
+        const updateName = mappedNameKey !== currentNameKey && claimedNames.has(mappedNameKey)
+          ? existingRow.naam
+          : mapped.naam;
+        const importProposal = updateName === mapped.naam ? mapped : { ...mapped, naam: updateName };
         // NOTE: fasen intentionally excluded — preserves reviewer edits (per D-09)
         toUpdate.push({
-          id: existingMap[externalId].id,
+          id: existingRow.id,
           data: {
-            naam:                 wf.name,
-            status:               wf.enabled ? "Actief" : "Uitgeschakeld",
+            naam:                 updateName,
+            status:               isWorkflowEnabled(wf) ? "Actief" : "Uitgeschakeld",
             trigger_beschrijving: mapped.trigger,
             systemen:             mapped.systemen,
             stappen:              mapped.stappen,
             branches:             mapped.branches,
             categorie:            mapped.categorie,
             webhook_paths:        mapped.webhookPaths,
-            import_proposal:      { ...mapped },
+            external_id:          externalId,
+            import_proposal:      importProposal,
             raw_payload:          wf,
             pipeline_id:          pipelineId,
             stage_id:             stageId,
+            hubspot_last_run_at:   usage.lastRunAt,
+            hubspot_run_count_365d: usage.runCount365d,
             last_synced_at:       now,
           },
         });
       } else {
         const actualId = `AUTO-HS-${externalId}`;
+        const uniqueName = makeUniqueAutomationName(mapped.naam, externalId, claimedNames);
+        const importProposal = uniqueName === mapped.naam ? mapped : { ...mapped, naam: uniqueName };
         insertedIds.push(actualId);
         toInsert.push({
           id:                   actualId,
-          naam:                 mapped.naam,
+          naam:                 uniqueName,
           status:               mapped.status,
           doel:                 "",
           trigger_beschrijving: mapped.trigger,
@@ -649,10 +1008,12 @@ serve(async (req) => {
           source:               "hubspot",
           import_source:        "hubspot",
           import_status:        "pending_approval",
-          import_proposal:      { ...mapped },
+          import_proposal:      importProposal,
           raw_payload:          wf,
           pipeline_id:          pipelineId,
           stage_id:             stageId,
+          hubspot_last_run_at:   usage.lastRunAt,
+          hubspot_run_count_365d: usage.runCount365d,
           last_synced_at:       now,
         });
       }
@@ -660,30 +1021,50 @@ serve(async (req) => {
 
     // One bulk insert for all new automations
     if (toInsert.length > 0) {
-      await db.from("automatiseringen").insert(toInsert);
+      const { error: insertError } = await db.from("automatiseringen").insert(toInsert);
+      if (insertError) throw new Error(`Automatiseringen insert mislukt: ${insertError.message}`);
     }
 
     // Parallel updates in chunks of 20
     for (let i = 0; i < toUpdate.length; i += 20) {
-      await Promise.all(
+      const updateResults = await Promise.all(
         toUpdate.slice(i, i + 20).map(({ id, data }) =>
           db.from("automatiseringen").update(data).eq("id", id),
         ),
       );
+      const updateError = updateResults.find((result) => result.error)?.error;
+      if (updateError) throw new Error(`Automatiseringen update mislukt: ${updateError.message}`);
     }
 
     const inserted = toInsert.length;
     const updated  = toUpdate.length;
 
-    // Deactivate removed workflows in parallel
+    // Rejected HubSpot imports stay visible until the source no longer returns them.
+    const rejectedToDelete = Object.entries(existingMap)
+      .filter(([extId, row]) => row.import_status === "rejected" && !syncedIds.has(extId) && !syncedDbIds.has(row.id))
+      .map(([, row]) => row.id);
+    const deletedRejectedIds = new Set(rejectedToDelete);
+
+    if (rejectedToDelete.length > 0) {
+      const { error: deleteRejectedError } = await db
+        .from("automatiseringen")
+        .delete()
+        .in("id", rejectedToDelete);
+      if (deleteRejectedError) throw new Error(`Afgewezen HubSpot imports verwijderen mislukt: ${deleteRejectedError.message}`);
+    }
+    const deletedRejected = rejectedToDelete.length;
+
+    // Deactivate removed approved/pending workflows in parallel
     const toDeactivate = Object.entries(existingMap)
-      .filter(([extId, row]) => !syncedIds.has(extId) && row.status !== "Uitgeschakeld")
+      .filter(([extId, row]) => !syncedIds.has(extId) && !syncedDbIds.has(row.id) && !deletedRejectedIds.has(row.id) && row.status !== "Uitgeschakeld")
       .map(([, row]) => row.id);
 
     if (toDeactivate.length > 0) {
-      await Promise.all(
+      const deactivateResults = await Promise.all(
         toDeactivate.map((id) => db.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", id)),
       );
+      const deactivateError = deactivateResults.find((result) => result.error)?.error;
+      if (deactivateError) throw new Error(`Automatiseringen deactiveren mislukt: ${deactivateError.message}`);
     }
     const deactivated = toDeactivate.length;
 
@@ -693,7 +1074,8 @@ serve(async (req) => {
     const { data: hsAutos } = await db
       .from("automatiseringen")
       .select("id, webhook_paths")
-      .eq("source", "hubspot");
+      .eq("source", "hubspot")
+      .neq("import_status", "rejected");
 
     const { data: glAutos } = await db
       .from("automatiseringen")
@@ -775,7 +1157,7 @@ serve(async (req) => {
     }).eq("id", integration.id);
 
     return new Response(
-      JSON.stringify({ success: true, inserted, updated, deactivated, total: workflows.length }),
+      JSON.stringify({ success: true, inserted, updated, deactivated, deletedRejected, total: workflows.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {

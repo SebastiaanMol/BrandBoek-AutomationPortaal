@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAutomatiseringen } from "@/lib/hooks";
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useAutomatiseringen, useSetCleanupDeleteCandidate } from "@/lib/hooks";
 import {
   Automatisering,
   KLANT_FASEN,
@@ -9,11 +11,13 @@ import {
   berekenImpact,
 } from "@/lib/types";
 import { computeSmartEdges } from "@/lib/smartEdges";
+import { supabase } from "@/integrations/supabase/client";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
-import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2, Filter, Info, BarChart3 } from "lucide-react";
+import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2, Filter, Info, BarChart3, Archive, Clock, ShieldCheck, Trash2, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -44,6 +48,156 @@ function getScoreLabel(score: number): string {
   if (score >= 70) return "High";
   if (score >= 40) return "Medium";
   return "Low";
+}
+
+type CleanupLevel = "delete" | "review" | "keep";
+
+interface CleanupAdvice {
+  automation: Automatisering;
+  score: number;
+  level: CleanupLevel;
+  label: string;
+  reasons: string[];
+  summary: string;
+}
+
+interface RejectedHubSpotAutomation {
+  id: string;
+  naam: string;
+  status: string | null;
+  external_id: string | null;
+  last_synced_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  stappen: string[] | null;
+}
+
+async function fetchRejectedHubSpotAutomations(): Promise<RejectedHubSpotAutomation[]> {
+  const { data, error } = await supabase
+    .from("automatiseringen")
+    .select("id,naam,status,external_id,last_synced_at,rejection_reason,created_at,stappen")
+    .eq("import_status", "rejected")
+    .or("source.eq.hubspot,import_source.eq.hubspot")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as RejectedHubSpotAutomation[];
+}
+
+const LEGACY_SYSTEM_PATTERNS = [
+  { pattern: /pipedream/i, label: "Pipedream" },
+  { pattern: /docufy/i, label: "Docufy" },
+];
+
+function getAutomationSearchText(a: Automatisering): string {
+  return [
+    a.naam,
+    a.doel,
+    a.trigger,
+    a.afhankelijkheden,
+    a.source,
+    a.systemen.join(" "),
+    a.stappen.join(" "),
+    a.beschrijvingInSimpeleTaal?.join(" ") ?? "",
+  ].join(" ");
+}
+
+function formatRunCount(count: number): string {
+  return new Intl.NumberFormat("nl-NL").format(count);
+}
+
+function buildCleanupAdvice(a: Automatisering, currentYear = new Date().getFullYear()): CleanupAdvice {
+  const reasons: string[] = [];
+  const metadataReasons: string[] = [];
+  let score = 0;
+  const searchText = getAutomationSearchText(a);
+  const name = a.naam.toLowerCase();
+  let hasRecentHubSpotRun = false;
+
+  if (a.status === "Uitgeschakeld") {
+    score += 38;
+    reasons.push("Staat uitgeschakeld en lijkt dus niet actief gebruikt te worden.");
+  }
+
+  if (a.status === "Verouderd") {
+    score += 30;
+    reasons.push("Heeft de status verouderd.");
+  }
+
+  if (a.source === "hubspot") {
+    if (a.hubspotLastRunAt) {
+      const lastRun = new Date(a.hubspotLastRunAt);
+      if (!Number.isNaN(lastRun.getTime())) {
+        const daysSinceLastRun = Math.floor((Date.now() - lastRun.getTime()) / (24 * 60 * 60 * 1000));
+        if (daysSinceLastRun <= 90) {
+          hasRecentHubSpotRun = true;
+          score -= 35;
+          reasons.push(`Recent nog gedraaid in HubSpot (${daysSinceLastRun === 0 ? "vandaag" : `${daysSinceLastRun} dagen geleden`}); dit is geen verwijderkandidaat zonder handmatige controle.`);
+        } else if (daysSinceLastRun >= 365) {
+          score += 30;
+          reasons.push(`Is al ${daysSinceLastRun} dagen niet meer gedraaid in HubSpot.`);
+        } else if (daysSinceLastRun >= 180) {
+          score += 16;
+          reasons.push(`Is al ${daysSinceLastRun} dagen niet meer gedraaid in HubSpot.`);
+        }
+      }
+    } else if (a.hubspotRunCount365d === 0) {
+      score += 24;
+      reasons.push("Heeft geen HubSpot-runs in de afgelopen 365 dagen.");
+    } else {
+      score += 18;
+      reasons.push("Run-data is niet beschikbaar via de HubSpot API; behandel deze workflow als verouderd totdat hij handmatig is gecontroleerd.");
+    }
+  }
+
+  for (const legacy of LEGACY_SYSTEM_PATTERNS) {
+    if (legacy.pattern.test(searchText)) {
+      score += 35;
+      reasons.push(`Gebruikt of verwijst naar ${legacy.label}, een systeem dat waarschijnlijk niet meer de standaardroute is.`);
+    }
+  }
+
+  const years = Array.from(name.matchAll(/\b(20\d{2})\b/g))
+    .map((match) => Number(match[1]))
+    .filter((year) => year < currentYear - 1);
+  if (years.length > 0) {
+    const oldest = Math.min(...years);
+    score += oldest <= currentYear - 4 ? 28 : 18;
+    reasons.push(`Naam bevat oude jaargang(en): ${[...new Set(years)].join(", ")}.`);
+  }
+
+  if (/\b(cloned|copy|kopie)\b/i.test(a.naam)) {
+    score += 14;
+    reasons.push("Lijkt een clone/kopie te zijn; controleer of dit geen duplicaat is.");
+  }
+
+  if (a.stappen.length === 0) {
+    score += 12;
+    reasons.push("Heeft geen duidelijke stappen in het portaal.");
+  }
+
+  const weakGoal = !a.doel.trim() || /automatisch gegenereerd op basis van naam/i.test(a.doel);
+  if (weakGoal) {
+    metadataReasons.push("Doel is leeg of nog automatisch afgeleid uit de naam.");
+  }
+
+  if (a.koppelingen.length === 0) {
+    metadataReasons.push("Heeft geen handmatige koppelingen naar andere automations.");
+  }
+
+  if ((a.fasen ?? []).length === 0) {
+    metadataReasons.push("Is niet gekoppeld aan een klantfase.");
+  }
+
+  const clampedScore = Math.max(0, Math.min(score, 100));
+  const allReasons = [...reasons, ...metadataReasons];
+  const level: CleanupLevel = hasRecentHubSpotRun
+    ? "keep"
+    : clampedScore >= 70 ? "delete" : clampedScore >= 35 ? "review" : "keep";
+  const label = level === "delete" ? "Waarschijnlijk verwijderen" : level === "review" ? "Controleren" : "Behouden";
+  const summary = reasons[0] ?? metadataReasons[0] ?? "Geen sterke opruimsignalen gevonden.";
+
+  return { automation: a, score: clampedScore, level, label, reasons: allReasons, summary };
 }
 
 // --- Dependency graph: find cascading failures ---
@@ -80,11 +234,40 @@ function findCascadeFailures(
 export default function Analyse() {
   const navigate = useNavigate();
   const { data: fetchedData, isLoading } = useAutomatiseringen();
+  const { data: rejectedHubSpotAutomations = [], isLoading: isLoadingRejectedHubSpot } = useQuery({
+    queryKey: ["rejected-hubspot-automations"],
+    queryFn: fetchRejectedHubSpotAutomations,
+  });
   const data = useMemo(() => fetchedData ?? [], [fetchedData]);
   const smartEdges = useMemo(() => computeSmartEdges(data), [data]);
   const [expandedFailure, setExpandedFailure] = useState<string | null>(null);
   const [impactFilter, setImpactFilter] = useState<string>("alle");
   const [complexFilter, setComplexFilter] = useState<string>("alle");
+
+  const cleanupMarker = useSetCleanupDeleteCandidate();
+
+  async function setCleanupMarker(automation: Automatisering, marked: boolean): Promise<void> {
+    try {
+      await cleanupMarker.mutateAsync({ id: automation.id, marked });
+      if (marked) {
+        toast.success(`"${automation.naam}" staat op de verwijderlijst`, {
+          duration: 5000,
+          action: {
+            label: "Ongedaan maken",
+            onClick: () => {
+              void cleanupMarker.mutateAsync({ id: automation.id, marked: false });
+            },
+          },
+        });
+      } else {
+        toast.success(`"${automation.naam}" is van de verwijderlijst gehaald`);
+      }
+    } catch {
+      toast.error(marked
+        ? "Kon automation niet op de verwijderlijst zetten"
+        : "Kon automation niet van de verwijderlijst halen");
+    }
+  }
 
   const categorieData = useMemo(() => groupBy(data, "categorie"), [data]);
   const statusData = useMemo(() => groupBy(data, "status"), [data]);
@@ -105,6 +288,25 @@ export default function Analyse() {
     })).sort((a, b) => b.impact - a.impact),
     [data]
   );
+
+  const cleanupAdvice = useMemo(() =>
+    data
+      .map((automation) => buildCleanupAdvice(automation))
+      .filter((advice) => advice.level !== "keep" || advice.automation.cleanupDeleteCandidate)
+      .sort((a, b) => {
+        if (a.automation.cleanupDeleteCandidate !== b.automation.cleanupDeleteCandidate) {
+          return a.automation.cleanupDeleteCandidate ? -1 : 1;
+        }
+        return b.score - a.score;
+      }),
+    [data]
+  );
+
+  const cleanupDeleteCount = cleanupAdvice.filter((item) => item.level === "delete").length;
+  const cleanupReviewCount = cleanupAdvice.filter((item) => item.level === "review").length;
+  const cleanupDeleteList = data.filter((item) => item.cleanupDeleteCandidate);
+  const cleanupListCount = cleanupDeleteList.length;
+  const removalListCount = cleanupListCount + rejectedHubSpotAutomations.length;
 
   const faseAutoMap = useMemo(() => {
     const map: Record<KlantFase, Automatisering[]> = {
@@ -155,6 +357,8 @@ export default function Analyse() {
               <StatBadge label="Automations" value={data.length} />
               <StatBadge label="Actief" value={activeCount} />
               <StatBadge label="Hoog risico" value={highRiskCount} />
+              <StatBadge label="Opruimadvies" value={cleanupAdvice.length} />
+              <StatBadge label="Verwijderlijst" value={removalListCount} />
             </div>
           </header>
           <div className="border-t border-border bg-card px-6">
@@ -174,12 +378,15 @@ export default function Analyse() {
               <TabsTrigger value="bottlenecks" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
                 Bottlenecks
               </TabsTrigger>
+              <TabsTrigger value="cleanup" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+                Opruimadvies
+              </TabsTrigger>
             </TabsList>
           </div>
         </div>
 
         {/* ═══════════════ KLANTPROCES TIJDLIJN ═══════════════ */}
-        <TabsContent value="timeline" className="p-6 mt-0">
+        <TabsContent value="timeline" className="p-6 mt-6">
       <section>
         <div className="flex items-center gap-2 mb-6">
           <Activity className="h-5 w-5 text-primary" />
@@ -259,7 +466,7 @@ export default function Analyse() {
         </TabsContent>
 
         {/* ═══════════════ IMPACT & COMPLEXITEIT SCORES ═══════════════ */}
-        <TabsContent value="scores" className="p-6 mt-0">
+        <TabsContent value="scores" className="p-6 mt-6">
       <section>
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div className="flex items-center gap-2">
@@ -402,7 +609,7 @@ export default function Analyse() {
         </TabsContent>
 
         {/* ═══════════════ AFHANKELIJKHEIDSGRAPH ═══════════════ */}
-        <TabsContent value="dependency" className="p-6 mt-0">
+        <TabsContent value="dependency" className="p-6 mt-6">
       <section>
         <div className="flex items-center gap-2 mb-6">
           <Layers className="h-5 w-5 text-primary" />
@@ -473,7 +680,7 @@ export default function Analyse() {
         </TabsContent>
 
         {/* ═══════════════ BESTAANDE CHARTS ═══════════════ */}
-        <TabsContent value="charts" className="p-6 mt-0">
+        <TabsContent value="charts" className="p-6 mt-6">
       <section>
         <h2 className="text-lg font-semibold tracking-tight mb-6">Overview Charts</h2>
         <div className="grid lg:grid-cols-2 gap-8">
@@ -486,7 +693,7 @@ export default function Analyse() {
         </TabsContent>
 
         {/* ═══════════════ KNELPUNTEN ═══════════════ */}
-        <TabsContent value="bottlenecks" className="p-6 mt-0">
+        <TabsContent value="bottlenecks" className="p-6 mt-6">
       <section>
         <h2 className="text-lg font-semibold tracking-tight mb-4">Bottlenecks Overview</h2>
         {data.filter((a) => a.afhankelijkheden?.trim()).length === 0 ? (
@@ -505,6 +712,249 @@ export default function Analyse() {
           </div>
         )}
       </section>
+        </TabsContent>
+
+        <TabsContent value="cleanup" className="p-6 mt-6">
+          <section className="space-y-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Archive className="h-5 w-5 text-primary" />
+                  <h2 className="text-lg font-semibold tracking-tight">Opruimadvies</h2>
+                </div>
+                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                  Automations die mogelijk opgeschoond kunnen worden op basis van status, oude jaargangen, legacy systemen,
+                  ontbrekende stappen en losse koppelingen. Zet kandidaten eerst op de verwijderlijst voordat je ze buiten het portaal opruimt.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:flex">
+                <StatBadge label="Waarschijnlijk verwijderen" value={cleanupDeleteCount} />
+                <StatBadge label="Controleren" value={cleanupReviewCount} />
+                <StatBadge label="Verwijderlijst" value={removalListCount} />
+              </div>
+            </div>
+
+            <div className="rounded-[var(--radius-outer)] border border-border bg-card p-5 shadow-sm">
+              <div className="flex flex-col gap-2 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <h3 className="text-sm font-semibold">Verwijderlijst</h3>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Items die gecontroleerd moeten worden voordat ze definitief uit de bron of uit het portaal verdwijnen.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full bg-secondary px-2.5 py-1 font-medium text-foreground">
+                    {cleanupListCount} handmatig gemarkeerd
+                  </span>
+                  <span className="rounded-full bg-secondary px-2.5 py-1 font-medium text-foreground">
+                    {rejectedHubSpotAutomations.length} afgewezen HubSpot
+                  </span>
+                </div>
+              </div>
+
+              {removalListCount === 0 && !isLoadingRejectedHubSpot ? (
+                <div className="py-8 text-center">
+                  <ShieldCheck className="mx-auto h-7 w-7 text-green-600" />
+                  <p className="mt-2 text-sm font-medium">De verwijderlijst is leeg</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Gebruik de knop in het opruimadvies om een automation hier klaar te zetten.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {cleanupDeleteList.map((automation) => (
+                    <div
+                      key={automation.id}
+                      className="flex cursor-pointer flex-col gap-2 py-3 transition-colors hover:bg-secondary/40 sm:flex-row sm:items-center sm:justify-between"
+                      onClick={() => navigate(`/alle?open=${automation.id}`)}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Handmatig</span>
+                          <span className="font-mono text-[11px] text-muted-foreground">{automation.id}</span>
+                          <span className="truncate text-sm font-semibold">{automation.naam}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Toegevoegd vanuit opruimadvies{automation.cleanupDeleteCandidateAt ? ` op ${new Date(automation.cleanupDeleteCandidateAt).toLocaleDateString("nl-NL")}` : ""}.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <span className="rounded-full bg-secondary px-2 py-1 text-[11px] text-muted-foreground">{automation.status}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 text-xs"
+                          disabled={cleanupMarker.isPending}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void setCleanupMarker(automation, false);
+                          }}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          Van lijst
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {isLoadingRejectedHubSpot ? (
+                    <p className="py-4 text-sm text-muted-foreground">Afgewezen HubSpot automations laden...</p>
+                  ) : rejectedHubSpotAutomations.map((automation) => (
+                    <div key={automation.id} className="py-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700">HubSpot afgewezen</span>
+                            <span className="font-mono text-[11px] text-muted-foreground">{automation.external_id ?? automation.id}</span>
+                            <span className="truncate text-sm font-semibold">{automation.naam}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Verwijder deze workflow handmatig in HubSpot. Na HubSpot sync verdwijnt hij hier pas als HubSpot hem niet meer terugstuurt.
+                          </p>
+                          {automation.rejection_reason && (
+                            <p className="mt-1 text-xs text-muted-foreground">Reden: {automation.rejection_reason}</p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 sm:justify-end">
+                          <span className="rounded-full bg-secondary px-2 py-1 text-[11px] text-muted-foreground">
+                            {automation.status ?? "Onbekend"}
+                          </span>
+                          {automation.last_synced_at && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-[11px] text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {new Date(automation.last_synced_at).toLocaleDateString("nl-NL")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {cleanupAdvice.length === 0 ? (
+              <div className="rounded-[var(--radius-outer)] border border-border bg-card p-8 text-center shadow-sm">
+                <ShieldCheck className="mx-auto h-8 w-8 text-green-600" />
+                <p className="mt-3 text-sm font-semibold">Geen duidelijke opruimkandidaten gevonden</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Op basis van de huidige signalen lijkt er niets direct verdacht.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-[var(--radius-outer)] border border-border bg-card shadow-sm">
+                <div className="hidden grid-cols-[190px_1fr_110px_140px_150px] gap-4 border-b border-border bg-secondary px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground lg:grid">
+                  <span>Advies</span>
+                  <span>Automation</span>
+                  <span>Score</span>
+                  <span>Bron/status</span>
+                  <span>Actie</span>
+                </div>
+
+                <div className="divide-y divide-border">
+                  {cleanupAdvice.map((item) => {
+                    const a = item.automation;
+                    const isDelete = item.level === "delete";
+                    const isOnDeleteList = Boolean(a.cleanupDeleteCandidate);
+                    return (
+                      <div
+                        key={a.id}
+                        onClick={() => navigate(`/alle?open=${a.id}`)}
+                        className="grid w-full cursor-pointer gap-3 px-4 py-4 text-left transition-colors hover:bg-secondary/50 lg:grid-cols-[190px_1fr_110px_140px_150px] lg:items-start lg:gap-4"
+                      >
+                        <div>
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            isOnDeleteList ? "bg-slate-900 text-white" : isDelete ? "bg-red-500/10 text-red-700" : "bg-yellow-500/10 text-yellow-700"
+                          }`}>
+                            {isOnDeleteList ? "Op verwijderlijst" : item.label}
+                          </span>
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-[11px] text-muted-foreground">{a.id}</span>
+                            <span className="text-sm font-semibold text-foreground">{a.naam}</span>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{item.summary}</p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {item.reasons.slice(1, 4).map((reason) => (
+                              <span key={reason} className="rounded-full bg-secondary px-2 py-1 text-[11px] text-muted-foreground">
+                                {reason}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 lg:block">
+                          <div className="h-2 w-24 overflow-hidden rounded-full bg-secondary lg:w-full">
+                            <div
+                              className={`h-full rounded-full ${isDelete ? "bg-red-500" : "bg-yellow-500"}`}
+                              style={{ width: `${item.score}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs font-bold ${isDelete ? "text-red-700" : "text-yellow-700"}`}>
+                            {item.score}/100
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 lg:flex-col lg:items-start">
+                          <span className="rounded-full bg-secondary px-2 py-1 text-[11px] font-medium text-foreground">
+                            {a.source ?? "manual"}
+                          </span>
+                          <span className="rounded-full bg-secondary px-2 py-1 text-[11px] text-muted-foreground">
+                            {a.status}
+                          </span>
+                          {a.hubspotLastRunAt ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-[11px] text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              Gedraaid {new Date(a.hubspotLastRunAt).toLocaleDateString("nl-NL")}
+                              {typeof a.hubspotRunCount365d === "number" ? ` · ${formatRunCount(a.hubspotRunCount365d)} runs` : ""}
+                            </span>
+                          ) : a.hubspotRunCount365d === 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-1 text-[11px] text-red-700">
+                              <Clock className="h-3 w-3" />
+                              0 runs 365d
+                            </span>
+                          ) : a.source === "hubspot" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2 py-1 text-[11px] text-yellow-700">
+                              <Clock className="h-3 w-3" />
+                              Runs onbekend/verouderd
+                            </span>
+                          ) : a.lastSyncedAt && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-[11px] text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {new Date(a.lastSyncedAt).toLocaleDateString("nl-NL")}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-start">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={isOnDeleteList ? "secondary" : "outline"}
+                            className="h-8 w-full gap-1.5 text-xs"
+                            disabled={isOnDeleteList || cleanupMarker.isPending}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void setCleanupMarker(a, true);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {isOnDeleteList ? "Toegevoegd" : "Naar lijst"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
         </TabsContent>
       </Tabs>
     </div>

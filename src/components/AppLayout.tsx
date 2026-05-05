@@ -33,9 +33,8 @@ const navGroups: NavGroup[] = [
   {
     title: "Automations",
     items: [
-      { title: "All Automations", url: "/alle", icon: List },
-      { title: "New Automation", url: "/nieuw", icon: PlusCircle },
-{ title: "Imports", url: "/imports", icon: Download },
+      { title: "Automations", url: "/alle", icon: List },
+      { title: "Imports", url: "/imports", icon: Download },
     ],
   },
   {
@@ -65,6 +64,13 @@ const navGroups: NavGroup[] = [
 const bottomNavItems = [
   { title: "Settings", url: "/instellingen", icon: Settings },
 ];
+
+function isNavItemActive(pathname: string, search: string, itemUrl: string) {
+  const [itemPathname, itemSearch = ""] = itemUrl.split("?");
+  if (pathname !== itemPathname) return false;
+  if (!itemSearch) return true;
+  return search === `?${itemSearch}`;
+}
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -106,7 +112,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               )}
               {collapsed && gi > 0 && <div className="my-2 h-px bg-sidebar-border" />}
               {group.items.map((item) => {
-                const active = location.pathname === item.url;
+                const active = isNavItemActive(location.pathname, location.search, item.url);
                 return (
                   <Link
                     key={item.url}
@@ -133,7 +139,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Bottom */}
         <div className="px-2 py-2 border-t border-sidebar-border space-y-0.5">
           {bottomNavItems.map((item) => {
-            const active = location.pathname === item.url;
+            const active = isNavItemActive(location.pathname, location.search, item.url);
             return (
               <Link
                 key={item.url}
@@ -211,7 +217,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <span className="label-uppercase ml-3 lg:ml-0">
             {location.pathname.startsWith("/pipelines/")
               ? "Pipeline Detail"
-              : [...navGroups.flatMap(g => g.items), ...bottomNavItems].find((n) => n.url === location.pathname)?.title || "Portal"}
+              : [...navGroups.flatMap(g => g.items), ...bottomNavItems].find((n) =>
+                  isNavItemActive(location.pathname, location.search, n.url),
+                )?.title || "Portal"}
           </span>
         </header>
         <main className={`flex-1 w-full ${

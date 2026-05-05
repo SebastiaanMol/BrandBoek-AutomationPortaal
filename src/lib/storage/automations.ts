@@ -13,6 +13,11 @@ interface ImportProposalShape {
   beschrijving_in_simpele_taal?: string[];
 }
 
+interface ReviewerOverridesShape {
+  cleanup_delete_candidate?: boolean;
+  cleanup_delete_candidate_at?: string | null;
+}
+
 export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
   const [
     { data: rows, error },
@@ -35,7 +40,10 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
     kopMap[k.bron_id].push({ doelId: k.doel_id, label: k.label });
   });
 
-  return (rows || []).map((r) => ({
+  return (rows || []).map((r) => {
+    const reviewerOverrides = (r.reviewer_overrides ?? {}) as ReviewerOverridesShape;
+
+    return ({
     id: r.id,
     naam: r.naam,
     categorie: r.categorie as Categorie,
@@ -56,14 +64,19 @@ export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
     externalId: r.external_id ?? undefined,
     source: r.source ?? undefined,
     lastSyncedAt: r.last_synced_at ?? undefined,
+    hubspotLastRunAt: r.hubspot_last_run_at ?? undefined,
+    hubspotRunCount365d: r.hubspot_run_count_365d ?? undefined,
     beschrijvingInSimpeleTaal: (r.import_proposal as ImportProposalShape | null)?.beschrijving_in_simpele_taal ?? undefined,
     gitlabFilePath: r.gitlab_file_path ?? undefined,
     gitlabLastCommit: r.gitlab_last_commit ?? undefined,
     aiDescription: r.ai_description ?? undefined,
     aiDescriptionUpdatedAt: r.ai_description_updated_at ?? undefined,
+    cleanupDeleteCandidate: reviewerOverrides.cleanup_delete_candidate ?? false,
+    cleanupDeleteCandidateAt: reviewerOverrides.cleanup_delete_candidate_at ?? undefined,
     pipelineId: r.pipeline_id ?? undefined,
     stageId: r.stage_id ?? undefined,
-  }));
+    });
+  });
 }
 
 export async function insertAutomatisering(item: Automatisering): Promise<void> {
@@ -128,6 +141,29 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
     );
     if (kopError) throw kopError;
   }
+}
+
+export async function setCleanupDeleteCandidate(id: string, marked: boolean): Promise<void> {
+  const { data: row, error: fetchError } = await supabase
+    .from("automatiseringen")
+    .select("reviewer_overrides")
+    .eq("id", id)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const reviewerOverrides = {
+    ...((row?.reviewer_overrides as Record<string, unknown> | null) ?? {}),
+    cleanup_delete_candidate: marked,
+    cleanup_delete_candidate_at: marked ? new Date().toISOString() : null,
+  };
+
+  const { error } = await supabase
+    .from("automatiseringen")
+    .update({ reviewer_overrides: reviewerOverrides })
+    .eq("id", id);
+
+  if (error) throw error;
 }
 
 export async function deleteAutomatisering(id: string): Promise<void> {

@@ -35,6 +35,11 @@ function getFasen(filePath: string): string[] {
   return FASEN_MAP[parentDir] ?? [];
 }
 
+type GitlabTreeFile = {
+  path: string;
+  blobId: string | null;
+};
+
 // ── Endpoint extraction: regex on FastAPI APIRouter patterns ─────────────────
 function extractEndpoints(content: string): string[] {
   const prefixMatch = content.match(/APIRouter\s*\(\s*prefix\s*=\s*["']([^"']+)["']/);
@@ -53,8 +58,8 @@ async function fetchGitlabTree(
   projectId: string,
   branch: string,
   pat: string,
-): Promise<string[]> {
-  const filePaths: string[] = [];
+): Promise<GitlabTreeFile[]> {
+  const files: GitlabTreeFile[] = [];
   let page = 1;
 
   while (true) {
@@ -79,10 +84,10 @@ async function fetchGitlabTree(
       throw new Error(`GitLab Tree API fout (${res.status}): ${body.slice(0, 200)}`);
     }
 
-    const items: Array<{ type: string; path: string }> = await res.json();
+    const items: Array<{ id?: string; type: string; path: string }> = await res.json();
     for (const item of items) {
       if (item.type === "blob" && item.path.endsWith(".py")) {
-        filePaths.push(item.path);
+        files.push({ path: item.path, blobId: item.id ?? null });
       }
     }
 
@@ -91,7 +96,7 @@ async function fetchGitlabTree(
     page = Number(nextPage);
   }
 
-  return filePaths;
+  return files;
 }
 
 // ── GitLab Files API: fetch raw file content (base64-decoded) ─────────────────
@@ -265,7 +270,7 @@ serve(async (req) => {
 
     // Step 1: Discover all Python automation files
     const allFiles = await fetchGitlabTree(projectId, branch, pat);
-    const automationFiles = allFiles.filter((p) => !shouldSkip(p));
+    const automationFiles = allFiles.filter((file) => !shouldSkip(file.path));
 
     if (automationFiles.length === 0) {
       return new Response(
@@ -279,26 +284,38 @@ serve(async (req) => {
     // Step 2: Load existing GitLab records for diffing
     const { data: existing } = await db
       .from("automatiseringen")
-      .select("id, external_id, status")
+      .select("id, external_id, status, gitlab_last_commit")
       .eq("source", "gitlab");
 
-    const existingMap: Record<string, { id: string; status: string }> = {};
+    const existingMap: Record<string, { id: string; status: string; gitlab_last_commit: string | null }> = {};
     for (const row of existing ?? []) {
       if (row.external_id) existingMap[row.external_id] = row;
     }
 
-    const syncedPaths = new Set<string>(automationFiles); // mark all upfront
-    let inserted = 0, updated = 0;
+    const syncedPaths = new Set<string>(automationFiles.map((file) => file.path)); // mark all upfront
+    let inserted = 0, updated = 0, skipped = 0;
     const now = new Date().toISOString();
     const fileErrors: string[] = [];
 
     // Step 3: Fetch content + extract metadata + upsert — parallel batches of 5
-    const BATCH = 5;
+    const BATCH = 8;
     for (let i = 0; i < automationFiles.length; i += BATCH) {
       const batch = automationFiles.slice(i, i + BATCH);
       await Promise.allSettled(
-        batch.map(async (filePath) => {
+        batch.map(async (file) => {
+          const filePath = file.path;
           try {
+            const existingRow = existingMap[filePath];
+            if (existingRow?.gitlab_last_commit && file.blobId && existingRow.gitlab_last_commit === file.blobId) {
+              const { error: touchError } = await db
+                .from("automatiseringen")
+                .update({ last_synced_at: now })
+                .eq("id", existingRow.id);
+              if (touchError) throw touchError;
+              skipped++;
+              return;
+            }
+
             const content = await fetchFileContent(projectId, filePath, branch, pat);
             const filename = filePath.split("/").pop() ?? filePath;
             const metadata = await extractMetadata(filename, content, GEMINI_API_KEY);
@@ -306,7 +323,7 @@ serve(async (req) => {
             const fasen = getFasen(filePath);
             const endpoints = extractEndpoints(content);
 
-            if (existingMap[filePath]) {
+            if (existingRow) {
               const { error: updateError } = await db
                 .from("automatiseringen")
                 .update({
@@ -318,9 +335,10 @@ serve(async (req) => {
                   fasen,
                   endpoints,
                   gitlab_file_path:     filePath,
+                  gitlab_last_commit:   file.blobId,
                   last_synced_at:       now,
                 })
-                .eq("id", existingMap[filePath].id);
+                .eq("id", existingRow.id);
               if (updateError) throw updateError;
               updated++;
             } else {
@@ -342,8 +360,18 @@ serve(async (req) => {
                 mermaid_diagram:      "",
                 external_id:          filePath,
                 source:               "gitlab",
-                import_status:        "approved",
+                import_source:        "gitlab",
+                import_status:        "pending_approval",
+                import_proposal: {
+                  confidence: {
+                    naam: "high", status: "high", trigger: "high",
+                    systemen: "high", stappen: "high", branches: "high",
+                    categorie: "high", doel: "high",
+                  },
+                  beschrijving_in_simpele_taal: metadata.stappen,
+                },
                 gitlab_file_path:     filePath,
+                gitlab_last_commit:   file.blobId,
                 last_synced_at:       now,
               });
               if (insertError) throw insertError;
@@ -403,7 +431,7 @@ serve(async (req) => {
       .eq("id", integration.id);
 
     return new Response(
-      JSON.stringify({ success: true, inserted, updated, deactivated, total: automationFiles.length }),
+      JSON.stringify({ success: true, inserted, updated, skipped, deactivated, total: automationFiles.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {

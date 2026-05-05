@@ -4,16 +4,17 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   CheckCircle2, XCircle, ChevronDown, ChevronUp,
-  RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight,
+  RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight, Upload, Clock,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useHubSpotSync } from "@/lib/hooks";
+import { useHubSpotSync, useGitlabSync } from "@/lib/hooks";
 import { KLANT_FASEN } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +54,12 @@ interface PendingAutomation {
   import_status: string;
   import_proposal: ImportProposal;
   created_at: string;
+  external_id: string | null;
+  last_synced_at: string | null;
+  hubspot_last_run_at: string | null;
+  hubspot_run_count_365d: number | null;
+  rejection_reason: string | null;
+  rejected_at: string | null;
   fasen: string[];
   owner: string;
 }
@@ -62,7 +69,7 @@ interface PendingAutomation {
 async function fetchPending(): Promise<PendingAutomation[]> {
   const { data, error } = await supabase
     .from("automatiseringen")
-    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,fasen,owner")
+    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,external_id,last_synced_at,hubspot_last_run_at,hubspot_run_count_365d,fasen,owner")
     .eq("import_status", "pending_approval")
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -126,6 +133,27 @@ function Field({ label, conf, children, className = "" }: {
 }
 
 // ── Plain-language story block ─────────────────────────────────────────────────
+
+function formatHubSpotUsage(item: PendingAutomation): string | null {
+  if (!isHubSpotImport(item)) return null;
+
+  if (item.hubspot_last_run_at) {
+    const lastRun = new Date(item.hubspot_last_run_at);
+    const dateLabel = Number.isNaN(lastRun.getTime())
+      ? null
+      : lastRun.toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
+    const countLabel = typeof item.hubspot_run_count_365d === "number"
+      ? `${new Intl.NumberFormat("nl-NL").format(item.hubspot_run_count_365d)} runs in 365 dagen`
+      : null;
+
+    return [dateLabel ? `Laatst gedraaid: ${dateLabel}` : null, countLabel]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  if (item.hubspot_run_count_365d === 0) return "Geen runs gevonden in de afgelopen 365 dagen";
+  return "Run-data niet beschikbaar via de HubSpot API · behandelen als verouderd";
+}
 
 function SimpeleTaalBlock({ sentences }: { sentences: string[] }): React.ReactNode {
   const [open, setOpen] = useState(true);
@@ -208,6 +236,7 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
   const conf    = item.import_proposal?.confidence ?? {};
   const trigger = item.import_proposal?.trigger ?? item.trigger_beschrijving ?? "";
   const simpeleTaal: string[] = item.import_proposal?.beschrijving_in_simpele_taal ?? [];
+  const hubSpotUsage = formatHubSpotUsage(item);
 
   const [expanded,        setExpanded]        = useState(false);
   const [editing,         setEditing]         = useState(false);
@@ -286,6 +315,18 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
               {new Date(item.created_at).toLocaleDateString("nl-NL")}
             </span>
           </div>
+          {hubSpotUsage && (
+            <div className={cn(
+              "mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
+              item.hubspot_last_run_at
+                ? "border-blue-100 bg-blue-50 text-blue-700"
+                : "border-yellow-200 bg-yellow-50 text-yellow-800",
+            )}>
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              <span className="shrink-0 font-semibold">HubSpot runs</span>
+              <span className="min-w-0 truncate opacity-80">{hubSpotUsage}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => setExpanded(v => !v)}>
@@ -312,6 +353,16 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
 
           {simpeleTaal.length > 0 && (
             <SimpeleTaalBlock sentences={simpeleTaal} />
+          )}
+
+          {hubSpotUsage && (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm text-foreground">
+              <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">HubSpot gebruik</p>
+                <p>{hubSpotUsage}</p>
+              </div>
+            </div>
           )}
 
           <div className="flex items-center justify-between">
@@ -485,14 +536,51 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+function isHubSpotImport(item: PendingAutomation): boolean {
+  return item.import_source?.toLowerCase() === "hubspot";
+}
+
+function ApprovalList({
+  items,
+  isLoading,
+  emptyMessage,
+}: {
+  items: PendingAutomation[];
+  isLoading: boolean;
+  emptyMessage: string;
+}): React.ReactNode {
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground py-8 text-center">Laden...</p>;
+  }
+
+  if (items.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-10 text-center border border-dashed border-border rounded-lg">
+        {emptyMessage}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map(item => <ProposalCard key={item.id} item={item} />)}
+    </div>
+  );
+}
+
 export default function Imports(): React.ReactNode {
   const qc = useQueryClient();
   const hubspotSync = useHubSpotSync();
+  const gitlabSync = useGitlabSync();
 
   const { data: pending = [], isLoading } = useQuery({
     queryKey: ["pending"],
     queryFn:  fetchPending,
   });
+
+  const hubspotPending = pending.filter(isHubSpotImport);
+  const gitlabPending = pending.filter(item => item.import_source?.toLowerCase() === "gitlab");
+  const zapierPending = pending.filter(item => item.import_source?.toLowerCase() === "zapier");
 
   async function handleSync(): Promise<void> {
     try {
@@ -504,39 +592,114 @@ export default function Imports(): React.ReactNode {
     }
   }
 
+  async function handleGitlabSync(): Promise<void> {
+    try {
+      const result = await gitlabSync.mutateAsync();
+      toast.success(`GitLab sync klaar — ${result.inserted} nieuw ter goedkeuring`);
+      qc.invalidateQueries({ queryKey: ["pending"] });
+    } catch {
+      toast.error("GitLab synchronisatie mislukt. Controleer je token via Instellingen.");
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Imports</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Nieuwe HubSpot workflows wachten hier op goedkeuring voordat ze actief worden.
-          </p>
-        </div>
-        <Button onClick={handleSync} disabled={hubspotSync.isPending} className="gap-2 shrink-0">
-          <RefreshCw className={cn("h-4 w-4", hubspotSync.isPending && "animate-spin")} />
-          {hubspotSync.isPending ? "Bezig…" : "HubSpot synchroniseren"}
-        </Button>
-      </div>
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
+        <Tabs defaultValue="hubspot">
+          <div className="rounded-2xl border border-border overflow-hidden mb-8">
+            <header className="relative bg-gradient-hero px-8 py-8">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
+                  <Upload className="w-4 h-4" />
+                </span>
+                <span className="text-[11px] uppercase tracking-[0.14em] font-semibold text-primary">
+                  Automatiseringsportaal
+                </span>
+              </div>
+              <div className="flex items-end justify-between gap-4 flex-wrap">
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-tight text-foreground">Imports</h1>
+                  <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+                    Nieuwe imports wachten hier op goedkeuring voordat ze actief worden.
+                  </p>
+                </div>
+                <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-2">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 sm:w-44"
+                    onClick={handleSync}
+                    disabled={hubspotSync.isPending}
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5", hubspotSync.isPending && "animate-spin")} />
+                    {hubspotSync.isPending ? "Bezig…" : "HubSpot synchroniseren"}
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 sm:w-44"
+                    onClick={handleGitlabSync}
+                    disabled={gitlabSync.isPending}
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5", gitlabSync.isPending && "animate-spin")} />
+                    {gitlabSync.isPending ? "Bezig…" : "GitLab synchroniseren"}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <StatBadge label="In behandeling" value={pending.length} />
+                <StatBadge label="HubSpot" value={hubspotPending.length} />
+                <StatBadge label="GitLab" value={gitlabPending.length} />
+                <StatBadge label="Zapier" value={zapierPending.length} />
+              </div>
+            </header>
+            <div className="border-t border-border bg-card px-6">
+              <TabsList className="h-auto flex-wrap justify-start bg-transparent p-0 gap-0 rounded-none">
+                <TabsTrigger value="hubspot" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium gap-2">
+                  HubSpot
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{hubspotPending.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="gitlab" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium gap-2">
+                  GitLab
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{gitlabPending.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="zapier" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium gap-2">
+                  Zapier
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{zapierPending.length}</Badge>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
 
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <p className="text-sm font-semibold">Wachten op goedkeuring</p>
-          {pending.length > 0 && <Badge variant="secondary" className="text-xs">{pending.length}</Badge>}
-        </div>
+          {isLoading && <p className="text-sm text-muted-foreground py-8 text-center">Laden…</p>}
 
-        {isLoading && <p className="text-sm text-muted-foreground py-8 text-center">Laden…</p>}
+          <TabsContent value="hubspot" className="mt-0">
+            <ApprovalList
+              items={hubspotPending}
+              isLoading={isLoading}
+              emptyMessage='Geen HubSpot voorstellen wachten op goedkeuring. Klik "HubSpot synchroniseren" om te vernieuwen.' />
+          </TabsContent>
 
-        {!isLoading && pending.length === 0 && (
-          <p className="text-sm text-muted-foreground py-10 text-center border border-dashed border-border rounded-lg">
-            Geen voorstellen wachten op goedkeuring. Klik "HubSpot synchroniseren" om te vernieuwen.
-          </p>
-        )}
+          <TabsContent value="gitlab" className="mt-0">
+            <ApprovalList
+              items={gitlabPending}
+              isLoading={isLoading}
+              emptyMessage="Geen GitLab voorstellen wachten op goedkeuring." />
+          </TabsContent>
 
-        <div className="space-y-3">
-          {pending.map(item => <ProposalCard key={item.id} item={item} />)}
-        </div>
+          <TabsContent value="zapier" className="mt-0">
+            <ApprovalList
+              items={zapierPending}
+              isLoading={isLoading}
+              emptyMessage="Geen Zapier voorstellen wachten op goedkeuring." />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
 }
+
+const StatBadge = ({ label, value }: { label: string; value: number }) => (
+  <div className="rounded-xl bg-card/80 backdrop-blur-sm border border-border px-4 py-2.5">
+    <p className="text-xl font-semibold text-foreground tabular-nums leading-tight">{value}</p>
+    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+  </div>
+);

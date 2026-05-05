@@ -4,6 +4,7 @@ import {
   fetchAutomatiseringen,
   generateNextId,
   insertAutomatisering,
+  setCleanupDeleteCandidate,
   updateAutomatisering,
   verifieerAutomatisering,
 } from "../supabaseStorage";
@@ -40,6 +41,16 @@ export function useDeleteAutomatisering() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteAutomatisering(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
+    },
+  });
+}
+
+export function useSetCleanupDeleteCandidate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, marked }: { id: string; marked: boolean }) => setCleanupDeleteCandidate(id, marked),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
     },

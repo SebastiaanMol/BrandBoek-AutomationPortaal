@@ -1,5 +1,27 @@
 import { Categorie, Status, STATUS_LABELS, Systeem } from "@/lib/types";
 
+export function SourceBadge({ source }: { source?: string | null }) {
+  const normalized = source?.toLowerCase() || "handmatig";
+  const labels: Record<string, string> = {
+    hubspot: "HubSpot",
+    gitlab: "GitLab",
+    zapier: "Zapier",
+    typeform: "Typeform",
+    handmatig: "Handmatig",
+    manual: "Handmatig",
+  };
+  const classes: Record<string, string> = {
+    hubspot: "badge-hubspot",
+    gitlab: "badge-gitlab",
+    zapier: "badge-zapier",
+    typeform: "badge-typeform",
+    handmatig: "badge-backend",
+    manual: "badge-backend",
+  };
+
+  return <span className={classes[normalized] || "badge-api"}>{labels[normalized] || source}</span>;
+}
+
 export function SystemBadge({ systeem }: { systeem: Systeem | string }) {
   const map: Record<string, string> = {
     HubSpot: "badge-hubspot",
