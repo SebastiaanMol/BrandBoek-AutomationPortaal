@@ -661,7 +661,13 @@ function SuggestieRij({
     onOngedaanVerwerp.isPending;
 
   return (
-    <div className="flex items-start gap-3 p-3">
+    <div
+      className={[
+        "flex items-start gap-3 p-3 transition-colors",
+        s.confirmed ? "bg-green-50/70" : "",
+        s.rejected ? "bg-red-50/50" : "",
+      ].join(" ")}
+    >
       <button
         type="button"
         className="min-w-0 flex-1 space-y-1 text-left hover:opacity-70 transition-opacity"
@@ -695,10 +701,13 @@ function SuggestieRij({
 
       {s.confirmed ? (
         <div className="flex shrink-0 items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-green-600" />
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white shadow-sm">
+            <CheckCircle2 className="h-4 w-4" />
+          </span>
+          <span className="hidden text-xs font-semibold text-green-700 sm:inline">Bevestigd</span>
           <button
             type="button"
-            className="text-xs text-muted-foreground hover:text-foreground underline disabled:opacity-50"
+            className="rounded-md border border-green-200 bg-white px-2.5 py-1 text-xs font-medium text-green-700 shadow-sm hover:bg-green-50 disabled:opacity-50"
             disabled={anyPending}
             onClick={() =>
               onOngedaanBevestig.mutate(

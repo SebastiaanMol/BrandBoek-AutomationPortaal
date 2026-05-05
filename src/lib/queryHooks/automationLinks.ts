@@ -58,7 +58,14 @@ export function useBevestigFlowSuggestie() {
   return useMutation({
     mutationFn: ({ fromId, toId }: { fromId: string; toId: string }) =>
       bevestigFlowSuggestie(fromId, toId),
-    onSuccess: () => {
+    onSuccess: (_, { fromId, toId }) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchFlowSuggesties>>>(["flowSuggesties"], (old) =>
+        old?.map((suggestie) =>
+          suggestie.fromId === fromId && suggestie.toId === toId
+            ? { ...suggestie, confirmed: true, rejected: false }
+            : suggestie,
+        ),
+      );
       queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
       queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
       queryClient.invalidateQueries({ queryKey: ["openSuggestiesVoorFlow"] });
@@ -80,7 +87,14 @@ export function useOngedaanBevestigFlowSuggestie() {
   return useMutation({
     mutationFn: ({ fromId, toId }: { fromId: string; toId: string }) =>
       ongedaanBevestigFlowSuggestie(fromId, toId),
-    onSuccess: () => {
+    onSuccess: (_, { fromId, toId }) => {
+      queryClient.setQueryData<Awaited<ReturnType<typeof fetchFlowSuggesties>>>(["flowSuggesties"], (old) =>
+        old?.map((suggestie) =>
+          suggestie.fromId === fromId && suggestie.toId === toId
+            ? { ...suggestie, confirmed: false }
+            : suggestie,
+        ),
+      );
       queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
       queryClient.invalidateQueries({ queryKey: ["confirmedAutomationLinks"] });
     },
