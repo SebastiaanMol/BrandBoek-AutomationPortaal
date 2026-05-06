@@ -310,16 +310,35 @@ function DetectionProgress({ progress }: { progress: DetectProgress }) {
   );
 }
 
-const CATEGORIE_COLORS: Record<string, string> = {
-  "HubSpot Workflow": "bg-blue-50 text-blue-600",
-  "GitLab Script": "bg-green-50 text-green-700",
-  "Zapier Zap": "bg-yellow-50 text-yellow-700",
+const SOURCE_LABELS: Record<string, string> = {
+  hubspot: "HubSpot",
+  gitlab: "GitLab",
+  custom: "Custom",
+  manual: "Handmatig",
+  import: "Import",
 };
 
-function CategorieBadge({ categorie }: { categorie: string }) {
-  const cls = CATEGORIE_COLORS[categorie] ?? "bg-muted text-muted-foreground";
+const SOURCE_STYLES: Record<string, string> = {
+  hubspot: "bg-orange-50 text-orange-700",
+  gitlab: "bg-purple-50 text-purple-700",
+  custom: "bg-blue-50 text-blue-700",
+  manual: "bg-slate-100 text-slate-700",
+  import: "bg-slate-100 text-slate-700",
+};
+
+function formatSource(source?: string | null): string {
+  if (!source) return "Onbekende bron";
+  const normalized = source.toLowerCase();
+  return SOURCE_LABELS[normalized] ?? source;
+}
+
+function SourceBadge({ source }: { source?: string | null }) {
+  const normalized = source?.toLowerCase() ?? "";
+  const cls = SOURCE_STYLES[normalized] ?? "bg-muted text-muted-foreground";
   return (
-    <span className={`${cls} rounded px-1.5 py-0.5 text-[10px]`}>{categorie}</span>
+    <span className={`${cls} inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold`}>
+      {formatSource(source)}
+    </span>
   );
 }
 
@@ -460,10 +479,10 @@ function SuggestieDetailDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 flex-wrap text-base">
-            <CategorieBadge categorie={s.fromCategorie} />
+            <SourceBadge source={s.fromSource} />
             <span>{s.fromNaam}</span>
             <span className="text-muted-foreground">naar</span>
-            <CategorieBadge categorie={s.toCategorie} />
+            <SourceBadge source={s.toSource} />
             <span>{s.toNaam}</span>
           </DialogTitle>
           <DialogDescription>
@@ -500,13 +519,13 @@ function SuggestieDetailDialog({
           <AutomatiseringCard
             label="Van"
             naam={s.fromNaam}
-            categorie={s.fromCategorie}
+            source={s.fromSource}
             automation={from}
           />
           <AutomatiseringCard
             label="Naar"
             naam={s.toNaam}
-            categorie={s.toCategorie}
+            source={s.toSource}
             automation={to}
           />
         </div>
@@ -545,23 +564,29 @@ function SuggestieDetailDialog({
 function AutomatiseringCard({
   label,
   naam,
-  categorie,
+  source,
   automation,
 }: {
   label: string;
   naam: string;
-  categorie: string;
-  automation: { doel: string; trigger: string; systemen: string[] } | undefined;
+  source: string | null;
+  automation: { doel: string; trigger: string; source?: string | null } | undefined;
 }) {
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{label}</span>
-        <CategorieBadge categorie={categorie} />
+        <SourceBadge source={source} />
       </div>
       <p className="font-medium text-sm text-foreground leading-snug">{naam}</p>
       {automation ? (
         <dl className="space-y-1.5 text-xs text-muted-foreground">
+          <div>
+            <dt className="font-medium text-foreground/70">Bron</dt>
+            <dd className="mt-0.5">
+              <SourceBadge source={automation.source ?? source} />
+            </dd>
+          </div>
           {automation.doel && (
             <div>
               <dt className="font-medium text-foreground/70">Doel</dt>
@@ -572,16 +597,6 @@ function AutomatiseringCard({
             <div>
               <dt className="font-medium text-foreground/70">Trigger</dt>
               <dd className="mt-0.5 leading-relaxed">{automation.trigger}</dd>
-            </div>
-          )}
-          {automation.systemen.length > 0 && (
-            <div>
-              <dt className="font-medium text-foreground/70">Systemen</dt>
-              <dd className="mt-0.5 flex flex-wrap gap-1">
-                {automation.systemen.map((sys) => (
-                  <span key={sys} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{sys}</span>
-                ))}
-              </dd>
             </div>
           )}
         </dl>
@@ -676,11 +691,12 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
           : undefined;
         return (
           <div key={node.id} className="flex items-center gap-2 shrink-0">
-            <span className="max-w-[220px] truncate rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
+            <span className="inline-flex max-w-[280px] items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
               <span className="mr-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
                 {index + 1}
               </span>
-              {node.naam}
+              <SourceBadge source={node.source} />
+              <span className="min-w-0 truncate">{node.naam}</span>
             </span>
             {next && group.structureType === "lineair" && (
               <span
@@ -766,12 +782,12 @@ function SuggestieRij({
             {fromStep} → {toStep}
           </span>
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Van</span>
-          <CategorieBadge categorie={s.fromCategorie} />
+          <SourceBadge source={s.fromSource} />
           <span className="truncate font-medium text-foreground">{s.fromNaam}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 pl-[4.4rem] text-sm">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Naar</span>
-          <CategorieBadge categorie={s.toCategorie} />
+          <SourceBadge source={s.toSource} />
           <span className="truncate font-medium text-foreground">{s.toNaam}</span>
         </div>
         <p className="text-xs text-muted-foreground">

@@ -61,6 +61,8 @@ export type FlowSuggestie = {
   toNaam: string;
   fromCategorie: string;
   toCategorie: string;
+  fromSource: string | null;
+  toSource: string | null;
   zekerheid: "webhook" | "ai";
   redenering: string;
   confirmed: boolean;
@@ -71,13 +73,13 @@ export function toZekerheid(confidence: number): "webhook" | "ai" {
   return confidence >= 1.0 ? "webhook" : "ai";
 }
 
-type AutoRef = { naam: string; categorie: string } | null;
+type AutoRef = { naam: string; categorie: string; source: string | null } | null;
 
 export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
   const { data, error } = await supabase
     .from("automatisering_ai_flows")
     .select(
-      "from_id, to_id, confidence, reasoning, confirmed, rejected, from_auto:automatiseringen!from_id(naam, categorie), to_auto:automatiseringen!to_id(naam, categorie)",
+      "from_id, to_id, confidence, reasoning, confirmed, rejected, from_auto:automatiseringen!from_id(naam, categorie, source), to_auto:automatiseringen!to_id(naam, categorie, source)",
     )
     .is("flow_id", null);
   if (error) throw error;
@@ -88,6 +90,8 @@ export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
     toNaam: (r.to_auto as AutoRef)?.naam ?? "",
     fromCategorie: (r.from_auto as AutoRef)?.categorie ?? "",
     toCategorie: (r.to_auto as AutoRef)?.categorie ?? "",
+    fromSource: (r.from_auto as AutoRef)?.source ?? null,
+    toSource: (r.to_auto as AutoRef)?.source ?? null,
     zekerheid: toZekerheid(r.confidence),
     redenering: r.reasoning ?? "",
     confirmed: r.confirmed,
@@ -170,7 +174,7 @@ export async function fetchOpenSuggestiesVoorFlow(flowId: string): Promise<FlowS
   const { data, error } = await supabase
     .from("automatisering_ai_flows")
     .select(
-      "from_id, to_id, confidence, reasoning, confirmed, rejected, from_auto:automatiseringen!from_id(naam, categorie), to_auto:automatiseringen!to_id(naam, categorie)",
+      "from_id, to_id, confidence, reasoning, confirmed, rejected, from_auto:automatiseringen!from_id(naam, categorie, source), to_auto:automatiseringen!to_id(naam, categorie, source)",
     )
     .eq("flow_id", flowId)
     .eq("confirmed", false);
@@ -182,6 +186,8 @@ export async function fetchOpenSuggestiesVoorFlow(flowId: string): Promise<FlowS
     toNaam: (r.to_auto as AutoRef)?.naam ?? "",
     fromCategorie: (r.from_auto as AutoRef)?.categorie ?? "",
     toCategorie: (r.to_auto as AutoRef)?.categorie ?? "",
+    fromSource: (r.from_auto as AutoRef)?.source ?? null,
+    toSource: (r.to_auto as AutoRef)?.source ?? null,
     zekerheid: toZekerheid(r.confidence),
     redenering: r.reasoning ?? "",
     confirmed: false,

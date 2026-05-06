@@ -14,6 +14,8 @@ function makeSuggestie(
     toNaam: toId,
     fromCategorie: "HubSpot Workflow",
     toCategorie: "HubSpot Workflow",
+    fromSource: "hubspot",
+    toSource: "hubspot",
     zekerheid: "ai",
     redenering: "",
     confirmed: false,

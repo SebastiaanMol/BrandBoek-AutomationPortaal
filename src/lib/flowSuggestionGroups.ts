@@ -7,6 +7,7 @@ export interface FlowSuggestionGroup {
     id: string;
     naam: string;
     categorie: string;
+    source: string | null;
   }>;
   webhookCount: number;
   aiCount: number;
@@ -19,8 +20,8 @@ export interface FlowSuggestionGroup {
 function orderNodes(
   nodeIds: Set<string>,
   suggestions: FlowSuggestie[],
-  nodeMap: Map<string, { naam: string; categorie: string }>,
-): Array<{ id: string; naam: string; categorie: string }> {
+  nodeMap: Map<string, { naam: string; categorie: string; source: string | null }>,
+): Array<{ id: string; naam: string; categorie: string; source: string | null }> {
   const ids = [...nodeIds];
   const indegree = new Map(ids.map((id) => [id, 0]));
   const outgoing = new Map(ids.map((id) => [id, [] as string[]]));
@@ -56,13 +57,14 @@ function orderNodes(
     id,
     naam: nodeMap.get(id)?.naam ?? "",
     categorie: nodeMap.get(id)?.categorie ?? "",
+    source: nodeMap.get(id)?.source ?? null,
   }));
 }
 
 function compareNodeIds(
   a: string,
   b: string,
-  nodeMap: Map<string, { naam: string; categorie: string }>,
+  nodeMap: Map<string, { naam: string; categorie: string; source: string | null }>,
 ): number {
   const nameDelta = (nodeMap.get(a)?.naam ?? a).localeCompare(nodeMap.get(b)?.naam ?? b, "nl");
   return nameDelta !== 0 ? nameDelta : a.localeCompare(b, "nl");
@@ -81,7 +83,7 @@ function compareGroups(a: FlowSuggestionGroup, b: FlowSuggestionGroup): number {
 function describeStructure(
   nodeIds: Set<string>,
   suggestions: FlowSuggestie[],
-  nodeMap: Map<string, { naam: string; categorie: string }>,
+  nodeMap: Map<string, { naam: string; categorie: string; source: string | null }>,
 ): Pick<FlowSuggestionGroup, "structureType" | "structureSummary"> {
   const ids = [...nodeIds];
   const indegree = new Map(ids.map((id) => [id, 0]));
@@ -190,13 +192,13 @@ export function groupFlowSuggesties(suggestions: FlowSuggestie[]): FlowSuggestio
     }
 
     // Create node details (map with names/categories)
-    const nodeMap = new Map<string, { naam: string; categorie: string }>();
+    const nodeMap = new Map<string, { naam: string; categorie: string; source: string | null }>();
     for (const s of componentSuggestions) {
       if (!nodeMap.has(s.fromId)) {
-        nodeMap.set(s.fromId, { naam: s.fromNaam, categorie: s.fromCategorie });
+        nodeMap.set(s.fromId, { naam: s.fromNaam, categorie: s.fromCategorie, source: s.fromSource });
       }
       if (!nodeMap.has(s.toId)) {
-        nodeMap.set(s.toId, { naam: s.toNaam, categorie: s.toCategorie });
+        nodeMap.set(s.toId, { naam: s.toNaam, categorie: s.toCategorie, source: s.toSource });
       }
     }
 
