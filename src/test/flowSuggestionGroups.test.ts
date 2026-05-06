@@ -81,6 +81,19 @@ describe("groupFlowSuggesties — confirmedCount / totalCount", () => {
       "b->c",
       "c->d",
     ]);
+    expect(groups[0].structureType).toBe("lineair");
+  });
+
+  it("marks many-to-one groups as branched", () => {
+    const suggestions = [
+      makeSuggestie("a", "target", { fromNaam: "A", toNaam: "Target" }),
+      makeSuggestie("b", "target", { fromNaam: "B", toNaam: "Target" }),
+      makeSuggestie("c", "target", { fromNaam: "C", toNaam: "Target" }),
+    ];
+
+    const groups = groupFlowSuggesties(suggestions);
+    expect(groups[0].structureType).toBe("vertakt");
+    expect(groups[0].structureSummary).toContain("3 automations gaan naar Target");
   });
 
   it("keeps group order stable when incoming rows are shuffled or confirmed changes", () => {

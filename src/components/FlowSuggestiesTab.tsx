@@ -343,7 +343,7 @@ function FlowKandidaatCard({
   const [open, setOpen] = useState(false);
   const first = group.nodes[0];
   const last = group.nodes[group.nodes.length - 1];
-  const nodeStepLabels = new Map(group.nodes.map((node, index) => [node.id, stepLabel(index)]));
+  const nodeStepLabels = new Map(group.nodes.map((node, index) => [node.id, String(index + 1)]));
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -360,6 +360,7 @@ function FlowKandidaatCard({
             </span>
             <CountBadge>{group.nodes.length} automations</CountBadge>
             <CountBadge>{group.suggestions.length} koppelingen</CountBadge>
+            <StructureBadge type={group.structureType} />
             {group.webhookCount > 0 && (
               <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
                 {group.webhookCount} webhook
@@ -372,6 +373,7 @@ function FlowKandidaatCard({
             )}
           </div>
           <MiniChain group={group} />
+          <RelationPreview group={group} />
         </div>
         <div className="mt-0.5 grid shrink-0 grid-cols-[8rem_4.25rem] items-center gap-2">
           <span className="inline-flex h-7 items-center justify-center whitespace-nowrap rounded-md bg-muted px-2 text-[10px] font-semibold tabular-nums text-muted-foreground">
@@ -385,6 +387,11 @@ function FlowKandidaatCard({
 
       {open && (
         <div className="border-t border-border">
+          <div className="border-b border-border bg-muted/20 px-4 py-3">
+            <p className="text-xs font-semibold text-foreground">
+              Structuur: <span className="font-normal text-muted-foreground">{group.structureSummary}</span>
+            </p>
+          </div>
           <div className="overflow-x-auto">
             <div className="min-w-[980px] divide-y divide-border">
               {group.suggestions.map((suggestie) => (
@@ -593,6 +600,20 @@ function CountBadge({ children }: { children: ReactNode }) {
   );
 }
 
+function StructureBadge({ type }: { type: FlowSuggestionGroup["structureType"] }) {
+  const styles: Record<FlowSuggestionGroup["structureType"], string> = {
+    lineair: "bg-blue-50 text-blue-700",
+    vertakt: "bg-purple-50 text-purple-700",
+    cluster: "bg-muted text-muted-foreground",
+  };
+
+  return (
+    <span className={`${styles[type]} inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold`}>
+      {type === "lineair" ? "Lineair" : type === "vertakt" ? "Vertakt" : "Cluster"}
+    </span>
+  );
+}
+
 function MiniChain({ group }: { group: FlowSuggestionGroup }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({
@@ -656,12 +677,12 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
         return (
           <div key={node.id} className="flex items-center gap-2 shrink-0">
             <span className="max-w-[220px] truncate rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
-              <span className="mr-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
-                {stepLabel(index)}
+              <span className="mr-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
+                {index + 1}
               </span>
               {node.naam}
             </span>
-            {next && (
+            {next && group.structureType === "lineair" && (
               <span
                 className={[
                   "rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -681,14 +702,25 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
   );
 }
 
-function stepLabel(index: number): string {
-  let value = "";
-  let n = index;
-  do {
-    value = String.fromCharCode(65 + (n % 26)) + value;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
-  return value;
+function RelationPreview({ group }: { group: FlowSuggestionGroup }) {
+  const nodeStepLabels = new Map(group.nodes.map((node, index) => [node.id, String(index + 1)]));
+  const visibleRelations = group.suggestions.slice(0, 6);
+  const hiddenCount = group.suggestions.length - visibleRelations.length;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+      <span className="font-semibold text-foreground/70">Koppelingen:</span>
+      {visibleRelations.map((suggestion) => (
+        <span
+          key={`${suggestion.fromId}-${suggestion.toId}`}
+          className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5 font-semibold text-foreground/70"
+        >
+          {nodeStepLabels.get(suggestion.fromId) ?? "?"} → {nodeStepLabels.get(suggestion.toId) ?? "?"}
+        </span>
+      ))}
+      {hiddenCount > 0 && <span>+{hiddenCount} meer</span>}
+    </div>
+  );
 }
 
 function SuggestieRij({
@@ -726,19 +758,19 @@ function SuggestieRij({
     >
       <button
         type="button"
-        className="min-w-0 space-y-1 text-left transition-opacity hover:opacity-70"
+        className="min-w-0 space-y-2 text-left transition-opacity hover:opacity-70"
         onClick={onOpenDetail}
       >
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
-            {fromStep}
+          <span className="inline-flex h-7 items-center rounded-full bg-primary/10 px-2.5 text-xs font-bold text-primary">
+            {fromStep} → {toStep}
           </span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Van</span>
           <CategorieBadge categorie={s.fromCategorie} />
           <span className="truncate font-medium text-foreground">{s.fromNaam}</span>
-          <span className="text-xs text-muted-foreground">naar</span>
-          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
-            {toStep}
-          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 pl-[4.4rem] text-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Naar</span>
           <CategorieBadge categorie={s.toCategorie} />
           <span className="truncate font-medium text-foreground">{s.toNaam}</span>
         </div>

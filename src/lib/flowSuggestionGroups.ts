@@ -12,6 +12,8 @@ export interface FlowSuggestionGroup {
   aiCount: number;
   confirmedCount: number;
   totalCount: number;
+  structureType: "lineair" | "vertakt" | "cluster";
+  structureSummary: string;
 }
 
 function orderNodes(
@@ -74,6 +76,61 @@ function compareGroups(a: FlowSuggestionGroup, b: FlowSuggestionGroup): number {
   const firstIdDelta = (aFirst?.id ?? "").localeCompare(bFirst?.id ?? "", "nl");
   if (firstIdDelta !== 0) return firstIdDelta;
   return a.id.localeCompare(b.id, "nl");
+}
+
+function describeStructure(
+  nodeIds: Set<string>,
+  suggestions: FlowSuggestie[],
+  nodeMap: Map<string, { naam: string; categorie: string }>,
+): Pick<FlowSuggestionGroup, "structureType" | "structureSummary"> {
+  const ids = [...nodeIds];
+  const indegree = new Map(ids.map((id) => [id, 0]));
+  const outdegree = new Map(ids.map((id) => [id, 0]));
+
+  for (const suggestion of suggestions) {
+    if (!nodeIds.has(suggestion.fromId) || !nodeIds.has(suggestion.toId)) continue;
+    outdegree.set(suggestion.fromId, (outdegree.get(suggestion.fromId) ?? 0) + 1);
+    indegree.set(suggestion.toId, (indegree.get(suggestion.toId) ?? 0) + 1);
+  }
+
+  const maxIncoming = ids.reduce(
+    (best, id) => ((indegree.get(id) ?? 0) > best.count ? { id, count: indegree.get(id) ?? 0 } : best),
+    { id: "", count: 0 },
+  );
+  const maxOutgoing = ids.reduce(
+    (best, id) => ((outdegree.get(id) ?? 0) > best.count ? { id, count: outdegree.get(id) ?? 0 } : best),
+    { id: "", count: 0 },
+  );
+  const isLinear =
+    suggestions.length === ids.length - 1 &&
+    [...indegree.values()].every((count) => count <= 1) &&
+    [...outdegree.values()].every((count) => count <= 1);
+
+  if (isLinear) {
+    return {
+      structureType: "lineair",
+      structureSummary: "Deze kandidaat lijkt een lineaire stapvolgorde.",
+    };
+  }
+
+  if (maxIncoming.count > 1 || maxOutgoing.count > 1) {
+    if (maxIncoming.count >= maxOutgoing.count) {
+      return {
+        structureType: "vertakt",
+        structureSummary: `${maxIncoming.count} automations gaan naar ${nodeMap.get(maxIncoming.id)?.naam ?? "dezelfde automation"}.`,
+      };
+    }
+
+    return {
+      structureType: "vertakt",
+      structureSummary: `${nodeMap.get(maxOutgoing.id)?.naam ?? "Een automation"} stuurt naar ${maxOutgoing.count} automations.`,
+    };
+  }
+
+  return {
+    structureType: "cluster",
+    structureSummary: "Deze kandidaat bevat meerdere relaties zonder duidelijke enkele volgorde.",
+  };
 }
 
 /**
@@ -145,6 +202,7 @@ export function groupFlowSuggesties(suggestions: FlowSuggestie[]): FlowSuggestio
 
     const suggestionsInGroup = [...componentSuggestions];
     const nodes = orderNodes(nodesSet, suggestionsInGroup, nodeMap);
+    const structure = describeStructure(nodesSet, suggestionsInGroup, nodeMap);
     const nodeOrder = new Map(nodes.map((node, index) => [node.id, index]));
     suggestionsInGroup.sort((a, b) => {
       const fromDelta = (nodeOrder.get(a.fromId) ?? 0) - (nodeOrder.get(b.fromId) ?? 0);
@@ -173,6 +231,7 @@ export function groupFlowSuggesties(suggestions: FlowSuggestie[]): FlowSuggestio
       aiCount,
       confirmedCount,
       totalCount: suggestionsInGroup.length,
+      ...structure,
     });
   }
 
