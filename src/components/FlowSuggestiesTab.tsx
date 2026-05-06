@@ -349,6 +349,7 @@ function FlowKandidaatCard({
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <button
         type="button"
+        aria-label={`${open ? "Sluit details" : "Open details"} voor ${first?.naam ?? "flow kandidaat"}`}
         className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-6 px-5 py-4 text-left transition-colors hover:bg-muted/30"
         onClick={() => setOpen((value) => !value)}
       >
@@ -459,7 +460,7 @@ function SuggestieDetailDialog({
             <span>{s.toNaam}</span>
           </DialogTitle>
           <DialogDescription>
-            Bekijk waarom deze koppeling wordt voorgesteld en bevestig of verwerp de suggestie.
+            Bekijk waarom deze koppeling wordt voorgesteld en selecteer of verwerp de suggestie.
           </DialogDescription>
         </DialogHeader>
 
@@ -507,14 +508,6 @@ function SuggestieDetailDialog({
           <Button
             variant="outline"
             size="sm"
-            disabled={pending}
-            onClick={() => onVerwerp(s)}
-          >
-            Verwerpen
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
             className="border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
             disabled={pending}
             onClick={() => onBevestig(s)}
@@ -522,11 +515,19 @@ function SuggestieDetailDialog({
             {bevestigPending ? (
               <>
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                Bevestigen...
+                Selecteren...
               </>
             ) : (
-              "Bevestigen"
+              "Selecteren"
             )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() => onVerwerp(s)}
+          >
+            Verwerpen
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -611,7 +612,6 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
       scrollLeft: container.scrollLeft,
     };
     container.setPointerCapture(event.pointerId);
-    event.stopPropagation();
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
@@ -629,7 +629,6 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
     const container = scrollRef.current;
     dragRef.current.active = false;
     container?.releasePointerCapture(event.pointerId);
-    event.stopPropagation();
   }
 
   return (
@@ -637,8 +636,11 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
       ref={scrollRef}
       className="w-full cursor-grab select-none overflow-x-auto pb-2 pr-2 active:cursor-grabbing [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
+        if (dragRef.current.moved) {
+          event.preventDefault();
+          event.stopPropagation();
+          dragRef.current.moved = false;
+        }
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -804,12 +806,12 @@ function SuggestieRij({
                 { fromId: s.fromId, toId: s.toId },
                 {
                   onSuccess: () => toast.success("Koppeling geselecteerd"),
-                  onError: (e) => toast.error(e instanceof Error ? e.message : "Bevestigen mislukt"),
+                  onError: (e) => toast.error(e instanceof Error ? e.message : "Selecteren mislukt"),
                 },
               )
             }
           >
-            Bevestig
+            Selecteer
           </Button>
           <Button
             variant="outline"

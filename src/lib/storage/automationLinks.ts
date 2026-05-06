@@ -98,7 +98,7 @@ export async function fetchFlowSuggesties(): Promise<FlowSuggestie[]> {
 export async function bevestigFlowSuggestie(fromId: string, toId: string): Promise<void> {
   const { error: updateError } = await supabase
     .from("automatisering_ai_flows")
-    .update({ confirmed: true })
+    .update({ confirmed: true, rejected: false })
     .eq("from_id", fromId)
     .eq("to_id", toId);
   if (updateError) throw updateError;
@@ -107,7 +107,7 @@ export async function bevestigFlowSuggestie(fromId: string, toId: string): Promi
 export async function verwerpFlowSuggestie(fromId: string, toId: string): Promise<void> {
   const { error } = await supabase
     .from("automatisering_ai_flows")
-    .update({ rejected: true })
+    .update({ rejected: true, confirmed: false })
     .eq("from_id", fromId)
     .eq("to_id", toId);
   if (error) throw error;
@@ -136,6 +136,8 @@ export async function accepteerFlowKandidaat(nodeIds: string[], flowId: string):
     .from("automatisering_ai_flows")
     .select("from_id, to_id")
     .in("from_id", nodeIds)
+    .in("to_id", nodeIds)
+    .is("flow_id", null)
     .eq("confirmed", true)
     .eq("rejected", false);
   if (fetchError) throw fetchError;
@@ -158,7 +160,9 @@ export async function accepteerFlowKandidaat(nodeIds: string[], flowId: string):
   const { error } = await supabase
     .from("automatisering_ai_flows")
     .update({ flow_id: flowId })
-    .in("from_id", nodeIds);
+    .in("from_id", nodeIds)
+    .in("to_id", nodeIds)
+    .is("flow_id", null);
   if (error) throw error;
 }
 
