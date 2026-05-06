@@ -67,7 +67,10 @@ const bottomNavItems = [
 
 function isNavItemActive(pathname: string, search: string, itemUrl: string) {
   const [itemPathname, itemSearch = ""] = itemUrl.split("?");
-  if (pathname !== itemPathname) return false;
+  if (pathname !== itemPathname) {
+    if (!itemSearch && itemPathname !== "/" && pathname.startsWith(`${itemPathname}/`)) return true;
+    return false;
+  }
   if (!itemSearch) return true;
   return search === `?${itemSearch}`;
 }

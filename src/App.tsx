@@ -18,6 +18,7 @@ import Owners from "./pages/Owners";
 import Brandy from "./pages/Brandy";
 import Flows from "./pages/Flows";
 import FlowDetail from "./pages/FlowDetail";
+import FlowSuggestionDetail from "./pages/FlowSuggestionDetail";
 import Pipelines from "./pages/Pipelines";
 import PipelineDetail from "./pages/PipelineDetail";
 import NotFound from "./pages/NotFound";
@@ -52,6 +53,7 @@ function ProtectedRoutes() {
         <Route path="/owners" element={<Owners />} />
         <Route path="/brandy" element={<Brandy />} />
         <Route path="/flows" element={<Flows />} />
+        <Route path="/flows/suggesties/:id" element={<FlowSuggestionDetail />} />
         <Route path="/flows/:id" element={<FlowDetail />} />
         <Route path="/pipelines" element={<Pipelines />} />
         <Route path="/pipelines/:id" element={<PipelineDetail />} />
