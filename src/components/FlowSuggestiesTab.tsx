@@ -391,8 +391,7 @@ function FlowKandidaatCard({
               </span>
             )}
           </div>
-          <MiniChain group={group} />
-          <RelationPreview group={group} />
+          <FlowStructurePreview group={group} />
         </div>
         <div className="mt-0.5 grid shrink-0 grid-cols-[8rem_4.25rem] items-center gap-2">
           <span className="inline-flex h-7 items-center justify-center whitespace-nowrap rounded-md bg-muted px-2 text-[10px] font-semibold tabular-nums text-muted-foreground">
@@ -629,6 +628,129 @@ function StructureBadge({ type }: { type: FlowSuggestionGroup["structureType"] }
   );
 }
 
+type FlowNode = FlowSuggestionGroup["nodes"][number];
+
+function getStepLabels(group: FlowSuggestionGroup): Map<string, string> {
+  return new Map(group.nodes.map((node, index) => [node.id, String(index + 1)]));
+}
+
+function FlowStructurePreview({ group }: { group: FlowSuggestionGroup }) {
+  if (group.structureType === "lineair") {
+    return (
+      <div className="space-y-2">
+        <MiniChain group={group} />
+        <p className="text-[10px] font-medium text-muted-foreground">
+          Stap-voor-stap volgorde op basis van directe koppelingen.
+        </p>
+      </div>
+    );
+  }
+
+  if (group.structureType === "vertakt") {
+    return <BranchPreview group={group} />;
+  }
+
+  return <RelationPreview group={group} />;
+}
+
+function BranchPreview({ group }: { group: FlowSuggestionGroup }) {
+  const stepLabels = getStepLabels(group);
+  const nodeById = new Map(group.nodes.map((node) => [node.id, node]));
+  const incoming = new Map(group.nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(group.nodes.map((node) => [node.id, 0]));
+
+  for (const suggestion of group.suggestions) {
+    outgoing.set(suggestion.fromId, (outgoing.get(suggestion.fromId) ?? 0) + 1);
+    incoming.set(suggestion.toId, (incoming.get(suggestion.toId) ?? 0) + 1);
+  }
+
+  const incomingFocus = [...incoming.entries()].sort((a, b) => b[1] - a[1])[0];
+  const outgoingFocus = [...outgoing.entries()].sort((a, b) => b[1] - a[1])[0];
+  const isManyToOne = (incomingFocus?.[1] ?? 0) >= (outgoingFocus?.[1] ?? 0);
+  const focusId = isManyToOne ? incomingFocus?.[0] : outgoingFocus?.[0];
+  const focusNode = focusId ? nodeById.get(focusId) : undefined;
+
+  if (!focusNode) return <RelationPreview group={group} />;
+
+  const relatedIds = isManyToOne
+    ? group.suggestions.filter((s) => s.toId === focusNode.id).map((s) => s.fromId)
+    : group.suggestions.filter((s) => s.fromId === focusNode.id).map((s) => s.toId);
+  const relatedNodes = relatedIds
+    .map((id) => nodeById.get(id))
+    .filter((node): node is FlowNode => node !== undefined);
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="font-semibold text-foreground">
+          {isManyToOne ? "Meerdere bronnen komen samen in" : "Een bron stuurt naar meerdere doelen"}
+        </span>
+        <span className="text-muted-foreground">{group.structureSummary}</span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-start">
+        <BranchNodeList
+          label={isManyToOne ? "Bronnen" : "Bron"}
+          nodes={isManyToOne ? relatedNodes : [focusNode]}
+          stepLabels={stepLabels}
+        />
+        <span className="hidden h-8 items-center justify-center rounded-full bg-background px-3 text-xs font-semibold text-muted-foreground md:inline-flex">
+          →
+        </span>
+        <BranchNodeList
+          label={isManyToOne ? "Doel" : "Doelen"}
+          nodes={isManyToOne ? [focusNode] : relatedNodes}
+          stepLabels={stepLabels}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BranchNodeList({
+  label,
+  nodes,
+  stepLabels,
+}: {
+  label: string;
+  nodes: FlowNode[];
+  stepLabels: Map<string, string>;
+}) {
+  const visibleNodes = nodes.slice(0, 5);
+  const hiddenCount = nodes.length - visibleNodes.length;
+
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {visibleNodes.map((node) => (
+          <span
+            key={node.id}
+            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground"
+          >
+            <StepBadge>{stepLabels.get(node.id) ?? "?"}</StepBadge>
+            <SourceBadge source={node.source} />
+            <span className="min-w-0 truncate">{node.naam}</span>
+          </span>
+        ))}
+        {hiddenCount > 0 && (
+          <span className="inline-flex items-center rounded-lg bg-background px-2.5 py-1.5 text-xs font-semibold text-muted-foreground">
+            +{hiddenCount} meer
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StepBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
+      {children}
+    </span>
+  );
+}
+
 function MiniChain({ group }: { group: FlowSuggestionGroup }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({
@@ -692,9 +814,7 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
         return (
           <div key={node.id} className="flex items-center gap-2 shrink-0">
             <span className="inline-flex max-w-[280px] items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
-              <span className="mr-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
-                {index + 1}
-              </span>
+              <StepBadge>{index + 1}</StepBadge>
               <SourceBadge source={node.source} />
               <span className="min-w-0 truncate">{node.naam}</span>
             </span>
@@ -719,7 +839,7 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
 }
 
 function RelationPreview({ group }: { group: FlowSuggestionGroup }) {
-  const nodeStepLabels = new Map(group.nodes.map((node, index) => [node.id, String(index + 1)]));
+  const nodeStepLabels = getStepLabels(group);
   const visibleRelations = group.suggestions.slice(0, 6);
   const hiddenCount = group.suggestions.length - visibleRelations.length;
 
