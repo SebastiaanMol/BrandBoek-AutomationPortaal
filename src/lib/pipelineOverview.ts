@@ -29,7 +29,7 @@ export function filterPipelinesForOverview(
 ): Pipeline[] {
   const query = search.trim().toLowerCase();
 
-  return pipelines.filter((pipeline) => {
+  const filteredPipelines = pipelines.filter((pipeline) => {
     const matchesFilter =
       filter === "all" ||
       (filter === "inactive" ? !pipeline.isActive : pipeline.source === filter);
@@ -37,4 +37,8 @@ export function filterPipelinesForOverview(
 
     return matchesFilter && matchesSearch;
   });
+
+  if (filter !== "all") return filteredPipelines;
+
+  return filteredPipelines.sort((first, second) => Number(second.isActive) - Number(first.isActive));
 }

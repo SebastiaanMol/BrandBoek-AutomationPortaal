@@ -65,6 +65,22 @@ describe("pipeline overview helpers", () => {
     ]);
   });
 
+  it("puts active pipelines above inactive pipelines when no filter is applied", () => {
+    const mixedPipelines = [
+      makePipeline({ pipelineId: "inactive-first", naam: "Archived", isActive: false }),
+      makePipeline({ pipelineId: "active-second", naam: "Current", isActive: true }),
+      makePipeline({ pipelineId: "active-third", naam: "Current 2", isActive: true }),
+      makePipeline({ pipelineId: "inactive-last", naam: "Archived 2", isActive: false }),
+    ];
+
+    expect(filterPipelinesForOverview(mixedPipelines, "all", "").map((pipeline) => pipeline.pipelineId)).toEqual([
+      "active-second",
+      "active-third",
+      "inactive-first",
+      "inactive-last",
+    ]);
+  });
+
   it("returns source labels and the correct timestamp per source", () => {
     const hubspotPipeline = makePipeline({
       source: "hubspot",
