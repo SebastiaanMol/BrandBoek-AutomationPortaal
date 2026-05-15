@@ -1,14 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
-import { Layers2, Plus, RefreshCw } from "lucide-react";
+import { Layers2, Plus, RefreshCw, Search } from "lucide-react";
 import { useCreateCustomPipeline, useHubSpotPipelinesSync, usePipelines } from "@/lib/queryHooks/pipelines";
-import { PipelineCard } from "@/components/PipelineCard";
 import { CustomPipelineDialog } from "@/components/CustomPipelineDialog";
+import { PipelineMatrix } from "@/components/PipelineMatrix";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import type { CustomPipelineInput } from "@/lib/storage/pipelines";
-
-type PipelineFilter = "all" | "hubspot" | "custom" | "inactive";
+import { filterPipelinesForOverview, type PipelineFilter } from "@/lib/pipelineOverview";
 
 export default function Pipelines(): ReactNode {
   const { data: pipelines = [], isLoading } = usePipelines();
@@ -16,19 +16,16 @@ export default function Pipelines(): ReactNode {
   const createCustomMutation = useCreateCustomPipeline();
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [filter, setFilter] = useState<PipelineFilter>("all");
+  const [search, setSearch] = useState("");
 
   const totalStages = pipelines.reduce((sum, p) => sum + p.stages.length, 0);
   const hubspotPipelines = pipelines.filter(p => p.source === "hubspot");
   const customPipelines = pipelines.filter(p => p.source === "custom");
   const activePipelineCount = pipelines.filter(p => p.isActive).length;
-  const filteredPipelines = pipelines.filter((pipeline) => {
-    if (filter === "hubspot") return pipeline.source === "hubspot";
-    if (filter === "custom") return pipeline.source === "custom";
-    if (filter === "inactive") return !pipeline.isActive;
-    return true;
-  });
-  const activePipelines = filteredPipelines.filter(p => p.isActive);
-  const inactivePipelines = filteredPipelines.filter(p => !p.isActive);
+  const filteredPipelines = useMemo(
+    () => filterPipelinesForOverview(pipelines, filter, search),
+    [pipelines, filter, search],
+  );
 
   async function handleSync(): Promise<void> {
     try {
@@ -124,6 +121,17 @@ export default function Pipelines(): ReactNode {
                 </TabsTrigger>
               </TabsList>
             </div>
+            <div className="border-t border-border bg-card px-6 py-4">
+              <div className="relative max-w-md">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Zoek pipeline..."
+                  className="pl-9"
+                />
+              </div>
+            </div>
           </div>
 
         {pipelines.length === 0 && (
@@ -156,32 +164,12 @@ export default function Pipelines(): ReactNode {
         {pipelines.length > 0 && filteredPipelines.length === 0 && (
           <div className="card-elevated p-10 text-center">
             <p className="text-sm text-muted-foreground">
-              Geen pipelines gevonden voor deze filter.
+              Geen pipelines gevonden voor deze filter of zoekopdracht.
             </p>
           </div>
         )}
 
-        {activePipelines.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-sm font-semibold text-foreground mb-3">Actieve pipelines</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {activePipelines.map((pipeline, i) => (
-                <PipelineCard key={pipeline.pipelineId} pipeline={pipeline} index={i} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {inactivePipelines.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">Inactieve pipelines</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 opacity-60">
-              {inactivePipelines.map((pipeline, i) => (
-                <PipelineCard key={pipeline.pipelineId} pipeline={pipeline} index={activePipelines.length + i} />
-              ))}
-            </div>
-          </div>
-        )}
+        {filteredPipelines.length > 0 && <PipelineMatrix pipelines={filteredPipelines} />}
         </Tabs>
       </div>
 
