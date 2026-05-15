@@ -127,6 +127,7 @@ export default function Pipelines(): ReactNode {
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
+                  aria-label="Zoek pipeline"
                   placeholder="Zoek pipeline..."
                   className="pl-9"
                 />
