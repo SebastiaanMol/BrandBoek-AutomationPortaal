@@ -59,7 +59,7 @@ export default function Pipelines(): ReactNode {
       <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
         <Tabs value={filter} onValueChange={(v) => setFilter(v as PipelineFilter)}>
           <div className="rounded-2xl border border-border overflow-hidden mb-8">
-            <header className="relative bg-gradient-hero px-8 py-8">
+            <header className="relative bg-primary-soft px-8 py-8">
               <div className="flex items-center gap-2 mb-3">
                 <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
                   <Layers2 className="w-4 h-4" />

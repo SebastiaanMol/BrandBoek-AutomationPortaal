@@ -7,9 +7,7 @@ interface FlowHeaderProps {
   flow: Flow;
   automationCount: number;
   naam: string;
-  beschrijving: string;
   setNaam: (v: string) => void;
-  setBeschrijving: (v: string) => void;
   isDirty: boolean;
   onSave: () => void;
   isSaving: boolean;
@@ -19,9 +17,7 @@ export const FlowHeader = ({
   flow,
   automationCount,
   naam,
-  beschrijving,
   setNaam,
-  setBeschrijving,
   isDirty,
   onSave,
   isSaving,
@@ -31,12 +27,12 @@ export const FlowHeader = ({
   const primaryMeta = primarySystem ? getSystemMeta(primarySystem) : null;
 
   return (
-    <header className="relative overflow-hidden rounded-2xl border border-border bg-gradient-hero">
+    <header className="relative overflow-hidden rounded-2xl border border-border bg-primary-soft">
       <div className="relative px-8 py-7">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-1 text-xs text-muted-foreground mb-4">
           <Link to="/flows" className="hover:text-foreground transition-colors">
-            Flows
+            Procesreizen
           </Link>
           <ChevronRight className="w-3 h-3" />
           <span className="text-foreground font-medium">{flow.naam}</span>
@@ -57,7 +53,7 @@ export const FlowHeader = ({
                   {primaryMeta.label}
                 </span>
               )}
-              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">-</span>
               <span className="text-[11px] font-mono text-muted-foreground">
                 {new Date(flow.createdAt).toLocaleDateString("nl-NL")}
               </span>
@@ -67,13 +63,6 @@ export const FlowHeader = ({
               className="text-3xl font-semibold tracking-tight text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-border focus:outline-none w-full pb-0.5"
               value={naam}
               onChange={(e) => setNaam(e.target.value)}
-            />
-            <textarea
-              className="mt-3 w-full max-w-2xl text-[15px] leading-relaxed text-muted-foreground bg-transparent border-b border-transparent hover:border-border focus:border-border focus:outline-none resize-none"
-              rows={2}
-              value={beschrijving}
-              onChange={(e) => setBeschrijving(e.target.value)}
-              placeholder="Beschrijving..."
             />
 
             <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -120,7 +109,7 @@ export const FlowHeader = ({
           <StatCard icon={Calendar} label="Aangemaakt" value={new Date(flow.createdAt).toLocaleDateString("nl-NL")} />
           <StatCard icon={Layers} label="Automations" value={String(automationCount)} />
           <StatCard icon={Server} label="Systemen" value={String(uniqueSystems.length)} />
-          <StatCard icon={Activity} label="Status" value="Actief" accent="Geen openstaande updates" />
+          <StatCard icon={Activity} label="Status" value="Actief" accent="Geen openstaande voorstellen" />
         </div>
       </div>
     </header>

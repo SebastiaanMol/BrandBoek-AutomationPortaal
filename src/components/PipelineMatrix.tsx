@@ -52,7 +52,7 @@ export function PipelineMatrix({ pipelines }: { pipelines: Pipeline[] }): ReactN
               <div className="flex min-w-0 items-center gap-3">
                 <span
                   className="h-9 w-1 shrink-0 rounded-full"
-                  style={{ background: `linear-gradient(180deg, ${color.from} 0%, ${color.to} 100%)` }}
+                  style={{ background: color.from }}
                 />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold leading-snug">{pipeline.naam}</p>

@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildBrandContextPrompt } from "../_shared/brand-context.ts";
+import { runGitLabAutomationBackfill } from "../_shared/gitlab-backfill.ts";
+import { mapGitLabEndpointToAutomationPayload } from "../_shared/gitlab-readonly.ts";
+import {
+  finishSourceSyncRun,
+  recordPortalOwnedSync,
+  recordSourceSyncFailure,
+  startSourceSyncRun,
+} from "../_shared/portal-owned-sync.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,12 +16,6 @@ const corsHeaders = {
 };
 
 // ── Skip rules: these files are infrastructure, not automations ───────────────
-const SKIP_NAMES = new Set([
-  "__init__.py", "main.py", "auth.py", "constants.py",
-  "exceptions.py", "logging_config.py", "hubspot_client.py",
-]);
-const SKIP_PATH_SEGMENTS = ["/repository/", "/schemas/"];
-
 // ── Fasen mapping: immediate parent directory → KlantFase[] ──────────────────
 const FASEN_MAP: Record<string, string[]> = {
   API:          ["Sales"],
@@ -22,12 +25,6 @@ const FASEN_MAP: Record<string, string[]> = {
   va_pipelines: ["Boekhouding"],
   properties:   ["Boekhouding"],
 };
-
-function shouldSkip(filePath: string): boolean {
-  const name = filePath.split("/").pop() ?? "";
-  if (SKIP_NAMES.has(name)) return true;
-  return SKIP_PATH_SEGMENTS.some((seg) => filePath.includes(seg));
-}
 
 function getFasen(filePath: string): string[] {
   const parts = filePath.split("/");
@@ -40,19 +37,302 @@ type GitlabTreeFile = {
   blobId: string | null;
 };
 
-// ── Endpoint extraction: regex on FastAPI APIRouter patterns ─────────────────
-function extractEndpoints(content: string): string[] {
-  const prefixMatch = content.match(/APIRouter\s*\(\s*prefix\s*=\s*["']([^"']+)["']/);
-  const prefix = prefixMatch?.[1] ?? "";
-  const routeRe = /@router\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["']/g;
-  const endpoints: string[] = [];
-  let m;
-  while ((m = routeRe.exec(content)) !== null) {
-    endpoints.push(`${prefix}${m[2]}`);
+type PythonFunctionInfo = {
+  name: string;
+  decorators: string[];
+  body: string;
+};
+
+type PythonModuleInfo = {
+  module: string;
+  filePath: string;
+  imports: Map<string, { type: "module"; module: string } | { type: "symbol"; module: string; name: string }>;
+  functions: Map<string, PythonFunctionInfo>;
+  routerPrefix: string;
+};
+
+type EndpointAutomation = {
+  externalId: string;
+  name: string;
+  method: string;
+  endpoint: string;
+  apiFile: string;
+  handler: string;
+  systems: string[];
+  calls: Array<{ depth: number; kind: string; from: string; to: string; file: string | null }>;
+};
+
+const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
+
+function pathToModule(filePath: string): string {
+  return filePath.replace(/\.py$/, "").replace(/\//g, ".");
+}
+
+function normalizeImportBlocks(content: string): string[] {
+  const lines = content.split(/\r?\n/);
+  const result: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*from app\..*import\s*\(\s*$/.test(line)) {
+      const block = [line.trim()];
+      while (i + 1 < lines.length) {
+        i++;
+        block.push(lines[i].trim());
+        if (lines[i].includes(")")) break;
+      }
+      result.push(block.join(" "));
+    } else {
+      result.push(line);
+    }
+  }
+  return result;
+}
+
+function parseImports(lines: string[]): PythonModuleInfo["imports"] {
+  const imports: PythonModuleInfo["imports"] = new Map();
+
+  for (const line of lines) {
+    const importMatch = line.match(/^\s*import\s+(app\.[\w.]+)(?:\s+as\s+(\w+))?/);
+    if (importMatch) {
+      imports.set(importMatch[2] || importMatch[1].split(".")[0], { type: "module", module: importMatch[1] });
+      continue;
+    }
+
+    const fromMatch = line.match(/^\s*from\s+(app\.[\w.]+)\s+import\s+(.+)$/);
+    if (!fromMatch) continue;
+    const fromModule = fromMatch[1];
+    const names = fromMatch[2].replace(/[()]/g, "").split(",").map((part) => part.trim()).filter(Boolean);
+
+    for (const raw of names) {
+      const aliasMatch = raw.match(/^(\w+)\s+as\s+(\w+)$/);
+      const importedName = aliasMatch ? aliasMatch[1] : raw;
+      const localName = aliasMatch ? aliasMatch[2] : raw;
+      imports.set(localName, { type: "symbol", module: fromModule, name: importedName });
+    }
+  }
+
+  return imports;
+}
+
+function parseRouterPrefix(content: string): string {
+  return content.match(/router\s*=\s*APIRouter\s*\([\s\S]*?prefix\s*=\s*["']([^"']+)["']/m)?.[1] ?? "";
+}
+
+function lineIndent(line: string): number {
+  return line.match(/^(\s*)/)?.[1].length ?? 0;
+}
+
+function parseFunctions(lines: string[]): Map<string, PythonFunctionInfo> {
+  const functions = new Map<string, PythonFunctionInfo>();
+  let pendingDecorators: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.startsWith("@")) {
+      pendingDecorators.push(trimmed);
+      continue;
+    }
+
+    const defMatch = line.match(/^(\s*)(?:async\s+)?def\s+(\w+)\s*\((.*)$/);
+    if (!defMatch) {
+      if (trimmed && !trimmed.startsWith("#")) pendingDecorators = [];
+      continue;
+    }
+
+    const indent = defMatch[1].length;
+    const name = defMatch[2];
+    const signatureParts = [line.trim()];
+    while (!signatureParts.at(-1)?.trim().endsWith(":") && i + 1 < lines.length) {
+      i++;
+      signatureParts.push(lines[i].trim());
+    }
+
+    const body: string[] = [];
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const bodyLine = lines[j];
+      if (bodyLine.trim() && lineIndent(bodyLine) <= indent) break;
+      body.push(bodyLine);
+    }
+    i = j - 1;
+
+    functions.set(name, { name, decorators: pendingDecorators, body: body.join("\n") });
+    pendingDecorators = [];
+  }
+
+  return functions;
+}
+
+function joinRoute(prefix: string, routePath: string): string {
+  const left = prefix.replace(/\/$/, "");
+  const right = routePath.startsWith("/") ? routePath : `/${routePath}`;
+  return left ? `${left}${right}` : right;
+}
+
+function endpointDecorators(functionInfo: PythonFunctionInfo, prefix: string): Array<{ method: string; endpoint: string }> {
+  const routes: Array<{ method: string; endpoint: string }> = [];
+  for (const decorator of functionInfo.decorators) {
+    const match = decorator.match(/^@router\.(\w+)\s*\(\s*["']([^"']+)["']/);
+    if (!match) continue;
+    const method = match[1].toLowerCase();
+    if (!HTTP_METHODS.has(method)) continue;
+    routes.push({ method: method.toUpperCase(), endpoint: joinRoute(prefix, match[2]) });
+  }
+  return routes;
+}
+
+function resolveTarget(moduleInfo: PythonModuleInfo, rawTarget: string) {
+  const clean = rawTarget.replace(/^await\s+/, "").trim();
+  const parts = clean.split(".");
+  const first = parts[0];
+  const imported = moduleInfo.imports.get(first);
+
+  if (imported?.type === "module") return { module: imported.module, functionName: parts.slice(1).join(".") || first };
+  if (imported?.type === "symbol") return { module: imported.module, functionName: [imported.name, ...parts.slice(1)].join(".") };
+  if (moduleInfo.functions.has(first)) return { module: moduleInfo.module, functionName: first };
+  return null;
+}
+
+function dedupeByKey<T>(items: T[], keyFor: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    const key = keyFor(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function extractCallTargets(moduleInfo: PythonModuleInfo, functionInfo: PythonFunctionInfo) {
+  const targets: Array<{ kind: string; raw: string }> = [];
+  const body = functionInfo.body;
+
+  for (const match of body.matchAll(/background_tasks\.add_task\s*\(\s*([\w.]+)/g)) targets.push({ kind: "background_task", raw: match[1] });
+  for (const match of body.matchAll(/call_hubspot_api\s*\(\s*([\w.]+)/g)) targets.push({ kind: "hubspot_repository_call", raw: match[1] });
+  for (const match of body.matchAll(/(?:return\s+)?await\s+([\w.]+)\s*\(/g)) {
+    if (match[1] !== "call_hubspot_api") targets.push({ kind: "await_call", raw: match[1] });
+  }
+  for (const match of body.matchAll(/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\(/g)) {
+    const raw = match[1];
+    if (
+      raw === "call_hubspot_api" ||
+      raw === "background_tasks.add_task" ||
+      raw.startsWith("logger.") ||
+      raw.startsWith("logging.") ||
+      raw.startsWith("HTTPException")
+    ) continue;
+    if (resolveTarget(moduleInfo, raw)) targets.push({ kind: "call", raw });
+  }
+
+  return dedupeByKey(targets, (target) => `${target.kind}:${target.raw}`)
+    .map((target) => ({ ...target, resolved: resolveTarget(moduleInfo, target.raw) }))
+    .filter((target) => target.resolved);
+}
+
+function collectCalls(
+  modules: Map<string, PythonModuleInfo>,
+  moduleName: string,
+  functionName: string,
+  depth = 0,
+  maxDepth = 3,
+  seen = new Set<string>(),
+): EndpointAutomation["calls"] {
+  const key = `${moduleName}::${functionName}`;
+  if (seen.has(key)) return [];
+  seen.add(key);
+
+  const moduleInfo = modules.get(moduleName);
+  const functionInfo = moduleInfo?.functions.get(functionName);
+  if (!moduleInfo || !functionInfo) return [];
+
+  const records: EndpointAutomation["calls"] = [];
+  for (const target of extractCallTargets(moduleInfo, functionInfo)) {
+    const targetModule = target.resolved!.module;
+    const targetFunction = target.resolved!.functionName;
+    records.push({
+      depth,
+      kind: target.kind,
+      from: `${moduleName}::${functionName}`,
+      to: `${targetModule}::${targetFunction}`,
+      file: modules.get(targetModule)?.filePath ?? null,
+    });
+
+    const nestedFunction = targetFunction.split(".").at(-1);
+    if (depth + 1 < maxDepth && nestedFunction) {
+      records.push(...collectCalls(modules, targetModule, nestedFunction, depth + 1, maxDepth, new Set(seen)));
+    }
+  }
+
+  return dedupeByKey(records, (record) => JSON.stringify(record));
+}
+
+function inferSystems(endpoint: string, calls: EndpointAutomation["calls"]): string[] {
+  const text = [endpoint, ...calls.map((call) => call.to), ...calls.map((call) => call.file || "")].join(" ").toLowerCase();
+  const systems = ["GitLab"];
+  for (const [needle, label] of [
+    ["hubspot", "HubSpot"],
+    ["typeform", "Typeform"],
+    ["clockify", "Clockify"],
+    ["kvk", "KvK"],
+    ["wefact", "WeFact"],
+    ["sharepoint", "SharePoint"],
+    ["graph", "Microsoft Graph"],
+  ]) {
+    if (text.includes(needle) && !systems.includes(label)) systems.push(label);
+  }
+  return systems;
+}
+
+function readableName(handler: string): string {
+  const name = handler.replace(/_/g, " ").trim();
+  return name ? `${name[0].toUpperCase()}${name.slice(1)}` : "Endpoint automation";
+}
+
+function buildModules(contentsByPath: Map<string, string>): Map<string, PythonModuleInfo> {
+  const modules = new Map<string, PythonModuleInfo>();
+  for (const [filePath, content] of contentsByPath.entries()) {
+    const lines = normalizeImportBlocks(content);
+    const moduleName = pathToModule(filePath);
+    modules.set(moduleName, {
+      module: moduleName,
+      filePath,
+      imports: parseImports(lines),
+      functions: parseFunctions(lines),
+      routerPrefix: parseRouterPrefix(content),
+    });
+  }
+  return modules;
+}
+
+function analyzeEndpointAutomations(contentsByPath: Map<string, string>, maxDepth = 3): EndpointAutomation[] {
+  const modules = buildModules(contentsByPath);
+  const endpoints: EndpointAutomation[] = [];
+  for (const moduleInfo of [...modules.values()].sort((a, b) => a.filePath.localeCompare(b.filePath))) {
+    if (!moduleInfo.module.startsWith("app.API.")) continue;
+    for (const functionInfo of moduleInfo.functions.values()) {
+      for (const route of endpointDecorators(functionInfo, moduleInfo.routerPrefix)) {
+        const calls = collectCalls(modules, moduleInfo.module, functionInfo.name, 0, maxDepth);
+        const systems = inferSystems(route.endpoint, calls);
+        endpoints.push({
+          externalId: `${moduleInfo.filePath}::${route.method} ${route.endpoint}`,
+          name: readableName(functionInfo.name),
+          method: route.method,
+          endpoint: route.endpoint,
+          apiFile: moduleInfo.filePath,
+          handler: functionInfo.name,
+          systems,
+          calls,
+        });
+      }
+    }
   }
   return endpoints;
 }
 
+// ── Endpoint extraction: regex on FastAPI APIRouter patterns ─────────────────
 // ── GitLab Tree API: returns all .py file paths under app/ ───────────────────
 async function fetchGitlabTree(
   projectId: string,
@@ -134,6 +414,7 @@ async function extractMetadata(
   stappen: string[];
   systemen: string[];
 }> {
+  const brandContext = buildBrandContextPrompt();
   const tools = [
     {
       type: "function",
@@ -195,7 +476,7 @@ async function extractMetadata(
           {
             role: "user",
             content:
-              `Analyseer dit Python script en extraheer de automatiseringsmetadata.\n\nBestandsnaam: ${filename}\n\nInhoud:\n${content.slice(0, 6000)}`,
+              `${brandContext}\n\nAnalyseer dit Python script en extraheer de automatiseringsmetadata.\n\nBestandsnaam: ${filename}\n\nInhoud:\n${content.slice(0, 6000)}`,
           },
         ],
         tools,
@@ -223,18 +504,16 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    const requestBody = req.method === "POST"
+      ? await req.json().catch(() => ({}))
+      : {};
+    const mode = requestBody?.mode === "backfill" ? "backfill" : "sync";
+    const dryRun = mode === "backfill" ? requestBody?.dryRun !== false : false;
+
     const db = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY is niet geconfigureerd" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
 
     // Read GitLab integration
     const { data: integration, error: intError } = await db
@@ -247,6 +526,10 @@ serve(async (req) => {
       .maybeSingle();
 
     if (intError || !integration) {
+      await recordSourceSyncFailure(db, "gitlab", new Date().toISOString(), {
+        status: "failed",
+        errorMessage: "Geen GitLab-integratie gevonden.",
+      });
       return new Response(
         JSON.stringify({
           error:
@@ -260,6 +543,10 @@ serve(async (req) => {
     try {
       ({ pat, projectId, branch } = JSON.parse(integration.token as string));
     } catch {
+      await recordSourceSyncFailure(db, "gitlab", new Date().toISOString(), {
+        status: "auth_failed",
+        errorMessage: "GitLab configuratie ongeldig.",
+      });
       return new Response(
         JSON.stringify({
           error: "GitLab configuratie ongeldig — sla de verbinding opnieuw op",
@@ -268,170 +555,144 @@ serve(async (req) => {
       );
     }
 
-    // Step 1: Discover all Python automation files
+    // Step 1: Discover all Python source files and split app/API routes into endpoint automations
     const allFiles = await fetchGitlabTree(projectId, branch, pat);
-    const automationFiles = allFiles.filter((file) => !shouldSkip(file.path));
+    const sourceFiles = allFiles.filter((file) => !file.path.includes("/schemas/"));
 
-    if (automationFiles.length === 0) {
+    if (sourceFiles.length === 0) {
+      await recordSourceSyncFailure(db, "gitlab", new Date().toISOString(), {
+        status: "failed",
+        errorMessage: "Geen Python-bestanden gevonden onder app/.",
+      });
       return new Response(
         JSON.stringify({
-          error: "Geen Python-automatiseringsbestanden gevonden onder app/",
+          error: "Geen Python-bestanden gevonden onder app/",
         }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Step 2: Load existing GitLab records for diffing
-    const { data: existing } = await db
-      .from("automatiseringen")
-      .select("id, external_id, status, gitlab_last_commit")
-      .eq("source", "gitlab");
-
-    const existingMap: Record<string, { id: string; status: string; gitlab_last_commit: string | null }> = {};
-    for (const row of existing ?? []) {
-      if (row.external_id) existingMap[row.external_id] = row;
-    }
-
-    const syncedPaths = new Set<string>(automationFiles.map((file) => file.path)); // mark all upfront
-    let inserted = 0, updated = 0, skipped = 0;
-    const now = new Date().toISOString();
-    const fileErrors: string[] = [];
-
-    // Step 3: Fetch content + extract metadata + upsert — parallel batches of 5
-    const BATCH = 8;
-    for (let i = 0; i < automationFiles.length; i += BATCH) {
-      const batch = automationFiles.slice(i, i + BATCH);
+    const contentsByPath = new Map<string, string>();
+    const sourceErrors: string[] = [];
+    const SOURCE_BATCH = 8;
+    for (let i = 0; i < sourceFiles.length; i += SOURCE_BATCH) {
+      const batch = sourceFiles.slice(i, i + SOURCE_BATCH);
       await Promise.allSettled(
         batch.map(async (file) => {
-          const filePath = file.path;
           try {
-            const existingRow = existingMap[filePath];
-            if (existingRow?.gitlab_last_commit && file.blobId && existingRow.gitlab_last_commit === file.blobId) {
-              const { error: touchError } = await db
-                .from("automatiseringen")
-                .update({ last_synced_at: now })
-                .eq("id", existingRow.id);
-              if (touchError) throw touchError;
-              skipped++;
-              return;
-            }
-
-            const content = await fetchFileContent(projectId, filePath, branch, pat);
-            const filename = filePath.split("/").pop() ?? filePath;
-            const metadata = await extractMetadata(filename, content, GEMINI_API_KEY);
-            const systemen = [...new Set(["GitLab", ...(metadata.systemen ?? [])])];
-            const fasen = getFasen(filePath);
-            const endpoints = extractEndpoints(content);
-
-            if (existingRow) {
-              const { error: updateError } = await db
-                .from("automatiseringen")
-                .update({
-                  naam:                 metadata.naam,
-                  doel:                 metadata.doel,
-                  trigger_beschrijving: metadata.trigger,
-                  stappen:              metadata.stappen,
-                  systemen:             systemen,
-                  fasen,
-                  endpoints,
-                  gitlab_file_path:     filePath,
-                  gitlab_last_commit:   file.blobId,
-                  last_synced_at:       now,
-                })
-                .eq("id", existingRow.id);
-              if (updateError) throw updateError;
-              updated++;
-            } else {
-              const { data: newId } = await db.rpc("generate_auto_id");
-              const { error: insertError } = await db.from("automatiseringen").insert({
-                id:                   newId || `AUTO-GL-${Date.now()}`,
-                naam:                 metadata.naam,
-                doel:                 metadata.doel,
-                trigger_beschrijving: metadata.trigger,
-                stappen:              metadata.stappen,
-                systemen:             systemen,
-                fasen,
-                endpoints,
-                categorie:            "Backend Script",
-                status:               "Actief",
-                afhankelijkheden:     "",
-                owner:                "",
-                verbeterideeen:       "",
-                mermaid_diagram:      "",
-                external_id:          filePath,
-                source:               "gitlab",
-                import_source:        "gitlab",
-                import_status:        "pending_approval",
-                import_proposal: {
-                  confidence: {
-                    naam: "high", status: "high", trigger: "high",
-                    systemen: "high", stappen: "high", branches: "high",
-                    categorie: "high", doel: "high",
-                  },
-                  beschrijving_in_simpele_taal: metadata.stappen,
-                },
-                gitlab_file_path:     filePath,
-                gitlab_last_commit:   file.blobId,
-                last_synced_at:       now,
-              });
-              if (insertError) throw insertError;
-              inserted++;
-            }
+            contentsByPath.set(file.path, await fetchFileContent(projectId, file.path, branch, pat));
           } catch (e) {
-            const msg = `${filePath}: ${(e as Error).message}`;
-            console.warn(`gitlab-sync: bestand mislukt — ${msg}`);
-            fileErrors.push(msg);
+            sourceErrors.push(`${file.path}: ${(e as Error).message}`);
           }
         }),
       );
     }
 
-    // If every single file failed, surface the first error instead of returning 0/0/0
-    if (fileErrors.length > 0 && inserted + updated === 0) {
+    const endpointAutomations = analyzeEndpointAutomations(contentsByPath);
+    const apiBlobByPath = new Map(allFiles.map((file) => [file.path, file.blobId]));
+
+    if (endpointAutomations.length === 0) {
+      await recordSourceSyncFailure(db, "gitlab", new Date().toISOString(), {
+        status: "failed",
+        errorMessage: "Geen FastAPI endpoints gevonden onder app/API/.",
+        itemsSeen: sourceFiles.length,
+      });
       return new Response(
-        JSON.stringify({ error: `Alle bestanden mislukt. Eerste fout: ${fileErrors[0]}` }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({
+          error: "Geen FastAPI endpoints gevonden onder app/API/",
+          sourceErrors: sourceErrors.slice(0, 5),
+        }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Step 4: Deactivate files no longer in the repo
-    let deactivated = 0;
-    for (const [extPath, row] of Object.entries(existingMap)) {
-      if (!syncedPaths.has(extPath) && row.status !== "Inactief") {
-        await db
-          .from("automatiseringen")
-          .update({ status: "Inactief" })
-          .eq("id", row.id);
-        deactivated++;
+    const now = new Date().toISOString();
+    const payloads = endpointAutomations.map((automation) => mapGitLabEndpointToAutomationPayload({
+      externalId: automation.externalId,
+      name: automation.name,
+      method: automation.method,
+      endpoint: automation.endpoint,
+      apiFile: automation.apiFile,
+      handler: automation.handler,
+      systems: automation.systems,
+      phases: getFasen(automation.apiFile),
+      blobId: apiBlobByPath.get(automation.apiFile) ?? null,
+      calls: automation.calls,
+    }, now));
+
+    const syncRunId = await startSourceSyncRun(db, "gitlab", now);
+
+    if (mode === "backfill") {
+      const backfill = await runGitLabAutomationBackfill(db, {
+        payloads,
+        now,
+        dryRun,
+      });
+
+      if (dryRun) {
+        await finishSourceSyncRun(db, syncRunId, {
+          status: "success",
+          finishedAt: now,
+          itemsSeen: payloads.length,
+        });
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            mode,
+            dryRun,
+            inserted: 0,
+            updated: 0,
+            deactivated: 0,
+            total: payloads.length,
+            proposed: backfill.newEndpoints,
+            findings: 0,
+            missing: backfill.missingExisting,
+            changed: backfill.changedAutomations,
+            syncRunId,
+            backfill,
+            scannedFiles: sourceFiles.length,
+            sourceErrors: sourceErrors.slice(0, 5),
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       }
+
+      const result = await recordPortalOwnedSync(db, {
+        source: "gitlab",
+        payloads,
+        syncRunId,
+        now,
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          mode,
+          dryRun,
+          backfill,
+          ...result,
+          scannedFiles: sourceFiles.length,
+          sourceErrors: sourceErrors.slice(0, 5),
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    // Step 4.5: Trigger enrichment voor alle gematchte HubSpot automations
-    {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-      const { data: links } = await (db as any)
-        .from("automation_links")
-        .select("source_id");
-
-      for (const link of (links ?? [])) {
-        fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ automation_id: link.source_id }),
-        }).catch((e) => console.warn(`enrich-automation fout voor ${link.source_id}:`, e));
-      }
-    }
-
-    // Step 5: Update integration timestamp
-    await db
-      .from("integrations")
-      .update({ last_synced_at: now, status: "connected", error_message: null })
-      .eq("id", integration.id);
+    const result = await recordPortalOwnedSync(db, {
+      source: "gitlab",
+      payloads,
+      syncRunId,
+      now,
+    });
 
     return new Response(
-      JSON.stringify({ success: true, inserted, updated, skipped, deactivated, total: automationFiles.length }),
+      JSON.stringify({
+        success: true,
+        ...result,
+        scannedFiles: sourceFiles.length,
+        sourceErrors: sourceErrors.slice(0, 5),
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {

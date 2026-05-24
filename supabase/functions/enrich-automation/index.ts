@@ -1,6 +1,7 @@
 // supabase/functions/enrich-automation/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildBrandContextPrompt } from "../_shared/brand-context.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -159,8 +160,11 @@ serve(async (req) => {
       ? serviceFiles.map((sf) => `### Service: ${sf.path}\n${sf.code}`).join("\n\n")
       : "";
 
+    const brandContext = buildBrandContextPrompt();
     const prompt = hasGitlab
-      ? `Je krijgt twee databronnen van één automatisering:
+      ? `${brandContext}
+
+Je krijgt twee databronnen van één automatisering:
 1. De trigger-configuratie vanuit HubSpot
 2. De volledige backend-code vanuit GitLab (router + service-laag)
 
@@ -191,7 +195,9 @@ ${jsonSchema}
 
 Schrijf alsof je uitlegt aan een niet-technische collega. Gebruik geen jargon. Wees concreet en kort.
 Geldige waarden voor phases: Onboarding, Marketing, Sales, Boekhouding, Offboarding.`
-      : `Je analyseert een automatisering. Schrijf een beschrijving van trigger tot eindresultaat.
+      : `${brandContext}
+
+Je analyseert een automatisering. Schrijf een beschrijving van trigger tot eindresultaat.
 
 ## Automatisering
 Naam: ${workflowName}

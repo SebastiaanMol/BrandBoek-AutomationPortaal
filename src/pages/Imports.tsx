@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   CheckCircle2, XCircle, ChevronDown, ChevronUp,
-  RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight, Upload, Clock,
+  RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight, Upload, Clock, GitBranch,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useHubSpotSync, useGitlabSync } from "@/lib/hooks";
@@ -38,10 +38,17 @@ interface ImportProposal {
     allowContactToTriggerMultipleTimes?: boolean;
     workflowType?: string;
   };
+  gitlab_endpoint?: {
+    method?: string;
+    endpoint?: string;
+    api_file?: string;
+    handler?: string;
+  };
 }
 
 interface PendingAutomation {
   id: string;
+  source_record_type?: "automation" | "proposal";
   naam: string;
   status: string;
   doel: string;
@@ -55,6 +62,7 @@ interface PendingAutomation {
   import_proposal: ImportProposal;
   created_at: string;
   external_id: string | null;
+  gitlab_file_path: string | null;
   last_synced_at: string | null;
   hubspot_last_run_at: string | null;
   hubspot_run_count_365d: number | null;
@@ -69,14 +77,125 @@ interface PendingAutomation {
 async function fetchPending(): Promise<PendingAutomation[]> {
   const { data, error } = await supabase
     .from("automatiseringen")
-    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,external_id,last_synced_at,hubspot_last_run_at,hubspot_run_count_365d,fasen,owner")
+    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,external_id,gitlab_file_path,last_synced_at,hubspot_last_run_at,hubspot_run_count_365d,fasen,owner")
     .eq("import_status", "pending_approval")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as PendingAutomation[];
+  const legacyPending = ((data ?? []) as unknown as PendingAutomation[])
+    .map((item) => ({ ...item, source_record_type: "automation" as const }))
+    .filter((item) => !isLegacyGitlabFileRecord(item.import_source, item.external_id));
+
+  const { data: proposals, error: proposalsError } = await (supabase as any)
+    .from("automation_import_proposals")
+    .select("*")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  if (proposalsError) throw proposalsError;
+
+  const proposalPending = ((proposals ?? []) as any[]).map((proposal): PendingAutomation => {
+    const details = (proposal.details_sanitized ?? {}) as Record<string, any>;
+    const payload = (details.payload ?? {}) as Record<string, any>;
+    return {
+      id: proposal.id,
+      source_record_type: "proposal",
+      naam: proposal.proposed_name,
+      status: String(payload.status ?? "In review"),
+      doel: proposal.proposed_description ?? String(payload.doel ?? ""),
+      trigger_beschrijving: String(payload.trigger_beschrijving ?? ""),
+      systemen: proposal.proposed_systems ?? payload.systemen ?? [],
+      stappen: payload.stappen ?? [],
+      branches: payload.branches ?? [],
+      categorie: proposal.proposed_category ?? String(payload.categorie ?? "Anders"),
+      import_source: proposal.source,
+      import_status: "pending_approval",
+      import_proposal: (payload.import_proposal ?? details) as ImportProposal,
+      created_at: proposal.created_at,
+      external_id: proposal.external_id,
+      gitlab_file_path: payload.gitlab_file_path ?? null,
+      last_synced_at: payload.last_synced_at ?? null,
+      hubspot_last_run_at: payload.hubspot_last_run_at ?? null,
+      hubspot_run_count_365d: payload.hubspot_run_count_365d ?? null,
+      rejection_reason: null,
+      rejected_at: null,
+      fasen: payload.fasen ?? [],
+      owner: String(payload.owner ?? ""),
+    };
+  });
+
+  return [...proposalPending, ...legacyPending];
 }
 
-async function approveAutomation(id: string): Promise<void> {
+function isLegacyGitlabFileRecord(source: string | null | undefined, externalId: string | null): boolean {
+  return source?.toLowerCase() === "gitlab" && (!externalId || !externalId.includes("::"));
+}
+
+async function approveAutomation(item: PendingAutomation): Promise<void> {
+  if (item.source_record_type === "proposal") {
+    const { data: proposal, error: proposalError } = await (supabase as any)
+      .from("automation_import_proposals")
+      .select("*")
+      .eq("id", item.id)
+      .single();
+    if (proposalError) throw proposalError;
+
+    const details = (proposal.details_sanitized ?? {}) as Record<string, any>;
+    const payload = (details.payload ?? {}) as Record<string, any>;
+    const { data: generatedId } = await supabase.rpc("generate_auto_id");
+    const source = String(proposal.source ?? payload.source ?? "");
+    const externalId = String(proposal.external_id ?? payload.external_id ?? "");
+    const id = source === "hubspot" && externalId
+      ? `AUTO-HS-${externalId}`
+      : generatedId || `AUTO-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
+    const { error: insertError } = await supabase.from("automatiseringen").insert({
+      id,
+      naam: proposal.proposed_name,
+      status: payload.status ?? "Actief",
+      doel: proposal.proposed_description ?? payload.doel ?? "",
+      trigger_beschrijving: payload.trigger_beschrijving ?? "",
+      systemen: proposal.proposed_systems ?? payload.systemen ?? [],
+      stappen: payload.stappen ?? [],
+      branches: payload.branches ?? null,
+      categorie: proposal.proposed_category ?? payload.categorie ?? "Anders",
+      afhankelijkheden: payload.afhankelijkheden ?? "",
+      owner: payload.owner ?? "",
+      verbeterideeen: payload.verbeterideeen ?? "",
+      mermaid_diagram: payload.mermaid_diagram ?? "",
+      fasen: payload.fasen ?? [],
+      webhook_paths: payload.webhook_paths ?? [],
+      endpoints: payload.endpoints ?? [],
+      external_id: externalId || null,
+      source: source || null,
+      import_source: source || null,
+      import_status: "approved",
+      import_proposal: payload.import_proposal ?? details,
+      gitlab_file_path: payload.gitlab_file_path ?? null,
+      gitlab_last_commit: payload.gitlab_last_commit ?? null,
+      pipeline_id: payload.pipeline_id ?? null,
+      stage_id: payload.stage_id ?? null,
+      hubspot_last_run_at: payload.hubspot_last_run_at ?? null,
+      hubspot_run_count_365d: payload.hubspot_run_count_365d ?? null,
+      last_synced_at: payload.last_synced_at ?? null,
+      approved_by: "portaal-gebruiker",
+      approved_at: now,
+    });
+    if (insertError) throw insertError;
+
+    const { data: authData } = await supabase.auth.getUser();
+    const { error: updateError } = await (supabase as any)
+      .from("automation_import_proposals")
+      .update({
+        status: "confirmed",
+        confirmed_by: authData.user?.id ?? null,
+        confirmed_at: now,
+        updated_at: now,
+      })
+      .eq("id", item.id);
+    if (updateError) throw updateError;
+    return;
+  }
+
   const { error } = await supabase
     .from("automatiseringen")
     .update({
@@ -84,23 +203,67 @@ async function approveAutomation(id: string): Promise<void> {
       approved_by:   "portaal-gebruiker",
       approved_at:   new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", item.id);
   if (error) throw error;
 }
 
-async function rejectAutomation(id: string, reason: string): Promise<void> {
+async function rejectAutomation(item: PendingAutomation, reason: string): Promise<void> {
+  if (item.source_record_type === "proposal") {
+    const { data: authData } = await supabase.auth.getUser();
+    const { error } = await (supabase as any)
+      .from("automation_import_proposals")
+      .update({
+        status: "rejected",
+        rejected_by: authData.user?.id ?? null,
+        rejected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+    if (error) throw error;
+    return;
+  }
+
   const { error } = await supabase
     .from("automatiseringen")
     .update({ import_status: "rejected", rejection_reason: reason })
-    .eq("id", id);
+    .eq("id", item.id);
   if (error) throw error;
 }
 
-async function updateField(id: string, patch: Record<string, unknown>): Promise<void> {
+async function updateField(item: PendingAutomation, patch: Record<string, unknown>): Promise<void> {
+  if (item.source_record_type === "proposal") {
+    const { data: proposal, error: proposalError } = await (supabase as any)
+      .from("automation_import_proposals")
+      .select("details_sanitized")
+      .eq("id", item.id)
+      .single();
+    if (proposalError) throw proposalError;
+
+    const details = (proposal.details_sanitized ?? {}) as Record<string, any>;
+    const payload = {
+      ...((details.payload ?? {}) as Record<string, any>),
+      ...patch,
+    };
+
+    const { error } = await (supabase as any)
+      .from("automation_import_proposals")
+      .update({
+        proposed_name: patch.naam ?? item.naam,
+        proposed_description: patch.doel ?? item.doel,
+        proposed_category: patch.categorie ?? item.categorie,
+        proposed_systems: patch.systemen ?? item.systemen,
+        details_sanitized: { ...details, payload },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+    if (error) throw error;
+    return;
+  }
+
   const { error } = await supabase
     .from("automatiseringen")
     .update(patch)
-    .eq("id", id);
+    .eq("id", item.id);
   if (error) throw error;
 }
 
@@ -237,6 +400,9 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
   const trigger = item.import_proposal?.trigger ?? item.trigger_beschrijving ?? "";
   const simpeleTaal: string[] = item.import_proposal?.beschrijving_in_simpele_taal ?? [];
   const hubSpotUsage = formatHubSpotUsage(item);
+  const gitlabLocation = item.import_source?.toLowerCase() === "gitlab"
+    ? item.external_id ?? item.gitlab_file_path
+    : null;
 
   const [expanded,        setExpanded]        = useState(false);
   const [editing,         setEditing]         = useState(false);
@@ -260,13 +426,13 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
   };
 
   const approve = useMutation({
-    mutationFn: () => approveAutomation(item.id),
+    mutationFn: () => approveAutomation(item),
     onSuccess:  () => { toast.success(`"${item.naam}" goedgekeurd`); refresh(); },
     onError:    () => toast.error("Goedkeuren mislukt"),
   });
 
   const reject = useMutation({
-    mutationFn: () => rejectAutomation(item.id, rejectReason),
+    mutationFn: () => rejectAutomation(item, rejectReason),
     onSuccess:  () => { toast.success("Voorstel afgewezen"); setRejectOpen(false); refresh(); },
     onError:    () => toast.error("Afwijzen mislukt"),
   });
@@ -274,7 +440,7 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
   async function handleSave(): Promise<void> {
     setSaving(true);
     try {
-      await updateField(item.id, {
+      await updateField(item, {
         naam:                 draft.naam,
         doel:                 draft.doel,
         trigger_beschrijving: draft.trigger,
@@ -362,6 +528,21 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">HubSpot gebruik</p>
                 <p>{hubSpotUsage}</p>
               </div>
+            </div>
+          )}
+
+          {gitlabLocation && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 text-sm">
+              <div className="mb-1 flex items-center gap-1.5 text-orange-700">
+                <GitBranch className="h-3.5 w-3.5" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider">Terug te vinden in GitLab</span>
+              </div>
+              <p className="break-all font-mono text-xs leading-relaxed text-orange-950">{gitlabLocation}</p>
+              {item.gitlab_file_path && item.external_id !== item.gitlab_file_path && (
+                <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-orange-800/80">
+                  Bestand: {item.gitlab_file_path}
+                </p>
+              )}
             </div>
           )}
 
@@ -607,7 +788,7 @@ export default function Imports(): React.ReactNode {
       <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
         <Tabs defaultValue="hubspot">
           <div className="rounded-2xl border border-border overflow-hidden mb-8">
-            <header className="relative bg-gradient-hero px-8 py-8">
+            <header className="relative bg-primary-soft px-8 py-8">
               <div className="flex items-center gap-2 mb-3">
                 <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
                   <Upload className="w-4 h-4" />

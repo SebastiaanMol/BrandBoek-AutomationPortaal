@@ -29,6 +29,8 @@ import type { FlowSuggestie } from "@/lib/storage/automationLinks";
 import { groupFlowSuggesties } from "@/lib/flowSuggestionGroups";
 import type { FlowSuggestionGroup } from "@/lib/flowSuggestionGroups";
 import { useAutomatiseringen } from "@/lib/queryHooks/automations";
+import { sourceRuntimeRoleLabel } from "@/lib/automationRoles";
+import { buildProcessJourneyTitleFromAutomations } from "@/lib/processJourneyCopy";
 
 interface AcceptState {
   group: FlowSuggestionGroup;
@@ -147,7 +149,18 @@ export function FlowSuggestiesTab() {
         prev ? { ...prev, aiName: result.naam, aiBeschrijving: result.beschrijving, loading: false } : null,
       );
     } catch {
-      setAcceptState((prev) => (prev ? { ...prev, aiError: true, loading: false } : null));
+      const fallback = buildFallbackProcessJourneyCopy(group, autos);
+      setAcceptState((prev) =>
+        prev
+          ? {
+              ...prev,
+              aiName: fallback.naam,
+              aiBeschrijving: fallback.beschrijving,
+              aiError: false,
+              loading: false,
+            }
+          : null,
+      );
     }
   }
 
@@ -163,7 +176,21 @@ export function FlowSuggestiesTab() {
         prev ? { ...prev, aiName: result.naam, aiBeschrijving: result.beschrijving, loading: false } : null,
       );
     } catch {
-      setAcceptState((prev) => (prev ? { ...prev, aiError: true, loading: false } : null));
+      const autos = acceptState.automationIds
+        .map((id) => autoMap.get(id))
+        .filter((a): a is Automatisering => a !== undefined);
+      const fallback = buildFallbackProcessJourneyCopy(acceptState.group, autos);
+      setAcceptState((prev) =>
+        prev
+          ? {
+              ...prev,
+              aiName: fallback.naam,
+              aiBeschrijving: fallback.beschrijving,
+              aiError: false,
+              loading: false,
+            }
+          : null,
+      );
     }
   }
 
@@ -185,7 +212,7 @@ export function FlowSuggestiesTab() {
         nodeIds: acceptState.group.nodes.map((n) => n.id),
         flowId: newFlow.id,
       });
-      toast.success(`Flow "${naam}" aangemaakt`);
+      toast.success(`Procesreis "${naam}" aangemaakt`);
       setAcceptState(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Opslaan mislukt");
@@ -195,6 +222,10 @@ export function FlowSuggestiesTab() {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+        <span className="font-semibold text-foreground">Procesreis = route door meerdere automations.</span>{" "}
+        Een GitLab automation telt als een backend worker; de interne endpoint-code staat in de automation funnel.
+      </div>
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           {suggesties.length > 0 && (
@@ -334,6 +365,69 @@ function formatSource(source?: string | null): string {
   return SOURCE_LABELS[normalized] ?? source;
 }
 
+function buildFallbackProcessJourneyCopy(
+  group: FlowSuggestionGroup,
+  automations: Automatisering[] = [],
+): { naam: string; beschrijving: string } {
+  const first = group.nodes[0]?.naam ?? "Startsignaal";
+  const last = group.nodes[group.nodes.length - 1]?.naam ?? "vervolgstap";
+  const name = automations.length > 0
+    ? buildProcessJourneyTitleFromAutomations(automations, buildPlainLanguageFallbackName(first, last))
+    : buildPlainLanguageFallbackName(first, last);
+  const description = buildPlainLanguageFallbackDescription(first, last);
+
+  return {
+    naam: name,
+    beschrijving: description,
+  };
+}
+
+function buildPlainLanguageFallbackName(first: string, last: string): string {
+  const text = `${first} ${last}`.toLowerCase();
+
+  if (text.includes("btw") && text.includes("2 maanden")) return "BTW vervolgkwartaal bijwerken";
+  if (text.includes("jr") && text.includes("prio")) return "Jaarrekening prioriteit bijwerken";
+  if (text.includes("machtiging")) return "Machtiging verwerken";
+  if (text.includes("bankkoppeling")) return "Bankkoppeling status bijwerken";
+  if (text.includes("typeform")) return "Formuliergegevens verwerken";
+  if (text.includes("stage") || text.includes("fase")) return "Procesfase bepalen";
+  if (text.includes("lead")) return "Lead verwerken";
+  if (text.includes("contact")) return "Contactgegevens bijwerken";
+  if (text.includes("dossier")) return "Dossier bijwerken";
+
+  return "Procesreis bijwerken";
+}
+
+function buildPlainLanguageFallbackDescription(first: string, last: string): string {
+  const text = `${first} ${last}`.toLowerCase();
+
+  if (text.includes("btw") && text.includes("2 maanden")) {
+    return "Zodra de BTW van de afgelopen twee maanden als geboekt wordt gemarkeerd, werkt het systeem automatisch het volgende kwartaal bij. De procesreis eindigt bij de bewezen HubSpot-update; eventuele vervolgprocessen worden apart gekoppeld zodra die relatie hard bewezen is.";
+  }
+
+  if (text.includes("jr") && text.includes("prio")) {
+    return "Zodra duidelijk is dat een jaarrekening extra prioriteit nodig heeft, werkt het systeem automatisch de prioriteit bij. De procesreis eindigt bij de bewezen HubSpot-update; eventuele vervolgprocessen worden apart gekoppeld zodra die relatie hard bewezen is.";
+  }
+
+  if (text.includes("machtiging")) {
+    return "Zodra de machtiging van een klant verandert, werkt het systeem automatisch de bijbehorende dossiers bij. De procesreis eindigt bij de bewezen HubSpot-update; eventuele vervolgprocessen worden apart gekoppeld zodra die relatie hard bewezen is.";
+  }
+
+  if (text.includes("bankkoppeling")) {
+    return "Zodra de bankkoppeling verandert, werkt het systeem automatisch de relevante klant- en dossierstatussen bij. De procesreis eindigt bij de bewezen HubSpot-update; eventuele vervolgprocessen worden apart gekoppeld zodra die relatie hard bewezen is.";
+  }
+
+  if (text.includes("typeform")) {
+    return "Zodra nieuwe formulierinformatie binnenkomt, verwerkt het systeem deze gegevens automatisch in HubSpot. De procesreis eindigt bij de bewezen HubSpot-update; eventuele vervolgprocessen worden apart gekoppeld zodra die relatie hard bewezen is.";
+  }
+
+  if (text.includes("stage") || text.includes("fase")) {
+    return "Zodra de benodigde klant- of dossiergegevens veranderen, bepaalt het systeem automatisch welke procesfase passend is. De procesreis eindigt bij de bewezen HubSpot-update; eventuele vervolgprocessen worden apart gekoppeld zodra die relatie hard bewezen is.";
+  }
+
+  return `Zodra "${first}" gebeurt, voert het systeem automatisch de vervolgstap "${last}" uit. De procesreis eindigt bij de bewezen HubSpot-update; eventuele vervolgprocessen worden apart gekoppeld zodra die relatie hard bewezen is.`;
+}
+
 function SourceBadge({ source }: { source?: string | null }) {
   const normalized = source?.toLowerCase() ?? "";
   const cls = SOURCE_STYLES[normalized] ?? "bg-muted text-muted-foreground";
@@ -370,7 +464,7 @@ function FlowKandidaatCard({
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <button
         type="button"
-        aria-label={`${open ? "Sluit details" : "Open details"} voor ${first?.naam ?? "flow kandidaat"}`}
+        aria-label={`${open ? "Sluit details" : "Open details"} voor ${first?.naam ?? "procesreis kandidaat"}`}
         className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-6 px-5 py-4 text-left transition-colors hover:bg-muted/30"
         onClick={() => setOpen((value) => !value)}
       >
@@ -380,7 +474,7 @@ function FlowKandidaatCard({
               {first?.naam ?? "Onbekende start"} naar {last?.naam ?? "onbekend einde"}
             </span>
             <CountBadge>{group.nodes.length} automations</CountBadge>
-            <CountBadge>{group.suggestions.length} koppelingen</CountBadge>
+            <CountBadge>{group.suggestions.length} overgangen</CountBadge>
             <StructureBadge type={group.structureType} />
             {group.webhookCount > 0 && (
               <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
@@ -435,12 +529,12 @@ function FlowKandidaatCard({
       {open && (
         <div className="grid min-h-[3.5rem] grid-cols-[minmax(0,1fr)_16rem] items-center gap-3 border-t border-border bg-muted/20 px-4 py-3">
           <p className="truncate text-xs text-muted-foreground">
-            Selecteer koppelingen en sla daarna op als flow.
+            Selecteer automation-overgangen en sla daarna op als bevestigde procesreis.
           </p>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm" className="h-8 flex-1 text-xs">
               <Link to={`/flows/suggesties/${encodeURIComponent(group.id)}`}>
-                Bekijk flow
+                Bekijk procesreis
               </Link>
             </Button>
             <button
@@ -649,7 +743,7 @@ function FlowStructurePreview({ group }: { group: FlowSuggestionGroup }) {
       <div className="space-y-2">
         <MiniChain group={group} />
         <p className="text-[10px] font-medium text-muted-foreground">
-          Stap-voor-stap volgorde op basis van directe koppelingen.
+          Stap-voor-stap volgorde op basis van directe automation-overgangen.
         </p>
       </div>
     );
@@ -739,6 +833,9 @@ function BranchNodeList({
           >
             <StepBadge>{stepLabels.get(node.id) ?? "?"}</StepBadge>
             <SourceBadge source={node.source} />
+            <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              {sourceRuntimeRoleLabel(node.source, node.categorie)}
+            </span>
             <span className="min-w-0 truncate">{node.naam}</span>
           </span>
         ))}
@@ -823,9 +920,12 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
         return (
           <div key={node.id} className="flex items-center gap-2 shrink-0">
             <span className="inline-flex max-w-[280px] items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground">
-              <StepBadge>{index + 1}</StepBadge>
-              <SourceBadge source={node.source} />
-              <span className="min-w-0 truncate">{node.naam}</span>
+            <StepBadge>{index + 1}</StepBadge>
+            <SourceBadge source={node.source} />
+            <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              {sourceRuntimeRoleLabel(node.source, node.categorie)}
+            </span>
+            <span className="min-w-0 truncate">{node.naam}</span>
             </span>
             {next && group.structureType === "lineair" && (
               <span
@@ -854,7 +954,7 @@ function RelationPreview({ group }: { group: FlowSuggestionGroup }) {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-      <span className="font-semibold text-foreground/70">Koppelingen:</span>
+      <span className="font-semibold text-foreground/70">Overgangen:</span>
       {visibleRelations.map((suggestion) => (
         <span
           key={`${suggestion.fromId}-${suggestion.toId}`}

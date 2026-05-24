@@ -162,7 +162,7 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
         await saveMutation.mutateAsync(item);
         toast.success(`${item.id} saved`);
       }
-      navigate(`/alle?open=${item.id}`);
+      navigate(`/automations/${encodeURIComponent(item.id)}`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Save failed");
     }
@@ -332,7 +332,7 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
         </button>
         {editMode && (
           <button
-            onClick={() => navigate(`/alle?open=${editId}`)}
+            onClick={() => navigate(`/automations/${encodeURIComponent(editId)}`)}
             disabled={isPending}
             className="px-6 py-2.5 rounded-md text-sm font-medium border border-border hover:bg-secondary transition-colors disabled:opacity-50"
           >

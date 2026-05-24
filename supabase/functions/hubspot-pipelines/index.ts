@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildBrandContextPrompt } from "../_shared/brand-context.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,7 +21,7 @@ async function generateDescription(
 ): Promise<string | null> {
   const sortedStages = [...stages].sort((a, b) => a.display_order - b.display_order);
   const stageList = sortedStages.map((s, i) => `${i + 1}. ${s.label}`).join("\n");
-  const prompt = `Je krijgt een HubSpot deal-pipeline genaamd "${naam}" met de volgende stages:\n${stageList}\n\nSchrijf een zakelijke beschrijving van 2-3 zinnen die uitlegt wat het doel van deze pipeline is en wat het proces globaal inhoudt. Schrijf voor medewerkers van een boekhoudkantoor, geen technisch jargon. Antwoord uitsluitend in het Nederlands.\n\nAntwoord in JSON: { "beschrijving": "..." }`;
+  const prompt = `${buildBrandContextPrompt()}\n\nJe krijgt een HubSpot deal-pipeline genaamd "${naam}" met de volgende stages:\n${stageList}\n\nSchrijf een zakelijke beschrijving van 2-3 zinnen die uitlegt wat het doel van deze pipeline is en wat het proces globaal inhoudt. Schrijf voor medewerkers van een boekhoudkantoor, geen technisch jargon. Antwoord uitsluitend in het Nederlands.\n\nAntwoord in JSON: { "beschrijving": "..." }`;
 
   try {
     const res = await fetch(

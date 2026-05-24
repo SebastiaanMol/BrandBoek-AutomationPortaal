@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   deleteAutomatisering,
   fetchAutomatiseringen,
+  fetchAutomatiseringenIncludingLegacyGitlab,
   generateNextId,
   insertAutomatisering,
   setCleanupDeleteCandidate,
@@ -14,6 +15,13 @@ export function useAutomatiseringen() {
   return useQuery({
     queryKey: ["automatiseringen"],
     queryFn: fetchAutomatiseringen,
+  });
+}
+
+export function useAutomatiseringenIncludingLegacyGitlab() {
+  return useQuery({
+    queryKey: ["automatiseringen", "including-legacy-gitlab"],
+    queryFn: fetchAutomatiseringenIncludingLegacyGitlab,
   });
 }
 

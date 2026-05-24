@@ -31,6 +31,216 @@ export interface AutomationBranch {
   description?: string; // optionele toelichting (plain text)
 }
 
+export interface GitLabEndpointInfo {
+  method?: string;
+  endpoint?: string;
+  api_file?: string;
+  handler?: string;
+  calls?: GitLabCallInfo[];
+}
+
+export interface GitLabCallInfo {
+  depth: number;
+  kind: string;
+  from: string;
+  to: string;
+  file: string | null;
+}
+
+export interface HubSpotWorkflowTriggerInfo {
+  objectType?: string | null;
+  property?: string | null;
+  operator?: string | null;
+  value?: string | number | boolean | null;
+  label: string;
+  source: string;
+}
+
+export interface HubSpotWorkflowActionInfo {
+  index: number;
+  type: string;
+  label: string;
+  webhookUrl?: string | null;
+  webhookMethod?: string | null;
+  webhookPath?: string | null;
+  enrollWorkflowId?: string | null;
+  propertyName?: string | null;
+  propertyValue?: string | number | boolean | null;
+}
+
+export interface HubSpotWorkflowBranchInfo {
+  id: string;
+  label: string;
+  conditionLabel?: string | null;
+  actions?: HubSpotWorkflowActionInfo[];
+}
+
+export interface HubSpotWorkflowInfo {
+  workflowId?: string | null;
+  name: string;
+  objectType?: string | null;
+  enrollmentType?: string | null;
+  shouldReEnroll?: boolean;
+  triggers: HubSpotWorkflowTriggerInfo[];
+  actions: HubSpotWorkflowActionInfo[];
+  branches?: HubSpotWorkflowBranchInfo[];
+}
+
+export interface ZapierWebhookHandoffInfo {
+  method: string;
+  path: string;
+  host?: string;
+}
+
+export interface ZapierProcessStepInfo {
+  index: number;
+  appName: string;
+  title: string;
+  type: string;
+  kind: string;
+  summary: string;
+  details: string[];
+  webhookPaths: string[];
+}
+
+export interface ZapierProcessInfo {
+  trigger: string;
+  outcome: string;
+  conditions: string[];
+  emails: Array<{ subject: string; recipients: string[] }>;
+  webhookHandoffs: ZapierWebhookHandoffInfo[];
+  dataLookups: string[];
+  steps: ZapierProcessStepInfo[];
+}
+
+export interface TypeformWebhookHandoffInfo {
+  method: string;
+  path: string;
+  host?: string;
+}
+
+export interface TypeformProcessStepInfo {
+  index: number;
+  kind: string;
+  title: string;
+  summary: string;
+  details: string[];
+  webhookPaths: string[];
+}
+
+export interface TypeformProcessInfo {
+  trigger: string;
+  outcome: string;
+  webhookHandoffs: TypeformWebhookHandoffInfo[];
+  steps: TypeformProcessStepInfo[];
+}
+
+export interface TypeformImportInfo {
+  form?: {
+    id?: string;
+    title?: string;
+    display_url?: string;
+    hidden_fields?: string[];
+    fields?: Array<{
+      id: string;
+      ref?: string;
+      title: string;
+      type: string;
+      choices?: string[];
+    }>;
+  };
+  webhooks?: Array<{
+    tag: string;
+    enabled: boolean;
+    eventTypes: string[];
+    path?: string;
+    host?: string;
+  }>;
+  process?: TypeformProcessInfo;
+}
+
+export interface AutomationStandardStepInfo {
+  index: number;
+  kind: string;
+  title: string;
+  summary: string;
+  details: string[];
+  evidenceRefs: string[];
+}
+
+export interface AutomationStandardProcessInfo {
+  source: string;
+  trigger: string;
+  outcome: string;
+  systems: string[];
+  handoffs?: Array<{
+    from: string;
+    to: string;
+    kind: string;
+    evidence?: string;
+  }>;
+  steps: AutomationStandardStepInfo[];
+  confidence?: Record<string, unknown>;
+}
+
+export interface GitLabImportInfo {
+  endpoint?: {
+    method?: string;
+    path?: string;
+    api_file?: string;
+    handler?: string;
+  };
+  calls?: GitLabCallInfo[];
+  hubspotReads?: GitLabCallInfo[];
+  hubspotWrites?: GitLabCallInfo[];
+  internalCalls?: GitLabCallInfo[];
+  backgroundTasks?: GitLabCallInfo[];
+}
+
+export interface AutomationImportProposal {
+  source?: string;
+  read_only?: boolean;
+  standard?: AutomationStandardProcessInfo;
+  gitlab?: GitLabImportInfo;
+  gitlab_endpoint?: GitLabEndpointInfo;
+  beschrijving_in_simpele_taal?: string[];
+  zap?: {
+    id?: string;
+    title?: string;
+    status?: string;
+    process?: ZapierProcessInfo;
+    steps?: ZapierProcessStepInfo[];
+  };
+  typeform?: TypeformImportInfo;
+  webhookPaths?: string[];
+  [key: string]: unknown;
+}
+
+export type AutomationSourceFindingType =
+  | "source_missing"
+  | "source_changed"
+  | "webhook_changed"
+  | "metadata_changed";
+
+export type AutomationSourceFindingSeverity = "info" | "warning" | "critical";
+
+export interface AutomationSourceFinding {
+  id: string;
+  automationId: string;
+  source: string;
+  externalId?: string | null;
+  type: AutomationSourceFindingType;
+  severity: AutomationSourceFindingSeverity;
+  message: string;
+  details?: Record<string, unknown>;
+  dedupeKey?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  resolvedAt?: string | null;
+  resolvedReason?: string | null;
+  syncRunId?: string | null;
+}
+
 // ── Pipeline stages ──────────────────────────────────────────────────────────
 
 // PipelineStage represents the JSONB document shape as stored in the `pipelines.stages` column.
@@ -86,18 +296,24 @@ export interface Automatisering {
   laatstGeverifieerd: string | null;
   geverifieerdDoor: string;
   externalId?: string;
+  endpoints?: string[];
   source?: string;
   lastSyncedAt?: string | null;
   hubspotLastRunAt?: string | null;
   hubspotRunCount365d?: number | null;
+  hubspotWorkflow?: HubSpotWorkflowInfo;
+  webhookPaths?: string[];
   branches?: AutomationBranch[];
   beschrijvingInSimpeleTaal?: string[];
   gitlabFilePath?: string;
+  gitlabEndpoint?: GitLabEndpointInfo;
+  importProposal?: AutomationImportProposal;
   gitlabLastCommit?: string;
   aiDescription?: string;
   aiDescriptionUpdatedAt?: string | null;
   cleanupDeleteCandidate?: boolean;
   cleanupDeleteCandidateAt?: string | null;
+  sourceFindings?: AutomationSourceFinding[];
   pipelineId?:            string;
   stageId?:               string;
 }

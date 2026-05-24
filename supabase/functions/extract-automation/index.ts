@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { buildBrandContextPrompt } from "../_shared/brand-context.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,6 +16,7 @@ serve(async (req) => {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     let prompt = "";
+    const brandContext = buildBrandContextPrompt();
 
     if (type === "csv_rows") {
       prompt = `Je bent een expert in procesautomatisering bij een boekhoudkantoor. Analyseer de volgende CSV-rijen en extraheer voor ELKE rij gestructureerde informatie.
@@ -124,7 +126,7 @@ Extraheer de automatisering en geef gestructureerde informatie terug. Gebruik AL
              content:
                "Je bent een AI-assistent die procesautomatiseringen analyseert voor een Nederlands boekhoudkantoor genaamd Brand Boekhouders. Je extraheert gestructureerde data uit CSV-exports (HubSpot, Zapier, etc.) en tekstbeschrijvingen. Je herkent Zapier Zaps aan trigger/action apps en stappen. Antwoord altijd in het Nederlands. Wees specifiek en gedetailleerd in je beschrijvingen.",
            },
-          { role: "user", content: prompt },
+          { role: "user", content: `${brandContext}\n\n${prompt}` },
         ],
         tools,
         tool_choice: { type: "function", function: { name: "extract_automations" } },

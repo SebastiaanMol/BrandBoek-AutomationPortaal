@@ -40,16 +40,16 @@ export function FlowConfirmDialog({
         className="max-h-[min(720px,calc(100vh-2rem))] w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-card shadow-xl"
       >
         <div className="border-b border-border px-6 py-5">
-          <h2 id="flow-confirm-title" className="text-base font-semibold">Flow opslaan</h2>
+          <h2 id="flow-confirm-title" className="text-base font-semibold">Procesreis opslaan</h2>
           <p id="flow-confirm-description" className="mt-1 text-sm text-muted-foreground">
-            Controleer de volgorde, naam en beschrijving. Na opslaan wordt dit een officiële flow.
+            Controleer de volgorde, naam en beschrijving. Na opslaan wordt dit een officiele procesreis.
           </p>
         </div>
 
         <div className="max-h-[calc(100vh-12rem)] overflow-y-auto px-6 py-5">
           <div className="mb-5">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">
-              Automatiseringen in deze flow ({automations.length})
+              Automatiseringen in deze procesreis ({automations.length})
             </p>
             <div className="space-y-1">
               {automations.map((a, i) => (
@@ -65,8 +65,8 @@ export function FlowConfirmDialog({
           </div>
 
           {aiError && (
-            <div className="mb-4 p-3 bg-destructive/10 rounded text-xs text-destructive">
-              AI-naamgeving mislukt.{" "}
+            <div className="mb-4 rounded bg-muted p-3 text-xs text-muted-foreground">
+              AI-naamgeving is niet beschikbaar. Er staat een voorlopige naam klaar.{" "}
               <button type="button" className="underline font-medium" onClick={onRetryAi}>
                 Probeer opnieuw
               </button>
@@ -80,7 +80,7 @@ export function FlowConfirmDialog({
                 className="w-full border border-input rounded px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                 value={naam}
                 onChange={(e) => setNaam(e.target.value)}
-                placeholder="Flow naam"
+                placeholder="Procesreis naam"
               />
             </div>
             <div>
@@ -90,7 +90,7 @@ export function FlowConfirmDialog({
                 rows={3}
                 value={beschrijving}
                 onChange={(e) => setBeschrijving(e.target.value)}
-                placeholder="Beschrijving van de flow"
+                placeholder="Beschrijving van de procesreis"
               />
             </div>
           </div>
@@ -108,7 +108,7 @@ export function FlowConfirmDialog({
             onClick={() => onSave(naam, beschrijving)}
             disabled={!naam.trim() || saving}
           >
-            {saving ? "Opslaan..." : "Flow opslaan"}
+            {saving ? "Opslaan..." : "Procesreis opslaan"}
           </button>
         </div>
       </div>

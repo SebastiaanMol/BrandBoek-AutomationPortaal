@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import AutomationsPage from "./pages/AutomationsPage";
+import AutomationDetailPage from "./pages/AutomationDetailPage";
+import NieuweAutomation from "./pages/NieuweAutomation";
 import Analyse from "./pages/Analyse";
 import BewerkAutomatisering from "./pages/BewerkAutomatisering";
 import AuthPage from "./pages/AuthPage";
@@ -21,6 +23,7 @@ import FlowDetail from "./pages/FlowDetail";
 import FlowSuggestionDetail from "./pages/FlowSuggestionDetail";
 import Pipelines from "./pages/Pipelines";
 import PipelineDetail from "./pages/PipelineDetail";
+import RuntimeExplorer from "./pages/RuntimeExplorer";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,8 +45,9 @@ function ProtectedRoutes() {
     <AppLayout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/nieuw" element={<Navigate to="/alle?tab=new" replace />} />
+        <Route path="/nieuw" element={<NieuweAutomation />} />
         <Route path="/alle" element={<AutomationsPage />} />
+        <Route path="/automations/:id" element={<AutomationDetailPage />} />
         <Route path="/bewerk/:id" element={<BewerkAutomatisering />} />
         <Route path="/analyse" element={<Analyse />} />
         <Route path="/instellingen" element={<Instellingen />} />
@@ -57,6 +61,7 @@ function ProtectedRoutes() {
         <Route path="/flows/:id" element={<FlowDetail />} />
         <Route path="/pipelines" element={<Pipelines />} />
         <Route path="/pipelines/:id" element={<PipelineDetail />} />
+        <Route path="/runtime" element={<RuntimeExplorer />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

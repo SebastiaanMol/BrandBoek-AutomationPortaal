@@ -313,7 +313,7 @@ function AutomationList({ items }: { items: Automatisering[] }) {
       {items.map((automation) => (
         <Link
           key={automation.id}
-          to={`/alle?open=${automation.id}`}
+          to={`/automations/${encodeURIComponent(automation.id)}`}
           className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-secondary/60 sm:flex-row sm:items-center sm:justify-between"
         >
           <div className="min-w-0">

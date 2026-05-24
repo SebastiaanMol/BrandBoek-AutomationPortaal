@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { Fragment, useMemo } from "react";
+import { GitLabLocationCard } from "@/components/GitLabLocationCard";
+import { AutomationFunnel } from "@/components/AutomationFunnel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Zap, ExternalLink, Unlink, ArrowRight, User, Clock, Layers, Lightbulb } from "lucide-react";
@@ -152,6 +154,18 @@ export function AutomationDetailPanel({
         {fullData?.trigger && (
           <Section label="Trigger">
             <p className="text-sm text-foreground leading-relaxed">{fullData.trigger}</p>
+          </Section>
+        )}
+
+        {fullData && (fullData.source === "gitlab" || fullData.gitlabFilePath) && (
+          <Section label="GitLab locatie">
+            <GitLabLocationCard automation={fullData} compact />
+          </Section>
+        )}
+
+        {fullData && (fullData.source === "gitlab" || fullData.gitlabFilePath) && (
+          <Section label="Automation funnel">
+            <AutomationFunnel automation={fullData} compact />
           </Section>
         )}
 
@@ -308,7 +322,7 @@ export function AutomationDetailPanel({
               {relatedAutomations.map(rel => (
                 <Link
                   key={rel.id}
-                  to={`/alle?open=${rel.id}`}
+                  to={`/automations/${encodeURIComponent(rel.id)}`}
                   className="flex items-center gap-1.5 text-xs text-primary hover:underline py-0.5"
                 >
                   <ArrowRight className="h-3 w-3 shrink-0" />

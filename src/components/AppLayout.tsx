@@ -48,7 +48,7 @@ const navGroups: NavGroup[] = [
     title: "Analysis",
     items: [
       { title: "Processes", url: "/processen", icon: GitBranch },
-      { title: "Flows", url: "/flows", icon: GitMerge },
+      { title: "Procesreis", url: "/flows", icon: GitMerge },
       { title: "Pipelines", url: "/pipelines", icon: Layers2 },
       { title: "Analysis", url: "/analyse", icon: BarChart3 },
     ],

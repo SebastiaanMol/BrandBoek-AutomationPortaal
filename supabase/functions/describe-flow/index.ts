@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { buildBrandContextPrompt } from "../_shared/brand-context.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,7 +35,9 @@ serve(async (req) => {
       })
       .join("\n\n");
 
-    const prompt = `Je krijgt een reeks automatiseringen die samen één flow vormen, in volgorde van uitvoering.
+    const prompt = `${buildBrandContextPrompt()}
+
+Je krijgt een reeks automatiseringen die samen één flow vormen, in volgorde van uitvoering.
 
 ${automationList}
 

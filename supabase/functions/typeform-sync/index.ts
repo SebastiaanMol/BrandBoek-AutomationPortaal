@@ -1,11 +1,32 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  mapTypeformFormToAutomationPayload,
+  type TypeformAutomationPayload,
+  typeformReadOnlyHeaders,
+} from "../_shared/typeform-readonly.ts";
+import {
+  recordPortalOwnedSync,
+  recordSourceSyncFailure,
+  startSourceSyncRun,
+} from "../_shared/portal-owned-sync.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+const TYPEFORM_FORMS_URL = "https://api.typeform.com/forms?page_size=200";
+
+class TypeformApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -19,88 +40,124 @@ serve(async (req) => {
       .from("integrations")
       .select("*")
       .eq("type", "typeform")
-      .eq("status", "connected")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (intError || !integration) {
-      return new Response(JSON.stringify({ error: "Geen Typeform-integratie gevonden. Sla eerst een token op via Instellingen → Integraties." }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      await recordSourceSyncFailure(db, "typeform", new Date().toISOString(), {
+        status: "failed",
+        errorMessage: "Geen Typeform-integratie gevonden.",
       });
+      return jsonResponse({
+        error: "Geen Typeform-integratie gevonden. Sla eerst een token op via Instellingen > Externe systemen.",
+      }, 404);
     }
 
-    const typeformRes = await fetch("https://api.typeform.com/forms?page_size=200", {
-      headers: { Authorization: `Bearer ${integration.token}` },
-    });
-
-    if (!typeformRes.ok) {
-      const errText = await typeformRes.text();
-      const errorMessage = typeformRes.status === 401
-        ? "Ongeldige Typeform token."
-        : `Typeform API fout (${typeformRes.status}): ${errText.slice(0, 200)}`;
-
-      await db.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
-      return new Response(JSON.stringify({ error: errorMessage }), {
-        status: typeformRes.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const token = String(integration.token ?? "").trim();
+    if (!token) {
+      const errorMessage = "Typeform token ontbreekt. Sla een Personal Access Token op voordat je synchroniseert.";
+      await recordSourceSyncFailure(db, "typeform", new Date().toISOString(), {
+        status: "auth_failed",
+        errorMessage,
       });
+      return jsonResponse({ error: errorMessage }, 400);
     }
 
-    const body = await typeformRes.json();
-    const forms: any[] = body.items ?? [];
-
-    const { data: existing } = await db
-      .from("automatiseringen").select("id, external_id, status").eq("source", "typeform");
-
-    const existingByExternalId: Record<string, { id: string; status: string }> = {};
-    for (const row of existing || []) {
-      if (row.external_id) existingByExternalId[row.external_id] = { id: row.id, status: row.status };
+    let payloads: TypeformAutomationPayload[];
+    const now = new Date().toISOString();
+    try {
+      payloads = await fetchTypeformAutomationPayloads(token, now);
+    } catch (error) {
+      const status = error instanceof TypeformApiError ? error.status : 500;
+      const errorMessage = error instanceof Error ? error.message : "Typeform sync mislukt.";
+      await recordSourceSyncFailure(db, "typeform", now, {
+        status: status === 401 || status === 403 ? "auth_failed" : status === 429 ? "rate_limited" : "failed",
+        errorMessage,
+      });
+      return jsonResponse({ error: errorMessage }, status);
     }
 
-    const syncedIds = new Set<string>();
-    let inserted = 0, updated = 0;
-
-    for (const form of forms) {
-      const externalId = String(form.id);
-      syncedIds.add(externalId);
-      const now = new Date().toISOString();
-
-      if (existingByExternalId[externalId]) {
-        await db.from("automatiseringen").update({ naam: form.title, last_synced_at: now }).eq("id", existingByExternalId[externalId].id);
-        updated++;
-      } else {
-        const { data: newId } = await db.rpc("generate_auto_id");
-        await db.from("automatiseringen").insert({
-          id: newId || `AUTO-TF-${externalId}`,
-          naam: form.title, categorie: "Typeform", doel: "",
-          trigger_beschrijving: "Typeform submission",
-          systemen: ["Typeform"],
-          stappen: ["Formulier ingevuld", "Data verwerkt"],
-          afhankelijkheden: "", owner: "", status: "Actief", verbeterideeen: "", mermaid_diagram: "", fasen: [],
-          external_id: externalId, source: "typeform", last_synced_at: now,
-        });
-        inserted++;
-      }
+    let result: { inserted: number; updated: number; deactivated: number; total: number };
+    try {
+      const syncRunId = await startSourceSyncRun(db, "typeform", now);
+      result = await recordPortalOwnedSync(db, {
+        source: "typeform",
+        payloads,
+        syncRunId,
+        now,
+      });
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      await recordSourceSyncFailure(db, "typeform", now, {
+        status: "failed",
+        errorMessage,
+        itemsSeen: payloads.length,
+      });
+      return jsonResponse({ error: errorMessage }, 500);
     }
 
-    let deactivated = 0;
-    for (const [extId, row] of Object.entries(existingByExternalId)) {
-      if (!syncedIds.has(extId) && row.status !== "Uitgeschakeld") {
-        await db.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", row.id);
-        deactivated++;
-      }
-    }
-
-    await db.from("integrations").update({ last_synced_at: new Date().toISOString(), status: "connected", error_message: null }).eq("id", integration.id);
-    return new Response(JSON.stringify({ success: true, inserted, updated, deactivated, total: forms.length }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
-  } catch (e) {
-    console.error("typeform-sync error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Onbekende fout" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return jsonResponse({ success: true, ...result });
+  } catch (error) {
+    console.error("typeform-sync error:", error);
+    return jsonResponse({ error: stringifyError(error) }, 500);
   }
 });
+
+async function fetchTypeformAutomationPayloads(token: string, now: string): Promise<TypeformAutomationPayload[]> {
+  const headers = typeformReadOnlyHeaders(token);
+  const formsBody = await fetchTypeformJson(TYPEFORM_FORMS_URL, headers);
+  const forms = Array.isArray(formsBody.items) ? formsBody.items : [];
+  const payloads: TypeformAutomationPayload[] = [];
+
+  for (const form of forms) {
+    const formId = String(form?.id ?? "").trim();
+    if (!formId) continue;
+
+    const [detail, webhooksBody] = await Promise.all([
+      fetchTypeformJson(`https://api.typeform.com/forms/${formId}`, headers).catch(() => form),
+      fetchTypeformJson(`https://api.typeform.com/forms/${formId}/webhooks`, headers).catch(() => ({ items: [] })),
+    ]);
+    const webhooks = Array.isArray(webhooksBody.items) ? webhooksBody.items : [];
+
+    payloads.push(mapTypeformFormToAutomationPayload({
+      form,
+      detail,
+      webhooks,
+    }, now));
+  }
+
+  return payloads;
+}
+
+async function fetchTypeformJson(
+  url: string,
+  headers: Record<string, string>,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    const errText = await response.text();
+    const errorMessage = response.status === 401
+      ? "Ongeldige Typeform token."
+      : `Typeform API fout (${response.status}): ${errText.slice(0, 200)}`;
+    throw new TypeformApiError(response.status, errorMessage);
+  }
+  return await response.json();
+}
+
+function stringifyError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Onbekende fout";
+  }
+}
+
+function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}

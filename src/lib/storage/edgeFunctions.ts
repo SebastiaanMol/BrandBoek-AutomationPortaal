@@ -1,6 +1,40 @@
 import { supabase } from "@/integrations/supabase/client";
 
-type SyncResult = { inserted: number; updated: number; deactivated: number; deletedRejected?: number; total: number };
+type SyncResult = {
+  inserted: number;
+  updated: number;
+  deactivated: number;
+  deletedRejected?: number;
+  total: number;
+  proposed?: number;
+  findings?: number;
+  missing?: number;
+  changed?: number;
+  syncRunId?: string;
+};
+
+export type GitLabBackfillResult = SyncResult & {
+  mode: "backfill";
+  dryRun: boolean;
+  backfill?: {
+    dryRun: boolean;
+    scanned: number;
+    matched: number;
+    changedAutomations: number;
+    changedFields: number;
+    newEndpoints: number;
+    missingExisting: number;
+    changes: Array<{
+      automationId: string;
+      externalId: string;
+      field: string;
+      oldValue: unknown;
+      newValue: unknown;
+    }>;
+    newExternalIds: string[];
+    missingExternalIds: string[];
+  };
+};
 
 export async function invokeEdgeFunction<T = SyncResult>(
   name: string,
@@ -39,10 +73,25 @@ export async function triggerZapierSync(): Promise<SyncResult> {
   return invokeEdgeFunction("zapier-sync");
 }
 
+export async function triggerZapierJsonImport(exportBody: unknown): Promise<SyncResult> {
+  return invokeEdgeFunction("zapier-sync", {
+    mode: "json_export",
+    export: exportBody as Record<string, unknown>,
+  });
+}
+
 export async function triggerTypeformSync(): Promise<SyncResult> {
   return invokeEdgeFunction("typeform-sync");
 }
 
 export async function triggerGitlabSync(): Promise<SyncResult> {
   return invokeEdgeFunction("gitlab-sync");
+}
+
+export async function triggerGitlabBackfillDryRun(): Promise<GitLabBackfillResult> {
+  return invokeEdgeFunction("gitlab-sync", { mode: "backfill", dryRun: true });
+}
+
+export async function triggerGitlabBackfillApply(): Promise<GitLabBackfillResult> {
+  return invokeEdgeFunction("gitlab-sync", { mode: "backfill", dryRun: false });
 }

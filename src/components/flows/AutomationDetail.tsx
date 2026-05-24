@@ -1,13 +1,23 @@
 import { Link } from "react-router-dom";
 import type { Automatisering, Flow } from "@/lib/types";
 import { getSystemMeta } from "@/lib/systemMeta";
-import { ExternalLink, Repeat2 } from "lucide-react";
+import { GitLabLocationCard } from "@/components/GitLabLocationCard";
+import { AutomationFunnel } from "@/components/AutomationFunnel";
+import { buildAutomationFunnel } from "@/lib/automationFunnel";
+import { displayAutomationName } from "@/lib/automationDisplay";
+import {
+  getPresentationAutomationLabel,
+  getPresentationAutomationSummary,
+  type FlowDetailPresentation,
+} from "@/lib/flowDetailPresentation";
+import { ExternalLink } from "lucide-react";
 
 interface AutomationDetailProps {
   automationId: string | null;
   currentFlowId: string;
   autoMap: Map<string, Automatisering>;
   allFlows: Flow[];
+  presentation?: FlowDetailPresentation | null;
 }
 
 export const AutomationDetail = ({
@@ -15,6 +25,7 @@ export const AutomationDetail = ({
   currentFlowId,
   autoMap,
   allFlows,
+  presentation = null,
 }: AutomationDetailProps) => {
   if (!automationId) return null;
   const auto = autoMap.get(automationId);
@@ -22,14 +33,19 @@ export const AutomationDetail = ({
 
   const primarySysteem = auto.systemen[0] ?? "Anders";
   const sys = getSystemMeta(primarySysteem);
-  const reusedIn = allFlows.filter(
-    (f) => f.id !== currentFlowId && f.automationIds.includes(automationId),
-  );
+  const isGitLab = auto.source === "gitlab" || Boolean(auto.gitlabFilePath);
+  const funnel = buildAutomationFunnel(auto);
 
-  const description =
-    auto.aiDescription ||
-    auto.beschrijvingInSimpeleTaal?.[0] ||
-    auto.doel;
+  const displayName = getPresentationAutomationLabel(presentation, auto, displayAutomationName(auto));
+  const description = getPresentationAutomationSummary(
+    presentation,
+    auto,
+    funnel?.narrative ||
+      auto.aiDescription ||
+      auto.beschrijvingInSimpeleTaal?.[0] ||
+      auto.doel,
+  );
+  const visibleSteps = presentation || isGitLab ? [] : auto.stappen;
 
   return (
     <div className="card-elevated p-5 animate-fade-in">
@@ -48,46 +64,32 @@ export const AutomationDetail = ({
             Automation · {sys.label}
           </p>
           <h3 className="text-base font-semibold text-foreground leading-tight break-words">
-            {auto.naam}
+            {displayName}
           </h3>
         </div>
       </div>
 
       <p className="text-sm text-foreground leading-relaxed">{description}</p>
 
-      {reusedIn.length > 0 && (
-        <div className="mt-4 p-3 rounded-lg bg-primary-soft border border-primary/20">
-          <div className="flex items-center gap-1.5 text-primary mb-2">
-            <Repeat2 className="w-3.5 h-3.5" />
-            <span className="text-[11px] uppercase tracking-wider font-semibold">
-              Ook gebruikt in
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {reusedIn.map((f) => (
-              <Link
-                key={f.id}
-                to={`/flows/${f.id}`}
-                className="inline-flex items-center px-2 py-0.5 rounded-md bg-card border border-primary/20 text-xs font-medium text-foreground hover:border-primary hover:text-primary transition-colors"
-              >
-                {f.naam}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="mt-4">
+        <GitLabLocationCard automation={auto} compact />
+      </div>
 
-      {auto.stappen.length > 0 && (
+      <div className="mt-4">
+        <AutomationFunnel automation={auto} compact />
+      </div>
+
+      {visibleSteps.length > 0 && (
         <div className="mt-4">
           <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-2">
-            Interne stappen ({auto.stappen.length})
+            Processtappen ({visibleSteps.length})
           </p>
           <ol className="relative space-y-0.5">
             <span
               className="absolute left-[15px] top-3 bottom-3 w-px bg-border"
               aria-hidden
             />
-            {auto.stappen.map((stap, idx) => (
+            {visibleSteps.map((stap, idx) => (
               <li key={idx} className="relative pl-10 py-1.5">
                 <span
                   className="absolute left-1 top-2 inline-flex items-center justify-center w-7 h-7 rounded-full bg-card border border-border text-[10px] font-mono font-bold"
@@ -104,7 +106,7 @@ export const AutomationDetail = ({
 
       <div className="mt-4 pt-4 border-t border-border">
         <Link
-          to={`/alle?open=${auto.id}`}
+          to={`/automations/${encodeURIComponent(auto.id)}`}
           className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
         >
           Open in portaal

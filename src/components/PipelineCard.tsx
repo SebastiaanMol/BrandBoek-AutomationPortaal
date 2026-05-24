@@ -33,7 +33,7 @@ export function PipelineCard({ pipeline, index }: PipelineCardProps) {
     >
       <div
         className="p-4"
-        style={{ background: `linear-gradient(135deg, ${color.from} 0%, ${color.to} 100%)` }}
+        style={{ background: color.from }}
       >
         <div className="flex items-center gap-3">
           <div

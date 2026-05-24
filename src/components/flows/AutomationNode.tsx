@@ -1,7 +1,8 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { Automatisering } from "@/lib/types";
 import { getSystemMeta } from "@/lib/systemMeta";
-import { Layers } from "lucide-react";
+import { automationRuntimeRoleLabel } from "@/lib/automationRoles";
+import { GitBranch, Layers, Workflow } from "lucide-react";
 
 export interface AutomationNodeData {
   automation: Automatisering | undefined;
@@ -21,6 +22,8 @@ export const AutomationNode = ({ data, selected }: NodeProps<AutomationNodeData>
 
   const primarySysteem = auto.systemen[0] ?? "Anders";
   const sys = getSystemMeta(primarySysteem);
+  const roleLabel = automationRuntimeRoleLabel(auto);
+  const RoleIcon = auto.source === "gitlab" ? GitBranch : Workflow;
 
   return (
     <div
@@ -46,10 +49,15 @@ export const AutomationNode = ({ data, selected }: NodeProps<AutomationNodeData>
               {String(index + 1).padStart(2, "0")}
             </span>
             <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground truncate">
-              {sys.label}
+              {roleLabel}
             </span>
           </div>
           <span className={`w-1.5 h-1.5 rounded-full ${statusDot(auto.status)} flex-shrink-0`} />
+        </div>
+
+        <div className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          <RoleIcon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{auto.source === "gitlab" ? "interne funnel in detail" : sys.label}</span>
         </div>
 
         <h3 className="text-sm font-semibold text-foreground leading-snug mb-1.5">

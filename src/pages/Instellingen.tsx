@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useTypeformSync, useGitlabSync } from "@/lib/queryHooks/integrations";
+import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useZapierJsonImport, useTypeformSync, useGitlabSync } from "@/lib/queryHooks/integrations";
 import { usePortalSettings, useSavePortalSettings } from "@/lib/queryHooks/portalSettings";
 import { useHubSpotPipelinesSync } from "@/lib/queryHooks/pipelines";
 import type { Integration, PortalSettings } from "@/lib/types";
@@ -277,15 +277,16 @@ interface IntegrationCardProps {
   tokenPlaceholder: string;
   /** Raw HTML is intentional here — content is hardcoded in the caller, never user-supplied. */
   tokenHint: string;
-  syncMutation: UseMutationResult<{ inserted: number; updated: number; deactivated: number; total: number }, Error, void>;
+  syncMutation: UseMutationResult<{ inserted: number; updated: number; deactivated: number; total: number; proposed?: number; findings?: number; missing?: number; changed?: number }, Error, void>;
   /** When provided, replaces the default single-token form with a custom connect UI. */
   renderConnectForm?: (props: { onConnect: (token: string) => Promise<void>; isPending: boolean }) => React.ReactNode;
+  renderExtraActions?: () => React.ReactNode;
 }
 
 function IntegrationCard({
   type, label, description, badge, badgeClass,
   tokenLabel, tokenPlaceholder, tokenHint,
-  syncMutation, renderConnectForm,
+  syncMutation, renderConnectForm, renderExtraActions,
 }: IntegrationCardProps): React.ReactNode {
   const { data: integration, isLoading } = useIntegration(type);
   const saveIntegration = useSaveIntegration();
@@ -307,7 +308,7 @@ function IntegrationCard({
   async function handleSync(): Promise<void> {
     try {
       const result = await syncMutation.mutateAsync();
-      toast.success(`Sync voltooid — ${result.inserted} nieuw, ${result.updated} bijgewerkt, ${result.deactivated} gedeactiveerd`);
+      toast.success(`Sync gecontroleerd - ${result.proposed ?? result.inserted} nieuw voorstel, ${result.findings ?? 0} bronwaarschuwingen`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Sync mislukt");
     }
@@ -396,7 +397,7 @@ function IntegrationCard({
           <button onClick={handleSync} disabled={syncMutation.isPending}
             className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
             <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            {syncMutation.isPending ? "Bezig met synchroniseren..." : "Nu synchroniseren"}
+            {syncMutation.isPending ? "Bezig met controleren..." : "Controleer bron"}
           </button>
           <button onClick={handleDisconnect} disabled={deleteIntegration.isPending}
             className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-50 transition-colors">
@@ -405,11 +406,57 @@ function IntegrationCard({
           </button>
         </div>
       )}
+
+      {!isLoading && renderExtraActions && (
+        <div className="border-t border-border pt-4">
+          {renderExtraActions()}
+        </div>
+      )}
     </div>
   );
 }
 
 // ── GitLab connect form (passed as renderConnectForm to IntegrationCard) ───────
+
+function ZapierJsonImportForm(): React.ReactNode {
+  const importMutation = useZapierJsonImport();
+
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const result = await importMutation.mutateAsync(parsed);
+      toast.success(`Zapier import gecontroleerd - ${result.proposed ?? result.inserted} nieuw voorstel, ${result.findings ?? 0} bronwaarschuwingen`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Zapier JSON import mislukt");
+    } finally {
+      input.value = "";
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-foreground">Zapier export importeren</p>
+      <p className="text-xs text-muted-foreground">
+        Importeer een Zapier JSON-export read-only. Secrets en headers worden gestript voordat automations worden opgeslagen.
+      </p>
+      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-secondary transition-colors has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+        <RefreshCw className={`h-3.5 w-3.5 ${importMutation.isPending ? "animate-spin" : ""}`} />
+        {importMutation.isPending ? "Importeren..." : "Importeer Zapier JSON"}
+        <input
+          type="file"
+          accept=".json,application/json"
+          className="sr-only"
+          disabled={importMutation.isPending}
+          onChange={handleFileChange}
+        />
+      </label>
+    </div>
+  );
+}
 
 function GitLabConnectForm({
   onConnect,
@@ -548,13 +595,14 @@ export default function Instellingen(): React.ReactNode {
         <IntegrationCard
           type="zapier"
           label="Zapier"
-          description="Importeer Zaps automatisch via de Zapier API"
+          description="Lees bestaande Zaps read-only uit via de Zapier API"
           badge="ZP"
           badgeClass="bg-orange-50 border border-orange-100 text-orange-500"
-          tokenLabel="API Key"
-          tokenPlaceholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-          tokenHint='Ga naar <strong>zapier.com</strong> → Developer Platform → je app → API Key.'
+          tokenLabel="Zapier OAuth/Bearer token"
+          tokenPlaceholder="zapier_oauth_bearer_token"
+          tokenHint='Gebruik een Zapier OAuth/Bearer token met read-only toegang tot bestaande Zaps. Het portaal leest alleen en past niets in Zapier aan.'
           syncMutation={zapierSync}
+          renderExtraActions={() => <ZapierJsonImportForm />}
         />
       ),
     },

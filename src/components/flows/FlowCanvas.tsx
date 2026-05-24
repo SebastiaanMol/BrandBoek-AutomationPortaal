@@ -4,6 +4,7 @@ import type { Edge, Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Automatisering, Flow } from "@/lib/types";
 import { AutomationNode } from "./AutomationNode";
+import { evaluateFlowEvidence, type FlowEvidence } from "@/lib/flowEvidence";
 
 const nodeTypes = { automation: AutomationNode };
 
@@ -11,21 +12,47 @@ export interface FlowEdge {
   from: string;
   to: string;
   label: string;
+  evidence: FlowEvidence;
+}
+
+export interface ConfirmedFlowLink {
+  sourceId: string;
+  targetId: string;
 }
 
 /**
- * Derives edges from koppelingen. Only includes edges between automations
- * that are members of the flow. If no koppelingen exist, falls back to a
- * sequential chain (automationIds order).
+ * Derives official flow edges. Accepted flow suggestions are stored in
+ * automation_links, so prefer those inside the flow. Older/manual flows still
+ * fall back to koppelingen, then to a simple sequential chain.
  */
 export function buildFlowEdges(
   automationIds: string[],
   autoMap: Map<string, Automatisering>,
+  confirmedLinks: ConfirmedFlowLink[] = [],
 ): FlowEdge[] {
   const flowSet = new Set(automationIds);
   const edges: FlowEdge[] = [];
 
   const seen = new Set<string>();
+  for (const link of confirmedLinks) {
+    if (!flowSet.has(link.sourceId) || !flowSet.has(link.targetId)) continue;
+    const key = `${link.sourceId}â†’${link.targetId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push({
+      from: link.sourceId,
+      to: link.targetId,
+      label: "",
+      evidence: evaluateFlowEvidence({
+        from: autoMap.get(link.sourceId),
+        to: autoMap.get(link.targetId),
+        source: "confirmed",
+      }),
+    });
+  }
+
+  if (edges.length > 0) return edges;
+
   for (const id of automationIds) {
     const auto = autoMap.get(id);
     if (!auto) continue;
@@ -34,13 +61,32 @@ export function buildFlowEdges(
       const key = `${id}→${k.doelId}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      edges.push({ from: id, to: k.doelId, label: k.label });
+      edges.push({
+        from: id,
+        to: k.doelId,
+        label: k.label,
+        evidence: evaluateFlowEvidence({
+          from: auto,
+          to: autoMap.get(k.doelId),
+          source: "manual",
+          label: k.label,
+        }),
+      });
     }
   }
 
   if (edges.length === 0 && automationIds.length > 1) {
     for (let i = 0; i < automationIds.length - 1; i++) {
-      edges.push({ from: automationIds[i], to: automationIds[i + 1], label: "" });
+      edges.push({
+        from: automationIds[i],
+        to: automationIds[i + 1],
+        label: "",
+        evidence: evaluateFlowEvidence({
+          from: autoMap.get(automationIds[i]),
+          to: autoMap.get(automationIds[i + 1]),
+          source: "sequential",
+        }),
+      });
     }
   }
 
@@ -103,13 +149,14 @@ interface FlowCanvasProps {
   flow: Flow;
   autoMap: Map<string, Automatisering>;
   allFlows: Flow[];
+  confirmedLinks?: ConfirmedFlowLink[];
   selectedId: string | null;
   onSelect: (id: string) => void;
 }
 
-export const FlowCanvas = ({ flow, autoMap, allFlows, selectedId, onSelect }: FlowCanvasProps) => {
+export const FlowCanvas = ({ flow, autoMap, allFlows, confirmedLinks = [], selectedId, onSelect }: FlowCanvasProps) => {
   const { baseNodes, edges } = useMemo(() => {
-    const flowEdges = buildFlowEdges(flow.automationIds, autoMap);
+    const flowEdges = buildFlowEdges(flow.automationIds, autoMap, confirmedLinks);
     const positions = layout(flow.automationIds, flowEdges);
     const ns: Node[] = flow.automationIds.map((id, i) => {
       const auto = autoMap.get(id);
@@ -127,16 +174,21 @@ export const FlowCanvas = ({ flow, autoMap, allFlows, selectedId, onSelect }: Fl
       id: `${e.from}-${e.to}`,
       source: e.from,
       target: e.to,
-      label: e.label || undefined,
+      label: e.evidence.label,
       type: "smoothstep",
-      markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--muted-foreground))" },
-      labelStyle: { fontSize: 11, fill: "hsl(var(--muted-foreground))", fontWeight: 600 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor(e.evidence.level) },
+      style: {
+        stroke: edgeColor(e.evidence.level),
+        strokeWidth: e.evidence.level === "confirmed" || e.evidence.level === "hard" ? 2.5 : 1.75,
+        strokeDasharray: e.evidence.level === "uncertain" || e.evidence.level === "weak" ? "6 4" : undefined,
+      },
+      labelStyle: { fontSize: 11, fill: edgeColor(e.evidence.level), fontWeight: 700 },
       labelBgStyle: { fill: "hsl(var(--background))" },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
     }));
     return { baseNodes: ns, edges: es };
-  }, [flow, autoMap, allFlows]);
+  }, [flow, autoMap, allFlows, confirmedLinks]);
 
   const nodes = useMemo(
     () => baseNodes.map((n) => ({ ...n, selected: n.id === selectedId })),
@@ -170,3 +222,11 @@ export const FlowCanvas = ({ flow, autoMap, allFlows, selectedId, onSelect }: Fl
     </div>
   );
 };
+
+function edgeColor(level: FlowEvidence["level"]): string {
+  if (level === "confirmed") return "rgb(22 163 74)";
+  if (level === "hard") return "rgb(37 99 235)";
+  if (level === "strong") return "rgb(79 70 229)";
+  if (level === "weak") return "rgb(234 179 8)";
+  return "rgb(148 163 184)";
+}

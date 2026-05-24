@@ -470,8 +470,8 @@ export default function Brandy() {
                   </div>
 
                   {/* Brandy narrative */}
-                  <div className="bg-gradient-to-br from-[#f5f3ff] to-[#ede9fe] border border-[#ddd6fe] rounded-xl p-4 flex gap-3">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center text-white text-xs shrink-0 mt-0.5">
+                  <div className="bg-[#f5f3ff] border border-[#ddd6fe] rounded-xl p-4 flex gap-3">
+                    <div className="w-7 h-7 rounded-full bg-[#6366f1] flex items-center justify-center text-white text-xs shrink-0 mt-0.5">
                       ✦
                     </div>
                     <div>

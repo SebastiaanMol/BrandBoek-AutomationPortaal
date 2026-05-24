@@ -1,5 +1,13 @@
 import type { Automatisering, Flow } from "@/lib/types";
 import { getSystemMeta } from "@/lib/systemMeta";
+import { buildAutomationFunnel } from "@/lib/automationFunnel";
+import { displayAutomationName } from "@/lib/automationDisplay";
+import { buildFlowRuntimeChain, countFlowRuntimeStepsForAutomation } from "@/lib/flowRuntimeChain";
+import {
+  getPresentationAutomationLabel,
+  getPresentationAutomationSummary,
+  type FlowDetailPresentation,
+} from "@/lib/flowDetailPresentation";
 import { ChevronRight } from "lucide-react";
 
 interface AutomationListProps {
@@ -7,9 +15,12 @@ interface AutomationListProps {
   autoMap: Map<string, Automatisering>;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  presentation?: FlowDetailPresentation | null;
 }
 
-export const AutomationList = ({ flow, autoMap, selectedId, onSelect }: AutomationListProps) => {
+export const AutomationList = ({ flow, autoMap, selectedId, onSelect, presentation = null }: AutomationListProps) => {
+  const runtimeSteps = buildFlowRuntimeChain(flow.automationIds, autoMap);
+
   return (
     <ol className="relative">
       <span className="absolute left-[19px] top-2 bottom-2 w-px bg-border" aria-hidden />
@@ -19,6 +30,10 @@ export const AutomationList = ({ flow, autoMap, selectedId, onSelect }: Automati
         const primarySysteem = auto.systemen[0] ?? "Anders";
         const sys = getSystemMeta(primarySysteem);
         const active = id === selectedId;
+        const funnel = buildAutomationFunnel(auto);
+        const summary = getPresentationAutomationSummary(presentation, auto, funnel?.narrative || auto.doel);
+        const displayName = getPresentationAutomationLabel(presentation, auto, displayAutomationName(auto));
+        const runtimeStepCount = countFlowRuntimeStepsForAutomation(runtimeSteps, id) || auto.stappen.length;
         return (
           <li key={id} className="relative pl-12 pr-2 py-1.5">
             <span
@@ -42,10 +57,10 @@ export const AutomationList = ({ flow, autoMap, selectedId, onSelect }: Automati
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <h4 className="text-sm font-semibold text-foreground leading-snug">
-                    {auto.naam}
+                    {displayName}
                   </h4>
                   <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                    {auto.doel}
+                    {summary}
                   </p>
                   <div className="mt-1.5 flex items-center gap-1.5">
                     <span
@@ -55,9 +70,9 @@ export const AutomationList = ({ flow, autoMap, selectedId, onSelect }: Automati
                     <span className="text-[11px] font-medium text-muted-foreground">
                       {sys.label}
                     </span>
-                    <span className="text-muted-foreground">·</span>
+                    <span className="text-muted-foreground">-</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {auto.stappen.length} stap{auto.stappen.length === 1 ? "" : "pen"}
+                      {runtimeStepCount} stap{runtimeStepCount === 1 ? "" : "pen"}
                     </span>
                   </div>
                 </div>

@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  recordPortalOwnedSync,
+  recordSourceSyncFailure,
+  startSourceSyncRun,
+} from "../_shared/portal-owned-sync.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -109,13 +114,39 @@ function msToHuman(ms: number): string {
   return `${Math.floor(s / 86400)} dagen`;
 }
 
+function durationToHuman(rawDelta: any, rawUnit: any): string {
+  const delta = Number(rawDelta);
+  const unit = String(rawUnit ?? "").toUpperCase();
+  if (!Number.isFinite(delta)) return "een ingestelde periode";
+  if (unit === "MINUTES" && delta % 1440 === 0) return `${delta / 1440} day${delta / 1440 === 1 ? "" : "s"}`;
+  if (unit === "MINUTES" && delta % 60 === 0) return `${delta / 60} hour${delta / 60 === 1 ? "" : "s"}`;
+  if (unit === "MINUTES") return `${delta} minute${delta === 1 ? "" : "s"}`;
+  if (unit === "HOURS") return `${delta} hour${delta === 1 ? "" : "s"}`;
+  if (unit === "DAYS") return `${delta} day${delta === 1 ? "" : "s"}`;
+  return `${delta} ${unit.toLowerCase() || "units"}`;
+}
+
+function scheduledDelayToHuman(delay: any): string {
+  const time = delay?.timeOfDay;
+  const days = Number(delay?.delta ?? 0);
+  const unit = String(delay?.timeUnit ?? "").toUpperCase();
+  const hasTime = time && Number.isFinite(Number(time.hour)) && Number.isFinite(Number(time.minute));
+  const timePart = hasTime
+    ? `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`
+    : "";
+  if (!Number.isFinite(days) || days <= 0) return timePart || "the scheduled time";
+  const dayPart = `${days} ${unit === "DAYS" ? `day${days === 1 ? "" : "s"}` : unit.toLowerCase()} later`;
+  if (timePart) return `${dayPart} at ${timePart}`;
+  return dayPart;
+}
+
 /** Flatten nested action arrays (HubSpot sometimes nests branch sub-actions) */
 function flattenActions(actions: any[]): any[] {
   const result: any[] = [];
   for (const a of actions) {
     result.push(a);
     // Branch arms may contain their own sub-actions
-    for (const arm of a.branches ?? a.options ?? []) {
+    for (const arm of a.branches ?? a.options ?? a.listBranches ?? a.filterBranches ?? []) {
       if (Array.isArray(arm.actions)) result.push(...flattenActions(arm.actions));
     }
   }
@@ -125,6 +156,7 @@ function flattenActions(actions: any[]): any[] {
 function extractStappen(actions: any[]): string[] {
   return actions.map((a) => {
     const t = a.type ?? a.actionType ?? "";
+    const assignment = extractActionPropertyAssignment(a);
     if (t === "WEBHOOK") {
       const rawUrl = a.url ?? a.webhookUrl ?? "";
       const known = describeKnownWebhook(rawUrl);
@@ -133,6 +165,35 @@ function extractStappen(actions: any[]): string[] {
     if (t === "SINGLE_CONNECTION") {
       const actionTypeId = String(a.actionTypeId ?? "");
       const fields = a.fields ?? {};
+      if (actionTypeId === "0-1" || fields.delta) {
+        return `Delay for ${durationToHuman(fields.delta, fields.time_unit)}`;
+      }
+      if (actionTypeId === "0-28" || fields.delay) {
+        return `Delay until ${scheduledDelayToHuman(fields.delay)}`;
+      }
+      if (actionTypeId === "0-29" || fields.event_filter_branches) {
+        return "Wait until event criteria are met";
+      }
+      if (actionTypeId === "0-4" || fields.content_id) {
+        return fields.content_id && fields.content_id !== "0"
+          ? `Send email (content ID: ${fields.content_id})`
+          : "Send email";
+      }
+      if (actionTypeId === "0-8" || fields.user_ids) {
+        return `Send internal email notification: ${fields.subject ?? "Zonder onderwerp"}`;
+      }
+      if (actionTypeId === "0-63809083") {
+        return `Add enrolled record to static list ${fields.listId ?? "?"}`;
+      }
+      if (actionTypeId === "0-63863438") {
+        return `Remove enrolled record from static list ${fields.listId ?? "?"}`;
+      }
+      if (actionTypeId === "0-3" || fields.task_type || fields.subject) {
+        return `Create task: ${fields.subject ?? "Zonder titel"}`;
+      }
+      if (actionTypeId === "0-31" || fields.marketableType) {
+        return "Set marketing contact status";
+      }
       if (actionTypeId === "0-14" || Array.isArray(fields.properties)) {
         const objectLabel = OBJECT_TYPE_LABEL[fields.object_type_id ?? ""] ?? "record";
         const props = (fields.properties ?? [])
@@ -145,11 +206,10 @@ function extractStappen(actions: any[]): string[] {
       if (actionTypeId === "0-15" || fields.flow_id) {
         return `Schrijf object in voor workflow ${fields.flow_id ?? "?"}`;
       }
-      if (fields.property_name) {
-        return `Stel '${fields.property_name}' in`;
-      }
-      if (fields.value && fields.property_name) {
-        return `Stel '${fields.property_name}' in`;
+      if (assignment.propertyName) {
+        return assignment.propertyValue == null
+          ? `Stel '${assignment.propertyName}' in`
+          : `Stel '${assignment.propertyName}' in op '${assignment.propertyValue}'`;
       }
       return "Voer HubSpot-actie uit";
     }
@@ -189,6 +249,31 @@ function extractStappen(actions: any[]): string[] {
   }).filter(Boolean) as string[];
 }
 
+function normalizeHubSpotSteps(steps: string[]): string[] {
+  const counts = new Map<string, number>();
+  const firstByKey = new Map<string, string>();
+  const orderedKeys: string[] = [];
+
+  for (const rawStep of steps) {
+    const step = String(rawStep ?? "").trim();
+    if (!step) continue;
+
+    const key = step.replace(/\s+/g, " ").trim().toLowerCase();
+    if (!counts.has(key)) {
+      counts.set(key, 0);
+      firstByKey.set(key, step);
+      orderedKeys.push(key);
+    }
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return orderedKeys.map((key) => {
+    const step = firstByKey.get(key) ?? key;
+    const count = counts.get(key) ?? 1;
+    return count > 1 ? `${step} (${count} paden)` : step;
+  });
+}
+
 function extractSystemen(actions: any[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -204,15 +289,25 @@ function extractBranches(actions: any[]): any[] {
   const branches: any[] = [];
   for (const a of actions) {
     const t = a.type ?? a.actionType ?? "";
-    if (t !== "BRANCH" && t !== "IF_THEN") continue;
-    const arms = a.branches ?? a.options ?? a.branchActions ?? [];
+    if (t !== "BRANCH" && t !== "IF_THEN" && t !== "LIST_BRANCH") continue;
+    const arms = a.branches ?? a.options ?? a.branchActions ?? a.listBranches ?? a.filterBranches ?? [];
     arms.forEach((arm: any, i: number) => {
       branches.push({
         id:       `b-${a.actionId ?? a.id ?? 0}-${i}`,
-        label:    arm.label ?? arm.name ?? `Pad ${i + 1}`,
+        label:    arm.branchName ?? arm.label ?? arm.name ?? `Pad ${i + 1}`,
+        description: extractBranchConditionLabel(arm),
         toStepId: "",
       });
     });
+    const defaultBranch = a.defaultBranch ?? a.defaultConnection ?? null;
+    if (defaultBranch) {
+      branches.push({
+        id: `b-${a.actionId ?? a.id ?? 0}-default`,
+        label: a.defaultBranchName ?? defaultBranch.branchName ?? defaultBranch.label ?? "Standaardpad",
+        description: "Als geen van bovenstaande criteria matcht",
+        toStepId: "",
+      });
+    }
   }
   return branches;
 }
@@ -233,6 +328,7 @@ const OBJECT_TYPE_LABEL: Record<string, string> = {
   "0-1": "contact",
   "0-2": "bedrijf",
   "0-3": "deal",
+  "0-4": "meeting",
   "0-8": "regelitem",
 };
 
@@ -291,13 +387,16 @@ function filterToNl(f: any): string {
   const val    = Array.isArray(rawVal) ? rawVal.join(", ") : rawVal;
   const opNl   = OPERATOR_LABEL[operation.operator ?? f.operator ?? ""] ?? "is";
   const objectLabel = OBJECT_TYPE_LABEL[f.objectTypeId ?? ""] ?? "object";
+  const propLabel = hubSpotPropertyLabel(prop);
   if (family === "PROPERTY") {
-    if (prop && val) return `de ${objectLabel}-eigenschap '${prop}' ${opNl} '${val}'`;
-    if (prop) return `de ${objectLabel}-eigenschap '${prop}' verandert`;
+    if (prop && operation.operator === "IS_KNOWN") return `${propLabel} is known`;
+    if (prop && val) return `${propLabel} ${opNl} '${val}'`;
+    if (prop) return `${propLabel} verandert`;
   }
   if (["ContactProperty","CONTACT_PROPERTY_CHANGE","CONTACT_PROPERTY"].includes(family)) {
-    if (prop && val) return `de contacteigenschap '${prop}' ${opNl} '${val}'`;
-    if (prop) return `de contacteigenschap '${prop}' verandert`;
+    if (prop && operation.operator === "IS_KNOWN") return `${propLabel} is known`;
+    if (prop && val) return `${propLabel} ${opNl} '${val}'`;
+    if (prop) return `${propLabel} verandert`;
   }
   if (["ContactList","STATIC_LIST","ACTIVE_LIST","CONTACT_LIST_MEMBERSHIP"].includes(family)) {
     const listId = f.listId ?? val ?? "";
@@ -308,18 +407,30 @@ function filterToNl(f: any): string {
     return formId ? `formulier ${formId} wordt ingediend` : "een formulier wordt ingediend";
   }
   if (["DealProperty","DEAL_PROPERTY_CHANGE"].includes(family)) {
-    if (prop && val) return `de dealeigenschap '${prop}' ${opNl} '${val}'`;
-    if (prop) return `de dealeigenschap '${prop}' verandert`;
+    if (prop && operation.operator === "IS_KNOWN") return `${propLabel} is known`;
+    if (prop && val) return `${propLabel} ${opNl} '${val}'`;
+    if (prop) return `${propLabel} verandert`;
   }
   if (["CompanyProperty","COMPANY_PROPERTY_CHANGE"].includes(family)) {
-    if (prop && val) return `de bedrijfseigenschap '${prop}' ${opNl} '${val}'`;
-    if (prop) return `de bedrijfseigenschap '${prop}' verandert`;
+    if (prop && operation.operator === "IS_KNOWN") return `${propLabel} is known`;
+    if (prop && val) return `${propLabel} ${opNl} '${val}'`;
+    if (prop) return `${propLabel} verandert`;
   }
   if (family === "EMAIL_OPENED") return "een contact een e-mail opent";
   if (family === "EMAIL_CLICKED") return "een contact op een link in een e-mail klikt";
-  if (prop && val) return `'${prop}' ${opNl} '${val}'`;
-  if (prop) return `'${prop}' verandert`;
+  if (prop && operation.operator === "IS_KNOWN") return `${propLabel} is known`;
+  if (prop && val) return `${propLabel} ${opNl} '${val}'`;
+  if (prop) return `${propLabel} verandert`;
   return "";
+}
+
+function hubSpotPropertyLabel(property: string): string {
+  const labels: Record<string, string> = {
+    activiteit: "Activiteit Sales Deal Stage",
+    dealstage: "Deal stage",
+    taal2: "Voertaal",
+  };
+  return labels[property] ?? property.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function collectFiltersFromBranch(branch: any, result: any[] = []): any[] {
@@ -346,6 +457,327 @@ function extractTriggerDetail(wf: any): string {
     for (const f of filters) { const r = filterToNl(f); if (r) return r; }
   }
   return "";
+}
+
+function extractWorkflowAudit(wf: any, actions: any[]) {
+  return {
+    workflowId: getWorkflowId(wf) ?? null,
+    name: wf.name ?? "Naamloze workflow",
+    objectType: OBJECT_TYPE_LABEL[wf.objectTypeId ?? ""] ?? wf.objectTypeId ?? null,
+    enrollmentType: wf.enrollmentCriteria?.type ?? null,
+    shouldReEnroll: wf.enrollmentCriteria?.shouldReEnroll ?? false,
+    triggers: extractAuditTriggers(wf),
+    actions: extractAuditActions(actions),
+    branches: extractAuditBranches(wf.actions ?? []),
+  };
+}
+
+function extractAuditBranches(actions: any[]) {
+  const branches: any[] = [];
+  const actionById = new Map<string, any>();
+  actions.forEach((action) => {
+    const id = action.actionId ?? action.id;
+    if (id != null) actionById.set(String(id), action);
+  });
+
+  for (const action of actions) {
+    const type = action.type ?? action.actionType ?? "";
+    if (type !== "BRANCH" && type !== "IF_THEN" && type !== "LIST_BRANCH") continue;
+
+    const arms = action.branches ?? action.options ?? action.branchActions ?? action.listBranches ?? action.filterBranches ?? [];
+    arms.forEach((arm: any, index: number) => {
+      const nextActionId = arm.connection?.nextActionId ?? arm.nextActionId ?? null;
+      const armActions = Array.isArray(arm.actions)
+        ? flattenActions(arm.actions)
+        : collectActionChain(actionById, nextActionId);
+      branches.push({
+        id: `b-${action.actionId ?? action.id ?? 0}-${index}`,
+        label: arm.branchName ?? arm.label ?? arm.name ?? `Pad ${index + 1}`,
+        conditionLabel: extractBranchConditionLabel(arm),
+        actions: extractAuditActions(armActions),
+      });
+    });
+
+    const defaultBranch = action.defaultBranch ?? action.defaultConnection ?? null;
+    if (defaultBranch) {
+      const nextActionId = defaultBranch.nextActionId ?? action.defaultNextActionId ?? null;
+      const defaultActions = Array.isArray(defaultBranch.actions)
+        ? flattenActions(defaultBranch.actions)
+        : collectActionChain(actionById, nextActionId);
+      branches.push({
+        id: `b-${action.actionId ?? action.id ?? 0}-default`,
+        label: action.defaultBranchName ?? defaultBranch.branchName ?? defaultBranch.label ?? "Standaardpad",
+        conditionLabel: "Als geen van bovenstaande criteria matcht",
+        actions: extractAuditActions(defaultActions),
+      });
+    }
+  }
+
+  return branches.slice(0, 20);
+}
+
+function collectActionChain(actionById: Map<string, any>, startActionId: any): any[] {
+  const chain: any[] = [];
+  const seen = new Set<string>();
+  let currentId = startActionId == null ? null : String(startActionId);
+
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    const action = actionById.get(currentId);
+    if (!action) break;
+    chain.push(action);
+    const nextActionId = action.connection?.nextActionId ?? action.nextActionId ?? null;
+    currentId = nextActionId == null ? null : String(nextActionId);
+  }
+
+  return chain;
+}
+
+function extractBranchConditionLabel(branch: any): string | null {
+  const filters = collectFiltersFromBranch(branch);
+  const labels = filters.map((filter) => filterToNl(filter)).filter(Boolean);
+  if (labels.length > 0) return labels.join(" en ");
+
+  return branch.branchName ?? branch.label ?? branch.name ?? null;
+}
+
+function extractAuditTriggers(wf: any) {
+  const triggers: any[] = [];
+  const enrollmentBranch = wf.enrollmentCriteria?.listFilterBranch;
+
+  if (enrollmentBranch) {
+    triggers.push(...collectAuditTriggersFromBranch(enrollmentBranch, "enrollmentCriteria", wf.objectTypeId ?? null));
+  }
+
+  for (const ts of wf.triggerSets ?? []) {
+    for (const f of ts.filters ?? []) triggers.push(filterToAudit(f, "triggerSets"));
+  }
+
+  for (const ts of wf.reEnrollmentTriggerSets ?? []) {
+    for (const f of ts.filters ?? []) triggers.push(filterToAudit(f, "reEnrollmentTriggerSets"));
+  }
+
+  for (const group of wf.segmentCriteria ?? []) {
+    const filters = Array.isArray(group) ? group : [group];
+    for (const f of filters) triggers.push(filterToAudit(f, "segmentCriteria"));
+  }
+
+  return triggers.filter((trigger) => trigger.label).slice(0, 12);
+}
+
+function collectAuditTriggersFromBranch(
+  branch: any,
+  source: string,
+  parentObjectTypeId: string | null,
+): any[] {
+  const triggers: any[] = [];
+  const branchObjectTypeId = branch?.objectTypeId ?? parentObjectTypeId;
+
+  if (branch?.filterBranchType === "ASSOCIATION") {
+    const associatedObjectType = OBJECT_TYPE_LABEL[branch.objectTypeId ?? ""] ?? "record";
+    const parentObjectType = OBJECT_TYPE_LABEL[parentObjectTypeId ?? ""] ?? "Record";
+    triggers.push({
+      objectType: associatedObjectType,
+      property: null,
+      operator: null,
+      value: null,
+      label: `${capitalize(parentObjectType)} is associated to: Any ${capitalize(associatedObjectType)}`,
+      source,
+    });
+    triggers.push({
+      objectType: associatedObjectType,
+      property: null,
+      operator: null,
+      value: null,
+      label: `And associated ${capitalize(associatedObjectType)} has all of:`,
+      source,
+    });
+  }
+
+  for (const f of branch?.filters ?? []) {
+    triggers.push(filterToAudit({ ...f, objectTypeId: f.objectTypeId ?? branchObjectTypeId }, source));
+  }
+
+  for (const child of branch?.filterBranches ?? []) {
+    triggers.push(...collectAuditTriggersFromBranch(child, source, branchObjectTypeId));
+  }
+
+  return triggers;
+}
+
+function capitalize(value: string): string {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
+}
+
+function filterToAudit(f: any, source: string) {
+  const property = f.property ?? f.propertyName ?? f.pruningRefineBy ?? null;
+  const rawValue = f.operation?.values ?? f.operation?.value ?? f.value ?? f.propertyValue ?? f.values ?? f.acceptedValues ?? null;
+  const operator = f.operator ?? f.operation ?? f.filterOperator ?? null;
+  const objectType = OBJECT_TYPE_LABEL[f.objectTypeId ?? ""] ?? f.objectType ?? null;
+
+  return {
+    objectType,
+    property,
+    operator,
+    value: normalizeAuditValue(rawValue),
+    label: filterToNl(f) || buildFallbackFilterLabel(property, operator, rawValue),
+    source,
+  };
+}
+
+function normalizeAuditValue(value: any): string | number | boolean | null {
+  if (value == null) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.slice(0, 6).map((item) => String(item)).join(", ");
+  return JSON.stringify(value).slice(0, 180);
+}
+
+function normalizeActionValue(value: any): string | number | boolean | null {
+  if (value == null) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    const values = value
+      .map((item) => normalizeActionValue(item))
+      .filter((item): item is string | number | boolean => item != null);
+    return values.length ? values.slice(0, 6).map(String).join(", ") : null;
+  }
+  if (typeof value !== "object") return String(value);
+
+  const timestampType = String(value.timestampType ?? "").toUpperCase();
+  const valueType = String(value.type ?? "").toUpperCase();
+  const serialized = JSON.stringify(value).toUpperCase();
+  if (
+    timestampType === "EXECUTION_TIME" ||
+    (valueType === "TIMESTAMP" && serialized.includes("EXECUTION_TIME")) ||
+    /ACTION_EXECUTION|ACTION_EXECUTED|EXECUTED_AT|CURRENT_DATE|CURRENT_TIME|NOW/.test(serialized)
+  ) {
+    return "de datum waarop deze actie wordt uitgevoerd";
+  }
+
+  for (const key of ["staticValue", "value", "propertyValue", "newValue", "literalValue", "stringValue", "numberValue", "dateValue"]) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      const normalized = normalizeActionValue(value[key]);
+      if (normalized != null) return normalized;
+    }
+  }
+
+  return JSON.stringify(value).slice(0, 180);
+}
+
+function extractActionPropertyAssignment(a: any): { propertyName: string | null; propertyValue: string | number | boolean | null } {
+  const fields = a.fields ?? {};
+  const actionTypeId = String(a.actionTypeId ?? "");
+  if (actionTypeId === "0-1" || fields.delta) {
+    return {
+      propertyName: null,
+      propertyValue: `Wait ${durationToHuman(fields.delta, fields.time_unit)}`,
+    };
+  }
+  if (actionTypeId === "0-28" || fields.delay) {
+    return {
+      propertyName: null,
+      propertyValue: `Wait until ${scheduledDelayToHuman(fields.delay)}`,
+    };
+  }
+  if (actionTypeId === "0-29" || fields.event_filter_branches) {
+    return {
+      propertyName: null,
+      propertyValue: fields.expiration_minutes
+        ? `Timeout after ${fields.expiration_minutes} minutes`
+        : "Continue when the event criteria are met",
+    };
+  }
+  if (actionTypeId === "0-4" || fields.content_id) {
+    return {
+      propertyName: null,
+      propertyValue: fields.content_id && fields.content_id !== "0"
+        ? `Email content ID: ${fields.content_id}`
+        : "Email content configured in HubSpot",
+    };
+  }
+  if (actionTypeId === "0-8" || fields.user_ids) {
+    return {
+      propertyName: null,
+      propertyValue: `Recipients: ${(fields.user_ids ?? []).length || "configured"} HubSpot user(s)`,
+    };
+  }
+  if (actionTypeId === "0-63809083" || actionTypeId === "0-63863438") {
+    const action = actionTypeId === "0-63863438" ? "Remove from static list" : "Add to static list";
+    return {
+      propertyName: null,
+      propertyValue: `${action}: ${fields.listId ?? "unknown list"}`,
+    };
+  }
+  if (actionTypeId === "0-3" || fields.task_type || fields.subject) {
+    const ownerSource = fields.owner_assignment?.value?.propertyName
+      ? ` Owner comes from ${hubSpotPropertyLabel(fields.owner_assignment.value.propertyName)}.`
+      : "";
+    return {
+      propertyName: null,
+      propertyValue: `Task subject: ${fields.subject ?? "Zonder titel"}.${ownerSource}`,
+    };
+  }
+  if (actionTypeId === "0-31" || fields.marketableType) {
+    const status = String(fields.marketableType ?? "").toUpperCase() === "MARKETABLE"
+      ? "Set as marketing contact"
+      : "Set as non-marketing contact";
+    return {
+      propertyName: null,
+      propertyValue: `Enrolled contact: ${status}`,
+    };
+  }
+
+  const firstProperty = Array.isArray(fields.properties) ? fields.properties[0] : null;
+  const propertyName = a.propertyName ?? fields.property_name ?? firstProperty?.targetProperty ?? null;
+  const propertyValue =
+    a.propertyValue ??
+    a.newValue ??
+    fields.value ??
+    firstProperty?.value ??
+    firstProperty?.staticValue ??
+    firstProperty?.propertyValue ??
+    null;
+
+  return {
+    propertyName,
+    propertyValue: normalizeActionValue(propertyValue),
+  };
+}
+
+function buildFallbackFilterLabel(property: string | null, operator: string | null, value: any): string {
+  const normalizedValue = normalizeAuditValue(value);
+  if (property && normalizedValue != null) return `'${property}' ${operator ?? "is"} '${normalizedValue}'`;
+  if (property) return `'${property}' verandert`;
+  return "";
+}
+
+function extractAuditActions(actions: any[]) {
+  return actions.slice(0, 40).map((a, index) => {
+    const type = a.type ?? a.actionType ?? "";
+    const fields = a.fields ?? {};
+    const url = type === "WEBHOOK" ? a.url ?? a.webhookUrl ?? null : null;
+    const assignment = extractActionPropertyAssignment(a);
+
+    return {
+      index: index + 1,
+      type,
+      label: extractStappen([a])[0] ?? ACTION_LABEL_MAP[type] ?? (type || "Onbekende actie"),
+      webhookUrl: url,
+      webhookMethod: url ? (a.method ?? "POST").toUpperCase() : null,
+      webhookPath: url ? extractPathFromUrl(url) : null,
+      enrollWorkflowId: fields.flow_id ?? null,
+      propertyName: assignment.propertyName,
+      propertyValue: assignment.propertyValue,
+    };
+  });
+}
+
+function extractPathFromUrl(rawUrl: string): string | null {
+  try {
+    return new URL(rawUrl).pathname;
+  } catch {
+    return rawUrl.startsWith("/") ? rawUrl : null;
+  }
 }
 
 /** Short label for categorie/display */
@@ -422,6 +854,12 @@ function actionToZin(t: string, a: any, step: number): string | null {
     }
     if (actionTypeId === "0-15" || fields.flow_id) {
       return `Stap ${step}: Het object wordt automatisch ingeschreven in workflow ${fields.flow_id ?? "?"}.`;
+    }
+    if (actionTypeId === "0-63809083") {
+      return `Stap ${step}: HubSpot voegt het ingeschreven record toe aan statische lijst ${fields.listId ?? "?"}.`;
+    }
+    if (actionTypeId === "0-63863438") {
+      return `Stap ${step}: HubSpot verwijdert het ingeschreven record uit statische lijst ${fields.listId ?? "?"}.`;
     }
     if (fields.property_name) {
       const value = fields.value?.staticValue ?? fields.value?.propertyName ?? "";
@@ -672,7 +1110,7 @@ function extractWorkflowUsage(performance: any): WorkflowUsage {
 
 function mapWorkflow(wf: any) {
   const actions = flattenActions(wf.actions ?? []);
-  const stappen   = extractStappen(actions);
+  const stappen   = normalizeHubSpotSteps(extractStappen(actions));
   const systemen = [...new Set(["HubSpot", ...extractSystemen(actions)])] as string[];
   const branches  = extractBranches(actions);
   const trigger   = extractTrigger(wf);
@@ -723,6 +1161,7 @@ function mapWorkflow(wf: any) {
     categorie,
     fasen:                        inferredFasen,
     enrollment,
+    hubspot_workflow:              extractWorkflowAudit(wf, actions),
     beschrijving_in_simpele_taal: beschrijvingInSimpeleTaal,
     confidence,
     webhookPaths:                 extractWebhookPaths(actions),
@@ -737,6 +1176,7 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const debugMode = url.searchParams.get("debug") === "1";
+    const debugWorkflowId = url.searchParams.get("workflowId");
 
     const db = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -754,6 +1194,10 @@ serve(async (req) => {
       .maybeSingle();
 
     if (intError || !integration) {
+      await recordSourceSyncFailure(db, "hubspot", new Date().toISOString(), {
+        status: "failed",
+        errorMessage: "Geen HubSpot-integratie gevonden.",
+      });
       return new Response(
         JSON.stringify({ error: "Geen HubSpot-integratie gevonden. Sla eerst een token op via Instellingen → Integraties." }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -812,7 +1256,10 @@ serve(async (req) => {
         const errorMessage = error?.status === 401
           ? "Ongeldige HubSpot token."
           : `HubSpot API fout (${error?.status ?? "onbekend"}): ${String(error?.text ?? error).slice(0, 200)}`;
-        await db.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
+        await recordSourceSyncFailure(db, "hubspot", new Date().toISOString(), {
+          status: error?.status === 401 || error?.status === 403 ? "auth_failed" : error?.status === 429 ? "rate_limited" : "failed",
+          errorMessage,
+        });
         return new Response(JSON.stringify({ error: errorMessage }), {
           status: error?.status ?? 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -828,7 +1275,10 @@ serve(async (req) => {
         const errorMessage = fallbackError?.status === 401
           ? "Ongeldige HubSpot token."
           : `HubSpot API fout (${fallbackError?.status ?? "onbekend"}): ${String(fallbackError?.text ?? fallbackError).slice(0, 200)}`;
-        await db.from("integrations").update({ status: "error", error_message: errorMessage }).eq("id", integration.id);
+        await recordSourceSyncFailure(db, "hubspot", new Date().toISOString(), {
+          status: fallbackError?.status === 401 || fallbackError?.status === 403 ? "auth_failed" : fallbackError?.status === 429 ? "rate_limited" : "failed",
+          errorMessage,
+        });
         return new Response(JSON.stringify({ error: errorMessage }), {
           status: fallbackError?.status ?? 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -897,7 +1347,9 @@ serve(async (req) => {
 
     // Debug mode: return raw first workflow so we can inspect the actual API structure
     if (debugMode) {
-      const sample = workflows[0] ?? null;
+      const sample = debugWorkflowId
+        ? workflows.find((wf) => getWorkflowId(wf) === debugWorkflowId) ?? null
+        : workflows[0] ?? null;
       const mappedSample = sample ? mapWorkflow(sample) : null;
       return new Response(
         JSON.stringify({
@@ -917,249 +1369,55 @@ serve(async (req) => {
       );
     }
 
-    // Get existing automations from this source
-    const { data: existing } = await db
-      .from("automatiseringen")
-      .select("id, external_id, status, import_status, naam")
-      .eq("source", "hubspot");
-
-    const existingMap: Record<string, { id: string; status: string; import_status: string; naam: string }> = {};
-    const existingNameMap: Record<string, { id: string; status: string; import_status: string; naam: string }> = {};
-    const claimedNames = new Set<string>();
-    for (const row of existing ?? []) {
-      if (row.external_id) existingMap[row.external_id] = row;
-      if (row.naam) {
-        const normalizedName = normalizeAutomationName(row.naam);
-        existingNameMap[normalizedName] = row;
-        claimedNames.add(normalizedName);
-      }
-    }
-
-    const syncedIds = new Set<string>();
-    const syncedDbIds = new Set<string>();
-    const insertedIds: string[] = [];
-
-    // Build insert/update batches — no sequential awaits per workflow
-    const toInsert: any[] = [];
-    const toUpdate: Array<{ id: string; data: Record<string, any> }> = [];
-    const now = new Date().toISOString();
-
-    for (const wf of workflows) {
-      const externalId = getWorkflowId(wf);
-      if (!externalId) continue;
-      syncedIds.add(externalId);
-      const usage = usageByWorkflowId[externalId] ?? { lastRunAt: null, runCount365d: null };
-      const { pipelineId, stageId } = extractPipelineStage(wf);
-      const mapped = mapWorkflow(wf);
-      const existingRow = existingMap[externalId] ?? existingNameMap[normalizeAutomationName(mapped.naam)];
-
-      if (existingRow) {
-        syncedDbIds.add(existingRow.id);
-        const currentNameKey = normalizeAutomationName(existingRow.naam);
-        const mappedNameKey = normalizeAutomationName(mapped.naam);
-        const updateName = mappedNameKey !== currentNameKey && claimedNames.has(mappedNameKey)
-          ? existingRow.naam
-          : mapped.naam;
-        const importProposal = updateName === mapped.naam ? mapped : { ...mapped, naam: updateName };
-        // NOTE: fasen intentionally excluded — preserves reviewer edits (per D-09)
-        toUpdate.push({
-          id: existingRow.id,
-          data: {
-            naam:                 updateName,
-            status:               isWorkflowEnabled(wf) ? "Actief" : "Uitgeschakeld",
-            trigger_beschrijving: mapped.trigger,
-            systemen:             mapped.systemen,
-            stappen:              mapped.stappen,
-            branches:             mapped.branches,
-            categorie:            mapped.categorie,
-            webhook_paths:        mapped.webhookPaths,
-            external_id:          externalId,
-            import_proposal:      importProposal,
-            raw_payload:          wf,
-            pipeline_id:          pipelineId,
-            stage_id:             stageId,
-            hubspot_last_run_at:   usage.lastRunAt,
-            hubspot_run_count_365d: usage.runCount365d,
-            last_synced_at:       now,
-          },
-        });
-      } else {
-        const actualId = `AUTO-HS-${externalId}`;
-        const uniqueName = makeUniqueAutomationName(mapped.naam, externalId, claimedNames);
-        const importProposal = uniqueName === mapped.naam ? mapped : { ...mapped, naam: uniqueName };
-        insertedIds.push(actualId);
-        toInsert.push({
-          id:                   actualId,
-          naam:                 uniqueName,
-          status:               mapped.status,
-          doel:                 "",
-          trigger_beschrijving: mapped.trigger,
-          systemen:             mapped.systemen,
-          stappen:              mapped.stappen,
-          branches:             mapped.branches,
-          categorie:            mapped.categorie,
-          afhankelijkheden:     "",
-          owner:                "",
-          verbeterideeen:       "",
-          mermaid_diagram:      "",
-          fasen:                mapped.fasen,
-          webhook_paths:        mapped.webhookPaths,
-          external_id:          externalId,
-          source:               "hubspot",
-          import_source:        "hubspot",
-          import_status:        "pending_approval",
-          import_proposal:      importProposal,
-          raw_payload:          wf,
-          pipeline_id:          pipelineId,
-          stage_id:             stageId,
-          hubspot_last_run_at:   usage.lastRunAt,
-          hubspot_run_count_365d: usage.runCount365d,
-          last_synced_at:       now,
-        });
-      }
-    }
-
-    // One bulk insert for all new automations
-    if (toInsert.length > 0) {
-      const { error: insertError } = await db.from("automatiseringen").insert(toInsert);
-      if (insertError) throw new Error(`Automatiseringen insert mislukt: ${insertError.message}`);
-    }
-
-    // Parallel updates in chunks of 20
-    for (let i = 0; i < toUpdate.length; i += 20) {
-      const updateResults = await Promise.all(
-        toUpdate.slice(i, i + 20).map(({ id, data }) =>
-          db.from("automatiseringen").update(data).eq("id", id),
-        ),
-      );
-      const updateError = updateResults.find((result) => result.error)?.error;
-      if (updateError) throw new Error(`Automatiseringen update mislukt: ${updateError.message}`);
-    }
-
-    const inserted = toInsert.length;
-    const updated  = toUpdate.length;
-
-    // Rejected HubSpot imports stay visible until the source no longer returns them.
-    const rejectedToDelete = Object.entries(existingMap)
-      .filter(([extId, row]) => row.import_status === "rejected" && !syncedIds.has(extId) && !syncedDbIds.has(row.id))
-      .map(([, row]) => row.id);
-    const deletedRejectedIds = new Set(rejectedToDelete);
-
-    if (rejectedToDelete.length > 0) {
-      const { error: deleteRejectedError } = await db
-        .from("automatiseringen")
-        .delete()
-        .in("id", rejectedToDelete);
-      if (deleteRejectedError) throw new Error(`Afgewezen HubSpot imports verwijderen mislukt: ${deleteRejectedError.message}`);
-    }
-    const deletedRejected = rejectedToDelete.length;
-
-    // Deactivate removed approved/pending workflows in parallel
-    const toDeactivate = Object.entries(existingMap)
-      .filter(([extId, row]) => !syncedIds.has(extId) && !syncedDbIds.has(row.id) && !deletedRejectedIds.has(row.id) && row.status !== "Uitgeschakeld")
-      .map(([, row]) => row.id);
-
-    if (toDeactivate.length > 0) {
-      const deactivateResults = await Promise.all(
-        toDeactivate.map((id) => db.from("automatiseringen").update({ status: "Uitgeschakeld" }).eq("id", id)),
-      );
-      const deactivateError = deactivateResults.find((result) => result.error)?.error;
-      if (deactivateError) throw new Error(`Automatiseringen deactiveren mislukt: ${deactivateError.message}`);
-    }
-    const deactivated = toDeactivate.length;
-
-    const syncRunId = crypto.randomUUID();
-
-    // ── Endpoint matching pass ────────────────────────────────────────────────
-    const { data: hsAutos } = await db
-      .from("automatiseringen")
-      .select("id, webhook_paths")
-      .eq("source", "hubspot")
-      .neq("import_status", "rejected");
-
-    const { data: glAutos } = await db
-      .from("automatiseringen")
-      .select("id, endpoints")
-      .eq("source", "gitlab");
-
-    const newMatches: Array<{ source_id: string; target_id: string; match_type: string; confirmed: boolean; sync_run_id: string }> = [];
-    for (const hs of (hsAutos ?? [])) {
-      const hsPaths: string[] = hs.webhook_paths ?? [];
-      if (hsPaths.length === 0) continue;
-      for (const gl of (glAutos ?? [])) {
-        const glEndpoints: string[] = gl.endpoints ?? [];
-        if (hsPaths.some((p: string) => glEndpoints.includes(p))) {
-          newMatches.push({ source_id: hs.id, target_id: gl.id, match_type: "exact", confirmed: false, sync_run_id: syncRunId });
-        }
-      }
-    }
-
-    if (newMatches.length > 0) {
-      await db.from("automation_links").upsert(newMatches, { onConflict: "source_id,target_id", ignoreDuplicates: true });
-    }
-
-    const matchedKeys = new Set(newMatches.map((m) => `${m.source_id}:${m.target_id}`));
-    const hsIds = (hsAutos ?? []).map((r: any) => r.id);
-    if (hsIds.length > 0) {
-      const { data: existingLinks } = await db
-        .from("automation_links")
-        .select("id, source_id, target_id")
-        .in("source_id", hsIds)
-        .eq("confirmed", false);
-
-      const staleIds = (existingLinks ?? [])
-        .filter((l: any) => !matchedKeys.has(`${l.source_id}:${l.target_id}`))
-        .map((l: any) => l.id);
-
-      if (staleIds.length > 0) {
-        await db.from("automation_links").delete().in("id", staleIds);
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Step 4.5: Trigger enrichment + pipeline sync (fire-and-forget)
     {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const now = new Date().toISOString();
+      const payloads = workflows.map((wf) => {
+        const externalId = getWorkflowId(wf);
+        if (!externalId) return null;
+        const usage = usageByWorkflowId[externalId] ?? { lastRunAt: null, runCount365d: null };
+        const { pipelineId, stageId } = extractPipelineStage(wf);
+        const mapped = mapWorkflow(wf);
 
-      const matchedSourceIds = new Set(newMatches.map((m) => m.source_id));
+        return {
+          naam: mapped.naam,
+          status: isWorkflowEnabled(wf) ? "Actief" : "Uitgeschakeld",
+          doel: mapped.doel ?? "",
+          trigger_beschrijving: mapped.trigger,
+          systemen: mapped.systemen,
+          stappen: mapped.stappen,
+          branches: mapped.branches,
+          categorie: mapped.categorie,
+          afhankelijkheden: "",
+          owner: "",
+          verbeterideeen: "",
+          mermaid_diagram: "",
+          fasen: mapped.fasen,
+          webhook_paths: mapped.webhookPaths,
+          external_id: externalId,
+          source: "hubspot",
+          import_source: "hubspot",
+          import_proposal: mapped,
+          pipeline_id: pipelineId,
+          stage_id: stageId,
+          hubspot_last_run_at: usage.lastRunAt,
+          hubspot_run_count_365d: usage.runCount365d,
+          last_synced_at: now,
+        };
+      }).filter(Boolean);
 
-      for (const sourceId of matchedSourceIds) {
-        fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ automation_id: sourceId }),
-        }).catch((e) => console.warn(`enrich-automation fout voor ${sourceId}:`, e));
-      }
+      const syncRunId = await startSourceSyncRun(db, "hubspot", now);
+      const result = await recordPortalOwnedSync(db, {
+        source: "hubspot",
+        payloads,
+        syncRunId,
+        now,
+      });
 
-      // Enrich nieuw gesyncde automations zonder match
-      for (const id of insertedIds) {
-        if (matchedSourceIds.has(id)) continue;
-        fetch(`${supabaseUrl}/functions/v1/enrich-automation`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ automation_id: id }),
-        }).catch((e) => console.warn(`enrich-automation fout voor ${id}:`, e));
-      }
-
-      // Trigger pipeline sync
-      fetch(`${supabaseUrl}/functions/v1/hubspot-pipelines`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${serviceKey}` },
-      }).catch((e) => console.warn("hubspot-pipelines fout:", e));
+      return new Response(
+        JSON.stringify({ success: true, ...result }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    await db.from("integrations").update({
-      last_synced_at: new Date().toISOString(),
-      status: "connected",
-      error_message: null,
-    }).eq("id", integration.id);
-
-    return new Response(
-      JSON.stringify({ success: true, inserted, updated, deactivated, deletedRejected, total: workflows.length }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
   } catch (e) {
     console.error("hubspot-sync error:", e);
     return new Response(

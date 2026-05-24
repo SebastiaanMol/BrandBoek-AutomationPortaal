@@ -1,0 +1,1546 @@
+[
+  {
+    "worker_name": "Sales lead intake workers",
+    "workflow_graph": "Sales",
+    "runtime_actor_role": "route",
+    "root_trigger_events": [
+      "Nieuwe lead komt binnen via Trustoo, Offerte.nl, Ligo, Solvari, Calendly of Typeform"
+    ],
+    "trigger_signals": [
+      "external_lead_submitted",
+      "lead_source",
+      "contact_email",
+      "sales_owner"
+    ],
+    "reads_entities": [
+      "lead payload",
+      "HubSpot contact",
+      "HubSpot company",
+      "HubSpot deal"
+    ],
+    "reads_properties": [
+      "email",
+      "firstname",
+      "lastname",
+      "company",
+      "phone",
+      "pipeline",
+      "hubspot_owner_id"
+    ],
+    "traverses_associations": [
+      "contact -> company",
+      "contact -> deal",
+      "deal -> company"
+    ],
+    "computes": [
+      "lead source attribution",
+      "sales pipeline placement",
+      "deduplication against existing sales deals",
+      "initial owner assignment",
+      "company/contact/deal payload normalization"
+    ],
+    "writes_properties": [
+      "lead_source_wiecher",
+      "pipeline",
+      "dealstage",
+      "hubspot_owner_id",
+      "contact identity properties",
+      "company identity properties"
+    ],
+    "writes_dealstages": [
+      "initial Sales pipeline stage",
+      "offerte/verkoop stage for Typeform-originated sales leads"
+    ],
+    "emits_signals": [
+      "deal_created",
+      "sales_pipeline_entered",
+      "owner_assigned",
+      "lead_source_set"
+    ],
+    "downstream_workflows": [
+      "Sales opvolging",
+      "deal owner routing",
+      "onboarding after conversion",
+      "pipeline migration/copy workflows"
+    ],
+    "fan_out_risk": "Medium: one external lead can create or update contact, company, deal and note state.",
+    "temporal_logic": [
+      "Calendly owner can be derived from scheduled event owner",
+      "duplicate prevention is time-independent but state-dependent"
+    ],
+    "orchestration_risk": "High if source mapping, duplicate detection or initial stage is wrong; it creates the starting state for downstream Sales and onboarding workflows.",
+    "business_semantics": "Turns external demand into HubSpot runtime state: a lead becomes an owned Sales deal connected to contact and company."
+  },
+  {
+    "worker_name": "Sales pipeline migration/copy worker",
+    "workflow_graph": "Sales / Operations",
+    "runtime_actor_role": "migrate",
+    "root_trigger_events": [
+      "Manual/admin decision to move or copy deals between pipelines"
+    ],
+    "trigger_signals": [
+      "source_pipeline_id",
+      "destination_pipeline_id",
+      "stage_labels_to_include",
+      "mode"
+    ],
+    "reads_entities": [
+      "HubSpot pipelines",
+      "HubSpot deals"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "dealname",
+      "amount",
+      "hubspot_owner_id"
+    ],
+    "traverses_associations": [
+      "optional deal -> company",
+      "optional deal -> contact"
+    ],
+    "computes": [
+      "stage label to stage id mapping",
+      "source-to-destination stage mapping",
+      "deal copy/move payloads"
+    ],
+    "writes_properties": [
+      "pipeline",
+      "dealstage",
+      "amount",
+      "hubspot_owner_id"
+    ],
+    "writes_dealstages": [
+      "mapped destination pipeline stage"
+    ],
+    "emits_signals": [
+      "deal_entered_destination_pipeline",
+      "dealstage_changed",
+      "pipeline_changed"
+    ],
+    "downstream_workflows": [
+      "destination pipeline workflows",
+      "owner/assignment workflows",
+      "stage-based HubSpot workflows"
+    ],
+    "fan_out_risk": "High: a batch operation can move or duplicate many deals and enroll them in destination pipeline workflows.",
+    "temporal_logic": [],
+    "orchestration_risk": "Very high because it rewires runtime state across pipeline state machines.",
+    "business_semantics": "Administrative transition that migrates active process instances between HubSpot state machines."
+  },
+  {
+    "worker_name": "Typeform IB completion worker",
+    "workflow_graph": "IB / Document intake",
+    "runtime_actor_role": "enrich",
+    "root_trigger_events": [
+      "Typeform webhook received for IB intake"
+    ],
+    "trigger_signals": [
+      "typeform_submission",
+      "contact_id",
+      "year_folder"
+    ],
+    "reads_entities": [
+      "Typeform submission",
+      "SharePoint folder graph",
+      "HubSpot contact",
+      "HubSpot IB deals"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "year",
+      "ib_typeform_ingevuld"
+    ],
+    "traverses_associations": [
+      "contact -> deal"
+    ],
+    "computes": [
+      "document upload location",
+      "matching IB year",
+      "typeform completion flag"
+    ],
+    "writes_properties": [
+      "ib_typeform_ingevuld"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "ib_typeform_ingevuld=true",
+      "ib_prerequisite_changed"
+    ],
+    "downstream_workflows": [
+      "IB route after typeform and machtiging",
+      "JR priority dot from IB typeform"
+    ],
+    "fan_out_risk": "Medium: one contact submission can update one or more same-year IB deals.",
+    "temporal_logic": [
+      "Targets a configured year folder",
+      "Matches HubSpot IB deals by tax year"
+    ],
+    "orchestration_risk": "High if year matching or contact association is wrong; IB readiness depends on this signal.",
+    "business_semantics": "Marks that the client supplied IB input and makes that input available in the document store."
+  },
+  {
+    "worker_name": "Onboarding Typeform worker",
+    "workflow_graph": "Sales / Onboarding / Operations",
+    "runtime_actor_role": "coordinate",
+    "root_trigger_events": [
+      "Onboarding Typeform submission"
+    ],
+    "trigger_signals": [
+      "onboarding_submitted",
+      "contact_id",
+      "company_id",
+      "service selections",
+      "year"
+    ],
+    "reads_entities": [
+      "Typeform onboarding payload",
+      "HubSpot contact",
+      "HubSpot company",
+      "HubSpot deal",
+      "SharePoint folders"
+    ],
+    "reads_properties": [
+      "bedrijfsvorm",
+      "verlengd_boekjaar",
+      "jaarklant",
+      "pipeline",
+      "dealstage"
+    ],
+    "traverses_associations": [
+      "contact -> company",
+      "company -> deal",
+      "contact -> deal"
+    ],
+    "computes": [
+      "normalized onboarding properties",
+      "year folder structure",
+      "quarter folder structure",
+      "whether additional service deals should exist"
+    ],
+    "writes_properties": [
+      "contact onboarding properties",
+      "company onboarding properties",
+      "pipeline",
+      "dealstage",
+      "year"
+    ],
+    "writes_dealstages": [
+      "initial Loonadministratie/onboarding stages when applicable"
+    ],
+    "emits_signals": [
+      "company_onboarded",
+      "service_deal_created",
+      "year_structure_ready"
+    ],
+    "downstream_workflows": [
+      "BTW setup",
+      "IB/JR setup",
+      "Loonadministratie setup",
+      "SharePoint document workflows"
+    ],
+    "fan_out_risk": "High: creates both HubSpot state and external folder structure.",
+    "temporal_logic": [
+      "Creates folders for current and previous year",
+      "Creates quarter structure"
+    ],
+    "orchestration_risk": "Very high because this is a bootstrap worker for multiple operational graphs.",
+    "business_semantics": "Converts onboarding intake into the initial runtime graph for a customer."
+  },
+  {
+    "worker_name": "KvK company enrichment worker",
+    "workflow_graph": "Sales / Onboarding / Company data",
+    "runtime_actor_role": "enrich",
+    "root_trigger_events": [
+      "Company requires KvK enrichment",
+      "HubSpot workflow requests company sync"
+    ],
+    "trigger_signals": [
+      "company_id",
+      "kvk_number",
+      "rsin"
+    ],
+    "reads_entities": [
+      "HubSpot company",
+      "KvK API result"
+    ],
+    "reads_properties": [
+      "name",
+      "kvk_nummer",
+      "rsin",
+      "company identifiers"
+    ],
+    "traverses_associations": [],
+    "computes": [
+      "best KvK match",
+      "normalized company identity",
+      "basisprofiel link",
+      "legal/company enrichment fields"
+    ],
+    "writes_properties": [
+      "company KvK enrichment properties",
+      "basisprofiel link",
+      "normalized company details"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "company_enriched",
+      "company_properties_changed"
+    ],
+    "downstream_workflows": [
+      "onboarding validation",
+      "company completeness workflows",
+      "Sales/company quality checks"
+    ],
+    "fan_out_risk": "Low to medium: writes company state that can be consumed by multiple workflows.",
+    "temporal_logic": [],
+    "orchestration_risk": "Medium because wrong company identity can poison downstream classification.",
+    "business_semantics": "Makes the company graph reliable enough for operational routing."
+  },
+  {
+    "worker_name": "Clockify client sync worker",
+    "workflow_graph": "Operations / Time tracking",
+    "runtime_actor_role": "sync",
+    "root_trigger_events": [
+      "HubSpot company/client state indicates Clockify should be synced"
+    ],
+    "trigger_signals": [
+      "company_id",
+      "company_name",
+      "hubspot_client_reference"
+    ],
+    "reads_entities": [
+      "HubSpot company",
+      "Clockify client",
+      "Clockify projects"
+    ],
+    "reads_properties": [
+      "company id",
+      "company name",
+      "hubspot external reference"
+    ],
+    "traverses_associations": [],
+    "computes": [
+      "whether Clockify client exists",
+      "whether client/project should be updated, unarchived or created"
+    ],
+    "writes_properties": [],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "clockify_client_synced"
+    ],
+    "downstream_workflows": [
+      "time tracking availability",
+      "operational service delivery"
+    ],
+    "fan_out_risk": "Medium: mostly external side effects, limited HubSpot fan-out.",
+    "temporal_logic": [
+      "Clockify rate limit sequencing"
+    ],
+    "orchestration_risk": "Medium because it affects external execution readiness but does not appear to drive HubSpot state directly.",
+    "business_semantics": "Keeps time-tracking infrastructure aligned with HubSpot customer state."
+  },
+  {
+    "worker_name": "WeFact debtor upsert worker",
+    "workflow_graph": "Debtor/payment",
+    "runtime_actor_role": "sync",
+    "root_trigger_events": [
+      "HubSpot company should exist as debtor in WeFact"
+    ],
+    "trigger_signals": [
+      "company_id",
+      "debtor_sync_requested"
+    ],
+    "reads_entities": [
+      "HubSpot company",
+      "WeFact debtor"
+    ],
+    "reads_properties": [
+      "company identity",
+      "billing identity",
+      "wefact_company_id"
+    ],
+    "traverses_associations": [],
+    "computes": [
+      "debtor create/update payload",
+      "WeFact debtor code mapping"
+    ],
+    "writes_properties": [
+      "wefact_company_id"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "debtor_synced",
+      "wefact_company_id_set"
+    ],
+    "downstream_workflows": [
+      "invoice/payment workflows",
+      "debtor status workflows"
+    ],
+    "fan_out_risk": "Medium: bridges HubSpot company state into payment operations.",
+    "temporal_logic": [],
+    "orchestration_risk": "Medium because missing debtor IDs break payment-state feedback loops.",
+    "business_semantics": "Connects HubSpot companies to financial debtor administration."
+  },
+  {
+    "worker_name": "Portal bank connection status worker",
+    "workflow_graph": "Bank connection / BTW",
+    "runtime_actor_role": "propagate",
+    "root_trigger_events": [
+      "Bank connection status is changed from the portal"
+    ],
+    "trigger_signals": [
+      "company_id",
+      "bankkoppeling_status"
+    ],
+    "reads_entities": [
+      "HubSpot company"
+    ],
+    "reads_properties": [
+      "bankkoppeling_status"
+    ],
+    "traverses_associations": [
+      "company -> deal via downstream HubSpot workflows"
+    ],
+    "computes": [
+      "new company bank connection state"
+    ],
+    "writes_properties": [
+      "bankkoppeling_status"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "company_bankkoppeling_status_changed"
+    ],
+    "downstream_workflows": [
+      "BTW bank connection routing",
+      "bedrijven_zonder_bankkoppeling contact sync"
+    ],
+    "fan_out_risk": "High: one company signal can propagate to many deals and contacts.",
+    "temporal_logic": [],
+    "orchestration_risk": "High because bank status is an orchestration hub for BTW readiness.",
+    "business_semantics": "Changes the bank connection state that governs whether tax workflows can proceed automatically."
+  },
+  {
+    "worker_name": "BTW dealstage by bank connection worker",
+    "workflow_graph": "BTW / Bank connection",
+    "runtime_actor_role": "route",
+    "root_trigger_events": [
+      "BTW deal needs rerouting after bank connection or two-month booking signal changes"
+    ],
+    "trigger_signals": [
+      "deal_id",
+      "bankkoppeling_status",
+      "bankkoppeling_verlopen_datum",
+      "btw_2_maanden_geboekt_huidig_kwartaal",
+      "year",
+      "quarter"
+    ],
+    "reads_entities": [
+      "HubSpot BTW deal",
+      "HubSpot company",
+      "HubSpot pipeline stages"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "year",
+      "quarter",
+      "btw_2_maanden_geboekt_huidig_kwartaal",
+      "bankkoppeling_status",
+      "bankkoppeling_verlopen_datum"
+    ],
+    "traverses_associations": [
+      "deal -> company"
+    ],
+    "computes": [
+      "active bank connection route",
+      "expired bank connection route",
+      "pre-BTW-month expired route",
+      "fallback stage"
+    ],
+    "writes_properties": [
+      "dealstage"
+    ],
+    "writes_dealstages": [
+      "BTW active bank target stage",
+      "2 maanden geboekt bankkoppeling verlopen",
+      "pre-BTW-month verlopen stage",
+      "beginner stage fallback"
+    ],
+    "emits_signals": [
+      "btw_dealstage_changed",
+      "btw_ready_or_blocked_by_bank"
+    ],
+    "downstream_workflows": [
+      "BTW execution",
+      "BTW review",
+      "JR readiness from BTW booked quarters"
+    ],
+    "fan_out_risk": "Medium: one deal is routed, but downstream stage workflows may fan out.",
+    "temporal_logic": [
+      "first day of next quarter",
+      "pre-BTW month window",
+      "year/quarter routing"
+    ],
+    "orchestration_risk": "Very high because it controls the live operational path of BTW deals.",
+    "business_semantics": "Decides whether a BTW process can continue automatically based on bank connection health and quarter timing."
+  },
+  {
+    "worker_name": "BTW next-quarter two-month propagation worker",
+    "workflow_graph": "BTW",
+    "runtime_actor_role": "propagate",
+    "root_trigger_events": [
+      "A BTW deal's current-quarter two-month booking signal changes"
+    ],
+    "trigger_signals": [
+      "company_id",
+      "pipeline_id",
+      "year",
+      "quarter",
+      "btw_2_maanden_geboekt_huidig_kwartaal"
+    ],
+    "reads_entities": [
+      "HubSpot BTW deals"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "year",
+      "quarter",
+      "btw_2_maanden_geboekt_vorig_kwartaal"
+    ],
+    "traverses_associations": [
+      "company -> next-quarter BTW deal"
+    ],
+    "computes": [
+      "next quarter",
+      "next year rollover for Q4",
+      "normalized two-month bucket"
+    ],
+    "writes_properties": [
+      "btw_2_maanden_geboekt_vorig_kwartaal"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "next_quarter_btw_previous_bucket_changed"
+    ],
+    "downstream_workflows": [
+      "BTW next-quarter routing",
+      "BTW bank connection stage decision"
+    ],
+    "fan_out_risk": "Low to medium: targeted update to the next-quarter deal.",
+    "temporal_logic": [
+      "quarter increment",
+      "Q4 to next-year Q1 rollover"
+    ],
+    "orchestration_risk": "High if quarter/year mapping is wrong because the next period receives the wrong context.",
+    "business_semantics": "Carries operational memory from one BTW quarter into the next."
+  },
+  {
+    "worker_name": "BTW finished assignment propagation worker",
+    "workflow_graph": "BTW / Assignment propagation",
+    "runtime_actor_role": "propagate",
+    "root_trigger_events": [
+      "BTW deal reaches finished stage"
+    ],
+    "trigger_signals": [
+      "dealstage finished",
+      "controleur",
+      "hubspot_owner_id",
+      "year",
+      "quarter"
+    ],
+    "reads_entities": [
+      "finished BTW deal",
+      "company",
+      "future BTW deals"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "year",
+      "quarter",
+      "controleur",
+      "hubspot_owner_id"
+    ],
+    "traverses_associations": [
+      "deal -> company",
+      "company -> future BTW deals"
+    ],
+    "computes": [
+      "source quarter ordering",
+      "future BTW deals after source quarter",
+      "assignment delta"
+    ],
+    "writes_properties": [
+      "controleur",
+      "hubspot_owner_id"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "future_btw_assignment_changed",
+      "owner_changed"
+    ],
+    "downstream_workflows": [
+      "future BTW execution",
+      "owner/controller assignment workflows"
+    ],
+    "fan_out_risk": "High: one finished quarter can update many future BTW deals.",
+    "temporal_logic": [
+      "year/quarter ordering",
+      "only later quarters are updated"
+    ],
+    "orchestration_risk": "High because it silently propagates people assignment across future work.",
+    "business_semantics": "Keeps responsibility for recurring BTW work consistent across future periods."
+  },
+  {
+    "worker_name": "JR stage from booked BTW quarters worker",
+    "workflow_graph": "JR / BTW",
+    "runtime_actor_role": "route",
+    "root_trigger_events": [
+      "Company geboekte_kwartalen property changes"
+    ],
+    "trigger_signals": [
+      "company_id",
+      "year",
+      "geboekte_kwartalen"
+    ],
+    "reads_entities": [
+      "HubSpot company",
+      "JR deals"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "year",
+      "dealstage",
+      "geboekte_kwartalen"
+    ],
+    "traverses_associations": [
+      "company -> deal"
+    ],
+    "computes": [
+      "all four BTW quarters booked",
+      "some BTW quarters booked",
+      "allowed JR current stages",
+      "JR target stage"
+    ],
+    "writes_properties": [
+      "dealstage"
+    ],
+    "writes_dealstages": [
+      "Deels geboekt",
+      "Q1 tot Q4 geboekt"
+    ],
+    "emits_signals": [
+      "jr_dealstage_changed",
+      "jr_ready_signal"
+    ],
+    "downstream_workflows": [
+      "JR planning",
+      "IB readiness",
+      "JR priority workflows"
+    ],
+    "fan_out_risk": "Medium: company signal can update one or more JR deals.",
+    "temporal_logic": [
+      "tax year matching",
+      "quarter completeness"
+    ],
+    "orchestration_risk": "High because JR readiness is derived from BTW completion state.",
+    "business_semantics": "Transforms BTW progress into JR readiness."
+  },
+  {
+    "worker_name": "IB machtiging actief worker",
+    "workflow_graph": "IB / Mandate",
+    "runtime_actor_role": "compute",
+    "root_trigger_events": [
+      "IB deal mandate signal changes",
+      "contact mandate signal changes"
+    ],
+    "trigger_signals": [
+      "machtiging_fiscaal_online_doorlopend",
+      "fiscaal_partner_machtiging_fo_doorlopend",
+      "year",
+      "closedate",
+      "createdate"
+    ],
+    "reads_entities": [
+      "IB deal",
+      "contact",
+      "deal property metadata"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "year",
+      "closedate",
+      "createdate",
+      "machtiging_actief",
+      "machtiging_fiscaal_online_doorlopend",
+      "fiscaal_partner_machtiging_fo_doorlopend"
+    ],
+    "traverses_associations": [
+      "deal -> contact",
+      "contact -> IB deals"
+    ],
+    "computes": [
+      "deal tax year",
+      "December 1 cutoff",
+      "contact mandate active before cutoff",
+      "partner mandate active before cutoff",
+      "IB mandate state label"
+    ],
+    "writes_properties": [
+      "machtiging_actief"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "machtiging_actief_changed",
+      "ib_prerequisite_changed"
+    ],
+    "downstream_workflows": [
+      "IB route after typeform and machtiging",
+      "VA IB prerequisite routing",
+      "JR priority except JR"
+    ],
+    "fan_out_risk": "High for contact-triggered sync: one contact mandate change can update multiple IB deals.",
+    "temporal_logic": [
+      "activation must exist before December 1 of the deal year",
+      "uses contact property history"
+    ],
+    "orchestration_risk": "Very high because mandate state gates whether IB/VA work can proceed.",
+    "business_semantics": "Computes whether the client had the required mandate in time for the tax year."
+  },
+  {
+    "worker_name": "IB route after typeform and machtiging worker",
+    "workflow_graph": "IB / JR / VA IB",
+    "runtime_actor_role": "route",
+    "root_trigger_events": [
+      "IB typeform or mandate prerequisites changed"
+    ],
+    "trigger_signals": [
+      "ib_typeform_ingevuld",
+      "machtiging_actief",
+      "year",
+      "contact_id"
+    ],
+    "reads_entities": [
+      "IB deal",
+      "contact",
+      "same-year JR deals",
+      "IB pipeline stages"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "year",
+      "machtiging_actief",
+      "ib_typeform_ingevuld",
+      "jaarrekeningen_klaar_om_ib_te_maken"
+    ],
+    "traverses_associations": [
+      "IB deal -> contact",
+      "contact -> JR deals",
+      "contact -> IB deal"
+    ],
+    "computes": [
+      "same-year JR blocking state",
+      "whether IB can be routed past prerequisites",
+      "target IB stage"
+    ],
+    "writes_properties": [
+      "dealstage"
+    ],
+    "writes_dealstages": [
+      "Machtiging & Typeform",
+      "Machtiging & Typeform; JR klaar om te maken",
+      "IB gereed om te maken"
+    ],
+    "emits_signals": [
+      "ib_dealstage_changed",
+      "ib_ready_signal"
+    ],
+    "downstream_workflows": [
+      "IB execution",
+      "VA IB prerequisite routing",
+      "JR priority workflows"
+    ],
+    "fan_out_risk": "Medium: routes one IB deal but depends on all related JR state.",
+    "temporal_logic": [
+      "same tax year matching"
+    ],
+    "orchestration_risk": "Very high because it combines mandate, typeform and JR readiness into one routing decision.",
+    "business_semantics": "Decides whether an IB case can move forward or must wait for JR/machtiging/input."
+  },
+  {
+    "worker_name": "IB kan gemaakt worden from JR worker",
+    "workflow_graph": "IB / JR",
+    "runtime_actor_role": "compute",
+    "root_trigger_events": [
+      "JR deal updated or finished"
+    ],
+    "trigger_signals": [
+      "JR dealstage",
+      "year",
+      "company bv_ez",
+      "loonadministratie presence"
+    ],
+    "reads_entities": [
+      "JR deal",
+      "contact",
+      "companies",
+      "company deals",
+      "IB deals"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "year",
+      "bv_ez"
+    ],
+    "traverses_associations": [
+      "JR deal -> contact",
+      "contact -> companies",
+      "company -> deals",
+      "contact -> IB deals"
+    ],
+    "computes": [
+      "whether every related company has valid JR conditions",
+      "whether BV company has loonadministratie bypass",
+      "same-year IB readiness flag"
+    ],
+    "writes_properties": [
+      "jaarrekeningen_klaar_om_ib_te_maken"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "jaarrekeningen_klaar_om_ib_te_maken_changed",
+      "ib_prerequisite_changed"
+    ],
+    "downstream_workflows": [
+      "IB route after typeform and machtiging",
+      "JR priority except JR"
+    ],
+    "fan_out_risk": "High: one JR event can traverse contact-company-deal graph and update same-year IB deals.",
+    "temporal_logic": [
+      "same tax year matching"
+    ],
+    "orchestration_risk": "Very high because it derives IB readiness from the wider JR/company graph.",
+    "business_semantics": "Turns completed or acceptable JR work into a signal that IB can proceed."
+  },
+  {
+    "worker_name": "JR priority from IB worker",
+    "workflow_graph": "JR / IB",
+    "runtime_actor_role": "propagate",
+    "root_trigger_events": [
+      "IB readiness or typeform state changes"
+    ],
+    "trigger_signals": [
+      "ib_typeform_ingevuld",
+      "machtiging_actief",
+      "jaarrekeningen_klaar_om_ib_te_maken",
+      "year"
+    ],
+    "reads_entities": [
+      "IB deal",
+      "contact",
+      "same-year JR deals"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "year",
+      "dealstage",
+      "hs_priority",
+      "ib_typeform_ingevuld"
+    ],
+    "traverses_associations": [
+      "IB deal -> contact",
+      "contact -> JR deals"
+    ],
+    "computes": [
+      "same-year JR match",
+      "priority stage mapping",
+      "priority dot state"
+    ],
+    "writes_properties": [
+      "dealstage",
+      "hs_priority"
+    ],
+    "writes_dealstages": [
+      "JR priority variants of existing stages"
+    ],
+    "emits_signals": [
+      "jr_priority_changed",
+      "jr_stage_changed"
+    ],
+    "downstream_workflows": [
+      "JR planning",
+      "IB readiness re-evaluation"
+    ],
+    "fan_out_risk": "Medium to high: one IB deal can bump multiple related same-year JR deals.",
+    "temporal_logic": [
+      "same tax year matching"
+    ],
+    "orchestration_risk": "High because it changes priority/stage of work in a related process graph.",
+    "business_semantics": "Pulls JR work forward when IB depends on it."
+  },
+  {
+    "worker_name": "IB/JR owner summary workers",
+    "workflow_graph": "IB / JR / Assignment propagation",
+    "runtime_actor_role": "propagate",
+    "root_trigger_events": [
+      "IB deal changes",
+      "JR owner changes",
+      "JR year changes"
+    ],
+    "trigger_signals": [
+      "hubspot_owner_id",
+      "year",
+      "pipeline"
+    ],
+    "reads_entities": [
+      "IB deal",
+      "JR deal",
+      "contact",
+      "companies",
+      "company deals",
+      "active HubSpot owners"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "year",
+      "hubspot_owner_id",
+      "jr_boekers"
+    ],
+    "traverses_associations": [
+      "IB deal -> contact",
+      "JR deal -> contact",
+      "contact -> companies",
+      "company -> JR deals",
+      "contact -> IB deals"
+    ],
+    "computes": [
+      "same-year JR owner set",
+      "allowed owner option values",
+      "IB multi-user summary"
+    ],
+    "writes_properties": [
+      "jr_boekers"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "ib_jr_owner_summary_changed"
+    ],
+    "downstream_workflows": [
+      "IB planning",
+      "assignment visibility",
+      "workload planning"
+    ],
+    "fan_out_risk": "High: one JR owner change can recalculate multiple related IB owner summaries.",
+    "temporal_logic": [
+      "same tax year matching"
+    ],
+    "orchestration_risk": "Medium to high because assignment state is derived through indirect associations.",
+    "business_semantics": "Shows on IB who is responsible for related JR work."
+  },
+  {
+    "worker_name": "VA IB coordination workers",
+    "workflow_graph": "VA / IB / BTW",
+    "runtime_actor_role": "coordinate",
+    "root_trigger_events": [
+      "IB prerequisites change",
+      "IB deal finished",
+      "VA IB deal finished",
+      "Yearly VA IB fill job"
+    ],
+    "trigger_signals": [
+      "machtiging_actief",
+      "jaarrekeningen_klaar_om_ib_te_maken",
+      "IB dealstage finished",
+      "VA IB dealstage finished",
+      "year",
+      "jaarklant",
+      "bankkoppeling_status"
+    ],
+    "reads_entities": [
+      "IB deal",
+      "VA IB deal",
+      "BTW Q4 deals",
+      "contact",
+      "company"
+    ],
+    "reads_properties": [
+      "year",
+      "machtiging_actief",
+      "jaarrekeningen_klaar_om_ib_te_maken",
+      "dealstage",
+      "jaarklant",
+      "bankkoppeling_status",
+      "hubspot_owner_id"
+    ],
+    "traverses_associations": [
+      "IB deal -> contact",
+      "VA IB deal -> contact",
+      "contact -> company",
+      "company -> BTW deals",
+      "contact -> IB deals"
+    ],
+    "computes": [
+      "whether VA IB can move to Klaar voor IB",
+      "whether VA IB should move to IB ingediend",
+      "whether IB should get va_ingediend=true",
+      "yearly VA IB deal creation eligibility",
+      "jaarklant and bank prerequisites"
+    ],
+    "writes_properties": [
+      "dealstage",
+      "va_ingediend",
+      "pipeline",
+      "year",
+      "hubspot_owner_id"
+    ],
+    "writes_dealstages": [
+      "Klaar voor IB",
+      "IB ingediend",
+      "Jaarklanten",
+      "Jaarklanten gegevens gereed"
+    ],
+    "emits_signals": [
+      "va_ib_dealstage_changed",
+      "ib_va_ingediend_changed",
+      "va_ib_deal_created"
+    ],
+    "downstream_workflows": [
+      "VA IB execution",
+      "IB completion follow-up",
+      "assignment workflows"
+    ],
+    "fan_out_risk": "High: yearly fill can create many VA IB deals, single finish events update paired process state.",
+    "temporal_logic": [
+      "tax year",
+      "Q4 BTW readiness",
+      "current/previous annual cycles"
+    ],
+    "orchestration_risk": "Very high because this coordinates two process graphs and depends on BTW readiness.",
+    "business_semantics": "Keeps VA IB work synchronized with IB readiness and completion."
+  },
+  {
+    "worker_name": "VA VPB coordination workers",
+    "workflow_graph": "VA / VPB / BTW",
+    "runtime_actor_role": "coordinate",
+    "root_trigger_events": [
+      "VPB deal finished",
+      "VA VPB deal finished",
+      "Yearly VA VPB fill job"
+    ],
+    "trigger_signals": [
+      "VPB dealstage finished",
+      "VA VPB dealstage finished",
+      "year",
+      "company_id",
+      "BTW Q4 result signals"
+    ],
+    "reads_entities": [
+      "VPB deal",
+      "VA VPB deal",
+      "BTW Q4 deal",
+      "company"
+    ],
+    "reads_properties": [
+      "year",
+      "pipeline",
+      "dealstage",
+      "va_ingediend",
+      "oprichtingsdatum",
+      "verlengd_boekjaar",
+      "hoeveel_va_wordt_er_betaald_",
+      "is_het_resultaat_redelijk_",
+      "wat_is_het_resultaat",
+      "is_er_een_va_betaald_"
+    ],
+    "traverses_associations": [
+      "VPB deal -> company",
+      "VA VPB deal -> company",
+      "company -> VPB deals",
+      "company -> BTW Q4 deals"
+    ],
+    "computes": [
+      "matching VPB/VA VPB deal by company and year",
+      "whether VA VPB should be created",
+      "target VA VPB stage from VPB/BTW result conditions",
+      "whether VPB should be marked va_ingediend"
+    ],
+    "writes_properties": [
+      "dealstage",
+      "va_ingediend",
+      "pipeline",
+      "year"
+    ],
+    "writes_dealstages": [
+      "VPB ingediend",
+      "Eerste jaar",
+      "VA nul",
+      "Negatief",
+      "Zelf",
+      "Open"
+    ],
+    "emits_signals": [
+      "va_vpb_dealstage_changed",
+      "vpb_va_ingediend_changed",
+      "va_vpb_deal_created"
+    ],
+    "downstream_workflows": [
+      "VA VPB execution",
+      "VPB completion follow-up",
+      "yearly tax planning"
+    ],
+    "fan_out_risk": "High: company/year matching can coordinate multiple annual tax workflows.",
+    "temporal_logic": [
+      "tax year",
+      "company founding year",
+      "extended fiscal year",
+      "Q4 BTW result"
+    ],
+    "orchestration_risk": "Very high because wrong year/company matching updates the wrong tax process.",
+    "business_semantics": "Coordinates provisional assessment work with VPB and BTW outcomes."
+  },
+  {
+    "worker_name": "Debtor betaal niet propagation worker",
+    "workflow_graph": "Debtor/payment",
+    "runtime_actor_role": "guard",
+    "root_trigger_events": [
+      "A deal enters or exits Betaalt niet state"
+    ],
+    "trigger_signals": [
+      "deal_id",
+      "Betaalt niet stage",
+      "reset_betaalt_niet"
+    ],
+    "reads_entities": [
+      "triggering deal",
+      "company",
+      "company deals",
+      "pipeline stages",
+      "contact"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "vorige_stage",
+      "year",
+      "quarter",
+      "company properties",
+      "contact properties"
+    ],
+    "traverses_associations": [
+      "deal -> company",
+      "deal -> contact",
+      "company -> all deals"
+    ],
+    "computes": [
+      "Betaalt niet stage per pipeline",
+      "previous stage preservation",
+      "correct fallback stage on reset"
+    ],
+    "writes_properties": [
+      "dealstage",
+      "vorige_stage"
+    ],
+    "writes_dealstages": [
+      "Betaalt niet",
+      "previous stage",
+      "computed correct stage"
+    ],
+    "emits_signals": [
+      "deal_blocked_by_payment",
+      "deal_unblocked_by_payment",
+      "dealstage_changed"
+    ],
+    "downstream_workflows": [
+      "all affected pipeline workflows",
+      "operational pause/resume workflows",
+      "debtor follow-up"
+    ],
+    "fan_out_risk": "Very high: one payment state can move every deal associated with the company.",
+    "temporal_logic": [
+      "reset uses previous stage or recomputes from current year/quarter context"
+    ],
+    "orchestration_risk": "Critical: this is a cross-pipeline blocking mechanism.",
+    "business_semantics": "Freezes or resumes operational work for a customer based on payment status."
+  },
+  {
+    "worker_name": "Deal name propagation workers",
+    "workflow_graph": "Operations / Naming consistency",
+    "runtime_actor_role": "repair",
+    "root_trigger_events": [
+      "Contact or company identity changes"
+    ],
+    "trigger_signals": [
+      "contact_id",
+      "company_id",
+      "name fields changed"
+    ],
+    "reads_entities": [
+      "contact",
+      "company",
+      "associated deals"
+    ],
+    "reads_properties": [
+      "firstname",
+      "lastname",
+      "company name",
+      "dealname",
+      "pipeline",
+      "year",
+      "quarter"
+    ],
+    "traverses_associations": [
+      "contact -> deals",
+      "company -> deals"
+    ],
+    "computes": [
+      "canonical deal name"
+    ],
+    "writes_properties": [
+      "dealname"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "dealname_changed"
+    ],
+    "downstream_workflows": [
+      "search/reporting consistency",
+      "manual operational visibility"
+    ],
+    "fan_out_risk": "Medium: one identity change can rename many deals.",
+    "temporal_logic": [],
+    "orchestration_risk": "Medium; mostly governance/clarity, but name-based workflows would make it higher.",
+    "business_semantics": "Keeps deal labels aligned with the latest customer identity."
+  },
+  {
+    "worker_name": "Correct stage repair worker",
+    "workflow_graph": "Operations / Cross-pipeline repair",
+    "runtime_actor_role": "repair",
+    "root_trigger_events": [
+      "Manual or workflow-triggered request to recalculate stages for a company"
+    ],
+    "trigger_signals": [
+      "company_id",
+      "stage_inconsistency_detected"
+    ],
+    "reads_entities": [
+      "company",
+      "contact",
+      "company deals",
+      "pipeline stages"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "year",
+      "quarter",
+      "bankkoppeling_status",
+      "contact properties",
+      "company properties"
+    ],
+    "traverses_associations": [
+      "company -> deals",
+      "deal -> contact",
+      "deal -> company"
+    ],
+    "computes": [
+      "expected stage from company/contact/deal state",
+      "stage mismatch detection"
+    ],
+    "writes_properties": [
+      "dealstage"
+    ],
+    "writes_dealstages": [
+      "computed correct stage per pipeline"
+    ],
+    "emits_signals": [
+      "dealstage_repaired",
+      "stage_based_workflow_reenrollment"
+    ],
+    "downstream_workflows": [
+      "all stage-based workflows affected by repaired deals"
+    ],
+    "fan_out_risk": "High: company-level repair can touch multiple pipelines.",
+    "temporal_logic": [
+      "year/quarter-sensitive stage calculation"
+    ],
+    "orchestration_risk": "Very high if repair rules diverge from live HubSpot workflow assumptions.",
+    "business_semantics": "Reconciles HubSpot runtime state when deals are in the wrong operational stage."
+  },
+  {
+    "worker_name": "Year derivation worker",
+    "workflow_graph": "Shared temporal state",
+    "runtime_actor_role": "compute",
+    "root_trigger_events": [
+      "Deal creation date is available"
+    ],
+    "trigger_signals": [
+      "createdate",
+      "deal_id"
+    ],
+    "reads_entities": [
+      "deal payload"
+    ],
+    "reads_properties": [
+      "createdate"
+    ],
+    "traverses_associations": [],
+    "computes": [
+      "tax/process year from creation date"
+    ],
+    "writes_properties": [
+      "year"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "year_changed",
+      "temporal_context_available"
+    ],
+    "downstream_workflows": [
+      "IB matching",
+      "JR matching",
+      "BTW quarter logic",
+      "VA/VPB matching"
+    ],
+    "fan_out_risk": "Low directly, high indirectly because year is a join key across workflows.",
+    "temporal_logic": [
+      "derive year from timestamp"
+    ],
+    "orchestration_risk": "High if year is wrong; many workers match related deals by year.",
+    "business_semantics": "Assigns the annual process context used to connect tax workflows."
+  },
+  {
+    "worker_name": "Active deals into new deal worker",
+    "workflow_graph": "Operations / Migration",
+    "runtime_actor_role": "migrate",
+    "root_trigger_events": [
+      "Bulk transition to new deal model or pipeline"
+    ],
+    "trigger_signals": [
+      "active_pipeline_deals",
+      "migration_requested"
+    ],
+    "reads_entities": [
+      "active HubSpot deals",
+      "pipelines",
+      "companies",
+      "contacts"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "activiteit",
+      "dealname",
+      "amount",
+      "hubspot_owner_id"
+    ],
+    "traverses_associations": [
+      "deal -> company",
+      "deal -> contact"
+    ],
+    "computes": [
+      "new deal payload",
+      "active deal eligibility",
+      "association preservation"
+    ],
+    "writes_properties": [
+      "pipeline",
+      "dealstage",
+      "dealname",
+      "amount",
+      "hubspot_owner_id"
+    ],
+    "writes_dealstages": [
+      "initial stage in new deal/pipeline"
+    ],
+    "emits_signals": [
+      "new_deal_created",
+      "pipeline_entered"
+    ],
+    "downstream_workflows": [
+      "new pipeline workflows",
+      "assignment workflows",
+      "stage routing workflows"
+    ],
+    "fan_out_risk": "Very high: bulk migration can enroll many process instances into new workflows.",
+    "temporal_logic": [],
+    "orchestration_risk": "Critical during migrations because it changes the process graph topology.",
+    "business_semantics": "Moves active operational work into a new HubSpot runtime representation."
+  },
+  {
+    "worker_name": "Dossier update worker",
+    "workflow_graph": "Document/dossier",
+    "runtime_actor_role": "sync",
+    "root_trigger_events": [
+      "Contact dossier structure needs updating"
+    ],
+    "trigger_signals": [
+      "contact_id",
+      "dossier_update_payload"
+    ],
+    "reads_entities": [
+      "contact",
+      "dossier"
+    ],
+    "reads_properties": [
+      "dossier association",
+      "structuur"
+    ],
+    "traverses_associations": [
+      "contact -> dossier"
+    ],
+    "computes": [
+      "target dossier object"
+    ],
+    "writes_properties": [
+      "structuur"
+    ],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "dossier_updated"
+    ],
+    "downstream_workflows": [
+      "document visibility",
+      "dossier completeness checks"
+    ],
+    "fan_out_risk": "Low.",
+    "temporal_logic": [],
+    "orchestration_risk": "Medium if dossier structure is used as a prerequisite elsewhere.",
+    "business_semantics": "Keeps dossier metadata aligned with process documentation."
+  },
+  {
+    "worker_name": "Doorlopende machtiging Geen IB worker",
+    "workflow_graph": "IB / Mandate",
+    "runtime_actor_role": "route",
+    "root_trigger_events": [
+      "Client stops or no longer needs IB via doorlopende machtiging"
+    ],
+    "trigger_signals": [
+      "deal_id",
+      "klant_haakt_af"
+    ],
+    "reads_entities": [
+      "doorlopende machtiging deal",
+      "related IB context"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "machtiging properties"
+    ],
+    "traverses_associations": [
+      "deal -> contact",
+      "contact -> IB deals"
+    ],
+    "computes": [
+      "whether related IB should move to Geen IB"
+    ],
+    "writes_properties": [
+      "dealstage"
+    ],
+    "writes_dealstages": [
+      "Geen IB: klant haakt af"
+    ],
+    "emits_signals": [
+      "ib_cancelled_or_not_required"
+    ],
+    "downstream_workflows": [
+      "IB stop workflow",
+      "planning cleanup"
+    ],
+    "fan_out_risk": "Medium.",
+    "temporal_logic": [],
+    "orchestration_risk": "High because it can stop a tax workflow.",
+    "business_semantics": "Routes IB out of the active process when the client opts out or drops off."
+  },
+  {
+    "worker_name": "Berekening compleet worker",
+    "workflow_graph": "BTW",
+    "runtime_actor_role": "route",
+    "root_trigger_events": [
+      "BTW calculation is complete"
+    ],
+    "trigger_signals": [
+      "deal_id",
+      "berekening_compleet"
+    ],
+    "reads_entities": [
+      "BTW quarter deal"
+    ],
+    "reads_properties": [
+      "pipeline",
+      "dealstage",
+      "year",
+      "quarter",
+      "service type"
+    ],
+    "traverses_associations": [
+      "deal -> company"
+    ],
+    "computes": [
+      "whether the BTW quarter deal should move to calculation complete for full-service path"
+    ],
+    "writes_properties": [
+      "dealstage"
+    ],
+    "writes_dealstages": [
+      "Berekening Compleet"
+    ],
+    "emits_signals": [
+      "btw_calculation_completed",
+      "dealstage_changed"
+    ],
+    "downstream_workflows": [
+      "BTW review/facturation",
+      "BTW finished assignment propagation"
+    ],
+    "fan_out_risk": "Low to medium: single deal stage update, downstream workflows may continue.",
+    "temporal_logic": [
+      "quarter process context"
+    ],
+    "orchestration_risk": "High if moved too early; it advances the operational process.",
+    "business_semantics": "Marks a BTW calculation as ready for the next operational step."
+  },
+  {
+    "worker_name": "Pipeline/stage governance workers",
+    "workflow_graph": "Governance",
+    "runtime_actor_role": "guard",
+    "root_trigger_events": [
+      "Need to inspect active pipelines or workflow usage"
+    ],
+    "trigger_signals": [
+      "pipeline_label",
+      "pipeline_id"
+    ],
+    "reads_entities": [
+      "HubSpot pipelines",
+      "HubSpot workflows"
+    ],
+    "reads_properties": [
+      "pipeline metadata",
+      "stage metadata",
+      "workflow definitions"
+    ],
+    "traverses_associations": [],
+    "computes": [
+      "active pipeline list",
+      "workflow references to pipeline labels"
+    ],
+    "writes_properties": [],
+    "writes_dealstages": [],
+    "emits_signals": [
+      "governance_report_generated"
+    ],
+    "downstream_workflows": [
+      "manual cleanup",
+      "migration planning"
+    ],
+    "fan_out_risk": "Low; mostly read-only governance.",
+    "temporal_logic": [],
+    "orchestration_risk": "Low directly, but useful for preventing risky changes.",
+    "business_semantics": "Gives visibility into which HubSpot workflows depend on pipeline runtime state."
+  }
+]

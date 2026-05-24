@@ -7,10 +7,22 @@ import {
   triggerGitlabSync,
   triggerHubSpotSync,
   triggerTypeformSync,
+  triggerZapierJsonImport,
   triggerZapierSync,
 } from "../supabaseStorage";
 
-type SyncResult = { inserted: number; updated: number; deactivated: number; deletedRejected?: number; total: number };
+type SyncResult = {
+  inserted: number;
+  updated: number;
+  deactivated: number;
+  deletedRejected?: number;
+  total: number;
+  proposed?: number;
+  findings?: number;
+  missing?: number;
+  changed?: number;
+  syncRunId?: string;
+};
 
 export function useIntegration(type: string) {
   return useQuery({
@@ -48,6 +60,7 @@ function useIntegrationSync(
     mutationFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
+      queryClient.invalidateQueries({ queryKey: ["pending"] });
       queryClient.invalidateQueries({ queryKey: ["rejected-hubspot-automations"] });
       queryClient.invalidateQueries({ queryKey: ["integration", integrationKey] });
     },
@@ -60,6 +73,18 @@ export function useHubSpotSync(): UseMutationResult<SyncResult, Error, void> {
 
 export function useZapierSync(): UseMutationResult<SyncResult, Error, void> {
   return useIntegrationSync(triggerZapierSync, "zapier");
+}
+
+export function useZapierJsonImport(): UseMutationResult<SyncResult, Error, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: triggerZapierJsonImport,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
+      queryClient.invalidateQueries({ queryKey: ["pending"] });
+      queryClient.invalidateQueries({ queryKey: ["integration", "zapier"] });
+    },
+  });
 }
 
 export function useTypeformSync(): UseMutationResult<SyncResult, Error, void> {

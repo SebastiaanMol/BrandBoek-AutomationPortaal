@@ -1,50 +1,61 @@
-import { useState, useEffect, useRef } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
-import { useAutomatiseringen, usePortalSettings, useAutomationLinks, useConfirmLink, useSetCleanupDeleteCandidate } from "@/lib/hooks";
+import { useState, useEffect } from "react";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import {
+  useAllConfirmedAutomationLinks,
+  useAutomatiseringen,
+  useAutomatiseringenIncludingLegacyGitlab,
+  useFlows,
+  usePortalSettings,
+  useSetCleanupDeleteCandidate,
+} from "@/lib/hooks";
 import { exportToCSV } from "@/lib/supabaseStorage";
 import { CATEGORIEEN, SYSTEMEN, STATUSSEN, Systeem, Automatisering } from "@/lib/types";
 import { StatusBadge, CategorieBadge, SystemBadge, SourceBadge } from "@/components/Badges";
+import { AutomationFunnel } from "@/components/AutomationFunnel";
+import { AutomationProcessJourneyMembership } from "@/components/AutomationProcessJourneyMembership";
+import { getBackendAutomationTrace } from "@/lib/backendAutomationTrace";
+import { getAutomationDetailPresentation } from "@/lib/automationDetailPresentation";
+import { sortAutomationsForList, type AutomationListSortOrder } from "@/lib/automationListSort";
+import { HubSpotWorkflowCanvas } from "@/components/HubSpotWorkflowCanvas";
+import { TypeformProcessCard } from "@/components/flows/TypeformProcessCard";
+import { ZapierProcessCard } from "@/components/flows/ZapierProcessCard";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Download, Search as SearchIcon, Loader2, Pencil, Zap, Sparkles, Archive, RotateCcw, Clock } from "lucide-react";
+import { Download, Search as SearchIcon, Loader2, Pencil, Zap, Sparkles, Archive, RotateCcw, Clock, SlidersHorizontal, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
 
-export default function AlleAutomatiseringen() {
-  const [searchParams, setSearchParams] = useSearchParams();
+type SourceFilter = "alle" | "hubspot" | "gitlab" | "zapier" | "typeform";
+
+interface AlleAutomatiseringenProps {
+  sourceFilter?: SourceFilter;
+}
+
+export default function AlleAutomatiseringen({
+  sourceFilter = "alle",
+}: AlleAutomatiseringenProps) {
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { data, isLoading } = useAutomatiseringen();
   const { data: portalSettings } = usePortalSettings();
-  const [sortOrder, setSortOrder] = useState<"created_at" | "naam" | "status">("created_at");
+  const [sortOrder, setSortOrder] = useState<AutomationListSortOrder>("created_at");
   const [settingsApplied, setSettingsApplied] = useState(false);
-  const cleanupMarker = useSetCleanupDeleteCandidate();
-  const [openId, setOpenId] = useState<string | null>(searchParams.get("open") || null);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState<string>("alle");
   const [sysFilter, setSysFilter] = useState<string>("alle");
   const [statusFilter, setStatusFilter] = useState<string>("alle");
   const [koppelingFilter, setKoppelingFilter] = useState<string>("alle");
-  const automationRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [sourceFindingFilter, setSourceFindingFilter] = useState<string>("alle");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // When navigated here with ?open=ID, wait for data then open that item (clear filters so it's visible)
+  // Backwards compatibility for older links that opened the detail dialog.
   const pendingOpen = searchParams.get("open");
   useEffect(() => {
-    if (!pendingOpen || !data) return;
-    const exists = data.some((a) => a.id === pendingOpen);
-    if (exists) {
-      setOpenId(pendingOpen);
-      setQuery("");
-      setCatFilter("alle");
-      setSysFilter("alle");
-      setStatusFilter("alle");
-      setKoppelingFilter("alle");
-      setSortOrder(portalSettings?.standaardSortering ?? "created_at");
-      setSettingsApplied(true);
-    }
-  }, [pendingOpen, data, portalSettings]);
+    if (!pendingOpen) return;
+    navigate(`/automations/${encodeURIComponent(pendingOpen)}`, { replace: true });
+  }, [navigate, pendingOpen]);
 
   useEffect(() => {
     if (portalSettings && !settingsApplied) {
@@ -74,14 +85,21 @@ export default function AlleAutomatiseringen() {
       koppelingFilter === "alle" ||
       (koppelingFilter === "verbonden" && a.koppelingen.length > 0) ||
       (koppelingFilter === "niet-verbonden" && a.koppelingen.length === 0);
-    return matchesQuery && matchesCat && matchesSys && matchesStatus && matchesKoppeling;
+    const hasSourceFinding = getActiveSourceMissingFinding(a) != null;
+    const matchesSourceFinding =
+      sourceFindingFilter === "alle" ||
+      (sourceFindingFilter === "met-waarschuwing" && hasSourceFinding) ||
+      (sourceFindingFilter === "zonder-waarschuwing" && !hasSourceFinding);
+    const matchesSource =
+      sourceFilter === "alle" ||
+      (sourceFilter === "hubspot" && isHubSpotAutomation(a)) ||
+      (sourceFilter === "gitlab" && isGitLabAutomation(a)) ||
+      (sourceFilter === "zapier" && isZapierAutomation(a)) ||
+      (sourceFilter === "typeform" && isTypeformAutomation(a));
+    return matchesQuery && matchesCat && matchesSys && matchesStatus && matchesKoppeling && matchesSourceFinding && matchesSource;
   });
 
-  const sorted = [...filtered].sort((a, b) => {
-    if (sortOrder === "naam") return a.naam.localeCompare(b.naam, "nl");
-    if (sortOrder === "status") return a.status.localeCompare(b.status, "nl");
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-  });
+  const sorted = sortAutomationsForList(filtered, sortOrder);
 
   const hasActiveFilters = Boolean(
     query.trim() ||
@@ -89,8 +107,17 @@ export default function AlleAutomatiseringen() {
     sysFilter !== "alle" ||
     statusFilter !== "alle" ||
     koppelingFilter !== "alle" ||
+    sourceFindingFilter !== "alle" ||
     sortOrder !== (portalSettings?.standaardSortering ?? "created_at"),
   );
+  const activeHiddenFilterCount = [
+    catFilter !== "alle",
+    sysFilter !== "alle",
+    statusFilter !== "alle",
+    koppelingFilter !== "alle",
+    sourceFindingFilter !== "alle",
+    sortOrder !== (portalSettings?.standaardSortering ?? "created_at"),
+  ].filter(Boolean).length;
 
   const clearFilters = () => {
     setQuery("");
@@ -98,51 +125,9 @@ export default function AlleAutomatiseringen() {
     setSysFilter("alle");
     setStatusFilter("alle");
     setKoppelingFilter("alle");
+    setSourceFindingFilter("alle");
     setSortOrder(portalSettings?.standaardSortering ?? "created_at");
   };
-
-  const toggleAutomation = (id: string) => {
-    const nextOpenId = openId === id ? null : id;
-    setOpenId(nextOpenId);
-
-    const next = new URLSearchParams(searchParams);
-    if (nextOpenId) {
-      next.delete("tab");
-      next.set("open", nextOpenId);
-    } else {
-      next.delete("open");
-    }
-    setSearchParams(next, { replace: true });
-  };
-
-  useEffect(() => {
-    if (!pendingOpen || openId !== pendingOpen || sorted.length === 0) return;
-
-    const centerAutomation = () => {
-      const element = automationRefs.current[pendingOpen];
-      if (!element) return;
-
-      const rect = element.getBoundingClientRect();
-      const stickyHeaderOffset = 56;
-      const availableHeight = window.innerHeight - stickyHeaderOffset;
-      const targetTop = rect.height >= availableHeight
-        ? window.scrollY + rect.top - stickyHeaderOffset - 12
-        : window.scrollY + rect.top - stickyHeaderOffset - ((availableHeight - rect.height) / 2);
-
-      window.scrollTo({
-        top: Math.max(0, targetTop),
-        behavior: "smooth",
-      });
-    };
-
-    const frame = window.requestAnimationFrame(centerAutomation);
-    const afterExpand = window.setTimeout(centerAutomation, 350);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(afterExpand);
-    };
-  }, [openId, pendingOpen, sorted.length]);
 
   if (isLoading) {
     return (
@@ -162,54 +147,79 @@ export default function AlleAutomatiseringen() {
     a.click();
     URL.revokeObjectURL(url);
   };
-
   return (
-    <div className="space-y-4">
-      <h1 className="sr-only">All Automations</h1>
-      <div className="card-elevated p-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
+    <div className="space-y-5">
+      <h1 className="sr-only">Automations overzicht</h1>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-3 bg-muted/20 px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center">
+          <div className="relative min-w-0 flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all fields..." className="pl-9" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Zoek automations..." className="min-h-11 pl-9" />
           </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-expanded={filtersOpen}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+            {activeHiddenFilterCount > 0 && (
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold leading-none text-primary-foreground">
+                {activeHiddenFilterCount}
+              </span>
+            )}
+          </button>
+          {filtersOpen && (
+            <div className="grid w-full gap-3 rounded-xl border border-border bg-card p-3 shadow-sm sm:grid-cols-2 xl:basis-full xl:grid-cols-6">
           <Select value={catFilter} onValueChange={setCatFilter}>
-            <SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Categorie" /></SelectTrigger>
+            <SelectTrigger className="min-h-11 w-full"><SelectValue placeholder="Categorie" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="alle">All categories</SelectItem>
+              <SelectItem value="alle">Alle categorieen</SelectItem>
               {CATEGORIEEN.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={sysFilter} onValueChange={setSysFilter}>
-            <SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="Systeem" /></SelectTrigger>
+            <SelectTrigger className="min-h-11 w-full"><SelectValue placeholder="Systeem" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="alle">All systems</SelectItem>
+              <SelectItem value="alle">Alle systemen</SelectItem>
               {SYSTEMEN.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="min-h-11 w-full"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="alle">All statuses</SelectItem>
+              <SelectItem value="alle">Alle statussen</SelectItem>
               {STATUSSEN.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={koppelingFilter} onValueChange={setKoppelingFilter}>
-            <SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Koppelingen" /></SelectTrigger>
+            <SelectTrigger className="min-h-11 w-full"><SelectValue placeholder="Koppelingen" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="alle">Alle koppelingen</SelectItem>
               <SelectItem value="verbonden">Verbonden</SelectItem>
               <SelectItem value="niet-verbonden">Niet verbonden</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={sourceFindingFilter} onValueChange={setSourceFindingFilter}>
+            <SelectTrigger className="min-h-11 w-full"><SelectValue placeholder="Bronwaarschuwingen" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="alle">Alle bronwaarschuwingen</SelectItem>
+              <SelectItem value="met-waarschuwing">Met bronwaarschuwing</SelectItem>
+              <SelectItem value="zonder-waarschuwing">Zonder bronwaarschuwing</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as typeof sortOrder)}>
-            <SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Sortering" /></SelectTrigger>
+            <SelectTrigger className="min-h-11 w-full"><SelectValue placeholder="Sortering" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="created_at">Aanmaakdatum</SelectItem>
               <SelectItem value="naam">Naam (A–Z)</SelectItem>
               <SelectItem value="status">Status</SelectItem>
             </SelectContent>
           </Select>
+            </div>
+          )}
         </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
@@ -219,95 +229,98 @@ export default function AlleAutomatiseringen() {
               {hasActiveFilters && (
                 <button
                   onClick={clearFilters}
-                  className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm transition-colors hover:bg-secondary"
+                  className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   Filters wissen
                 </button>
               )}
               <button
                 onClick={downloadCSV}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm transition-colors hover:bg-secondary"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <Download className="h-4 w-4" /> Download CSV
               </button>
             </div>
           </div>
         </div>
-      </div>
 
-      {sorted.length > 0 && (
-        <div className="hidden grid-cols-[72px_minmax(220px,1fr)_128px_116px_minmax(280px,1.1fr)_88px_24px] gap-4 px-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground md:grid">
-          <span>ID</span>
-          <span>Naam</span>
-          <span>Status</span>
-          <span>Bron</span>
-          <span>Labels</span>
-          <span>Compleet</span>
-          <span />
-        </div>
-      )}
-
-      {sorted.map((a) => {
-        const isOpen = openId === a.id;
-        const score = completenessScore(a);
-        const showCategorie = !isSourceLabel(a.source, a.categorie);
-        const primarySystem = a.systemen[0] || "Anders";
-        const showPrimarySystem = !isSourceLabel(a.source, primarySystem);
-        return (
-          <div
-            key={a.id}
-            ref={(node) => {
-              automationRefs.current[a.id] = node;
-            }}
-            className="overflow-hidden rounded-lg border border-border bg-card shadow-sm"
-          >
-            <button
-              onClick={() => toggleAutomation(a.id)}
-              className="grid w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/50 md:grid-cols-[72px_minmax(220px,1fr)_128px_116px_minmax(280px,1.1fr)_88px_24px] md:items-center md:gap-4"
-            >
-              <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
-              <div className="min-w-0">
-                <span className="block truncate font-medium text-foreground" title={a.naam}>{a.naam}</span>
-                <span className="mt-0.5 block truncate text-xs text-muted-foreground md:hidden">
-                  {a.doel || "Geen doel ingevuld"}
-                </span>
-              </div>
-              <div className="flex min-w-0 items-center justify-start">
-                <StatusBadge status={a.status} />
-              </div>
-              <div className="flex min-w-0 items-center justify-start">
-                <SourceBadge source={a.source} />
-              </div>
-              <div className="flex min-w-0 flex-wrap items-center justify-start gap-2">
-                {showCategorie && <CategorieBadge categorie={a.categorie} />}
-                {showPrimarySystem && <SystemBadge systeem={primarySystem} />}
-                {a.gitlabFilePath && (
-                  <span className="badge-gitlab">GL</span>
-                )}
-              </div>
-              <CompletenessBadge score={score} />
-              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
-            </button>
-            <AnimatePresence>
-              {isOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                  className="overflow-hidden"
-                >
-                  <AutomatiseringDetailPanel
-                    a={a}
-                    cleanupMarker={cleanupMarker}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+      <div role="table" aria-label="Automations overzicht" className="overflow-hidden border-t border-border">
+        {sorted.length > 0 && (
+          <div role="rowgroup" className="hidden border-b border-border bg-muted/30 md:block">
+            <div role="row" className="grid grid-cols-[minmax(260px,1fr)_150px_140px_96px] gap-4 px-5 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              <span role="columnheader">Automation name</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Source</span>
+              <span role="columnheader" className="text-right">Acties</span>
+            </div>
           </div>
-        );
-      })}
-      {sorted.length === 0 && <p className="text-muted-foreground text-sm">No results found.</p>}
+        )}
+
+        <div role="rowgroup" className="divide-y divide-border">
+          {sorted.map((a) => {
+            const sourceMissingFinding = getActiveSourceMissingFinding(a);
+            return (
+              <div
+                key={a.id}
+                role="row"
+                className={`grid gap-3 px-4 py-4 transition-colors hover:bg-muted/30 md:grid-cols-[minmax(260px,1fr)_150px_140px_96px] md:items-center md:gap-4 md:px-5 ${
+                  sourceMissingFinding ? "bg-red-50/60 ring-1 ring-inset ring-red-200" : ""
+                }`}
+              >
+                <div role="cell" className="min-w-0">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="truncate text-sm font-medium text-foreground" title={a.naam}>{a.naam}</span>
+                    {sourceMissingFinding && (
+                      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                        <AlertTriangle className="h-3 w-3" />
+                        Bronwaarschuwing
+                      </span>
+                    )}
+                    {a.doel && (
+                      <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        {a.doel}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div role="cell" className="flex items-center justify-between gap-3 md:justify-start">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground md:hidden">
+                    Status
+                  </span>
+                  <StatusBadge status={a.status} />
+                </div>
+                <div role="cell" className="flex items-center justify-between gap-3 md:justify-start">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground md:hidden">
+                    Source
+                  </span>
+                  <div className="flex flex-col items-end gap-1 md:items-start">
+                    <SourceBadge source={a.source} />
+                    {sourceMissingFinding && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700">
+                        <AlertTriangle className="h-3 w-3" />
+                        Niet gevonden bij {formatSourceName(sourceMissingFinding.source)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div role="cell" className="flex items-center justify-stretch md:justify-end">
+                  <Link
+                    to={`/automations/${encodeURIComponent(a.id)}`}
+                    aria-label={`Open ${a.naam}`}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:w-auto"
+                  >
+                    Open
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+        {sorted.length === 0 && (
+          <p className="px-5 py-8 text-sm text-muted-foreground">Geen automations gevonden.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -342,17 +355,24 @@ function formatHubSpotUsage(a: Automatisering): string | null {
   return "Run-data niet beschikbaar via de HubSpot API";
 }
 
-function AutomatiseringDetailPanel({
+export function AutomatiseringDetailPanel({
   a,
   cleanupMarker,
+  variant = "inline",
 }: {
   a: Automatisering;
   cleanupMarker: ReturnType<typeof useSetCleanupDeleteCandidate>;
+  variant?: "inline" | "dialog" | "page";
 }) {
   const navigate = useNavigate();
-  const { data: links } = useAutomationLinks(a.id);
-  const confirmMutation = useConfirmLink();
+  const { data: flows = [] } = useFlows();
+  const { data: journeyAutomations = [] } = useAutomatiseringenIncludingLegacyGitlab();
+  const { data: confirmedLinks = [] } = useAllConfirmedAutomationLinks();
   const hubSpotUsage = formatHubSpotUsage(a);
+  const backendTrace = getBackendAutomationTrace(a);
+  const presentation = getAutomationDetailPresentation(a, backendTrace);
+  const hasSourceDetails = ["hubspot", "gitlab", "zapier", "typeform"].includes(a.source ?? "")
+    || Boolean(a.gitlabFilePath || a.gitlabEndpoint);
 
   async function handleCleanupMarker(marked: boolean): Promise<void> {
     try {
@@ -376,9 +396,90 @@ function AutomatiseringDetailPanel({
   }
 
   return (
-    <div className="px-5 pb-5 pt-3 border-t border-border space-y-5">
-      {/* Actions */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className={`${variant === "inline" ? "border-t border-border px-5 pb-5 pt-3" : "px-5 pb-5 pt-4"} space-y-5`}>
+      <section aria-label="Standaard automation uitleg" className="space-y-5">
+        <div className="rounded-xl border border-border bg-secondary/30 px-4 py-3">
+          <p className="label-uppercase mb-2">Wat doet deze automatisering?</p>
+          <div className="space-y-1.5">
+            {presentation.summaryLines.map((line, i) => (
+              <p key={i} className="text-sm text-foreground leading-relaxed">{line}</p>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="label-uppercase mb-2">Processtappen</p>
+          <div className="grid gap-2">
+            {presentation.processSteps.map((s, i) => (
+              <div key={`${s}-${i}`} className="flex items-start gap-3 rounded-lg border border-border bg-background px-3 py-3">
+                <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                  {i + 1}
+                </span>
+                <p className="text-sm text-foreground leading-relaxed pt-0.5">{s}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {presentation.triggerText && (
+          <div className="flex items-start gap-2">
+            <Zap className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+            <div>
+              <p className="label-uppercase mb-0.5">Wordt gestart door</p>
+              <p className="text-sm text-foreground">{presentation.triggerText}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-4 border-t border-border pt-4 md:grid-cols-2">
+          {a.fasen && a.fasen.length > 0 && (
+            <div>
+              <p className="label-uppercase mb-1.5">Bedrijfsfasen</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {a.fasen.map((f) => (
+                  <span key={f} className="px-2 py-0.5 rounded-full text-[11px] bg-secondary text-foreground border border-border">{f}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {a.owner && <Detail label="Owner" value={a.owner} />}
+          {a.afhankelijkheden && <Detail label="Dependencies" value={a.afhankelijkheden} />}
+          {hubSpotUsage && (
+            <div>
+              <p className="label-uppercase mb-0.5">HubSpot gebruik</p>
+              <p className="inline-flex items-center gap-1.5 text-sm text-foreground">
+                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                {hubSpotUsage}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="label-uppercase mb-1">Systemen</p>
+          <div className="flex gap-1.5 flex-wrap">
+            {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
+          </div>
+        </div>
+
+        {a.verbeterideeën && <Detail label="Improvement Ideas" value={a.verbeterideeën} />}
+
+        {a.mermaidDiagram && (
+          <div>
+            <p className="label-uppercase mb-2">Flow Diagram</p>
+            <MermaidDiagram chart={a.mermaidDiagram} />
+          </div>
+        )}
+
+        <AutomationProcessJourneyMembership
+          automation={a}
+          automations={journeyAutomations}
+          flows={flows}
+          confirmedLinks={confirmedLinks}
+        />
+      </section>
+
+      <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap justify-end gap-3">
         <button
           onClick={() => void handleCleanupMarker(!a.cleanupDeleteCandidate)}
@@ -395,186 +496,44 @@ function AutomatiseringDetailPanel({
             </>
           )}
         </button>
-        <button
-          onClick={() => navigate(`/brandy?context=${a.id}&naam=${encodeURIComponent(a.naam)}`)}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <Sparkles className="h-3.5 w-3.5" /> Vraag Brandy
-        </button>
-        <button
-          onClick={() => navigate(`/bewerk/${a.id}`)}
-          className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-        >
-          <Pencil className="h-3.5 w-3.5" /> Bewerken
-        </button>
+        {variant !== "page" && (
+          <>
+            <button
+              onClick={() => navigate(`/brandy?context=${a.id}&naam=${encodeURIComponent(a.naam)}`)}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Vraag Brandy
+            </button>
+            <button
+              onClick={() => navigate(`/bewerk/${a.id}`)}
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Bewerken
+            </button>
+          </>
+        )}
         </div>
       </div>
 
-      {/* Plain-language description */}
-      {a.beschrijvingInSimpeleTaal && a.beschrijvingInSimpeleTaal.length > 0 ? (
-        <div className="bg-secondary/40 rounded-md px-4 py-3 space-y-1.5">
-          <p className="label-uppercase mb-2">Wat doet deze automatisering?</p>
-          {a.beschrijvingInSimpeleTaal.map((line, i) => (
-            <p key={i} className="text-sm text-foreground leading-relaxed">{line}</p>
-          ))}
-        </div>
-      ) : a.doel ? (
-        <div className="bg-secondary/40 rounded-md px-4 py-3">
-          <p className="label-uppercase mb-1">Wat doet deze automatisering?</p>
-          <p className="text-sm text-foreground leading-relaxed">{a.doel}</p>
-        </div>
-      ) : null}
-
-      {/* Trigger */}
-      {a.trigger && (
-        <div className="flex items-start gap-2">
-          <Zap className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-          <div>
-            <p className="label-uppercase mb-0.5">Wordt gestart door</p>
-            <p className="text-sm text-foreground">{a.trigger}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Flow steps */}
-      {a.stappen.length > 0 && (
+      <section aria-label="Brondetails" className="space-y-4 border-t border-border pt-5">
         <div>
-          <p className="label-uppercase mb-2">Hoe werkt het?</p>
-          <div className="flex flex-col gap-1.5">
-            {a.stappen.map((s, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center mt-0.5">
-                  {i + 1}
-                </span>
-                <p className="text-sm text-foreground leading-snug pt-0.5">{s}</p>
-              </div>
-            ))}
-          </div>
+          <p className="label-uppercase">Brondetails</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            Bron-specifieke weergave, logica en technisch bewijs staan hier apart van de gewone gebruikersuitleg.
+          </p>
         </div>
-      )}
-
-      {/* Phase + meta row */}
-      <div className="grid md:grid-cols-2 gap-4 pt-1 border-t border-border">
-        {a.fasen && a.fasen.length > 0 && (
-          <div>
-            <p className="label-uppercase mb-1.5">Bedrijfsfasen</p>
-            <div className="flex gap-1.5 flex-wrap">
-              {a.fasen.map((f) => (
-                <span key={f} className="px-2 py-0.5 rounded-full text-[11px] bg-secondary text-foreground border border-border">{f}</span>
-              ))}
-            </div>
+        {a.source === "hubspot" && <HubSpotWorkflowCanvas automation={a} />}
+        <AutomationFunnel automation={a} />
+        <ZapierProcessCard automation={a} />
+        <TypeformProcessCard automation={a} />
+        {!hasSourceDetails && (
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+            Er zijn voor deze automation nog geen aanvullende brondetails beschikbaar.
           </div>
         )}
-        {a.owner && <Detail label="Owner" value={a.owner} />}
-        {a.afhankelijkheden && <Detail label="Dependencies" value={a.afhankelijkheden} />}
-        {hubSpotUsage && (
-          <div>
-            <p className="label-uppercase mb-0.5">HubSpot gebruik</p>
-            <p className="inline-flex items-center gap-1.5 text-sm text-foreground">
-              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-              {hubSpotUsage}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Systems */}
-      <div>
-        <p className="label-uppercase mb-1">Systemen</p>
-        <div className="flex gap-1.5 flex-wrap">
-          {a.systemen.map((s) => <SystemBadge key={s} systeem={s} />)}
-        </div>
-      </div>
-
-      {a.verbeterideeën && <Detail label="Improvement Ideas" value={a.verbeterideeën} />}
-
-      {a.mermaidDiagram && (
-        <div>
-          <p className="label-uppercase mb-2">Flow Diagram</p>
-          <MermaidDiagram chart={a.mermaidDiagram} />
-        </div>
-      )}
-
-      {/* Backend Script (shown on HubSpot automations with matched GitLab links) */}
-      {links && links.asSource.length > 0 && (
-        <div className="border-t border-border pt-4">
-          <p className="label-uppercase mb-2">Backend Script</p>
-          <div className="space-y-2">
-            {links.asSource.map((link) => (
-              <div key={link.id} className="bg-secondary rounded-[var(--radius-inner)] p-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs text-muted-foreground shrink-0">{link.target?.id}</span>
-                    <span className="text-sm font-medium truncate">{link.target?.naam}</span>
-                  </div>
-                  {link.target?.gitlab_file_path && (
-                    <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">{link.target.gitlab_file_path}</p>
-                  )}
-                </div>
-                {link.confirmed ? (
-                  <span className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Gekoppeld</span>
-                ) : (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Suggestie</span>
-                    <button
-                      onClick={() => confirmMutation.mutate(link.id)}
-                      disabled={confirmMutation.isPending}
-                      className="text-xs text-primary hover:underline disabled:opacity-50"
-                    >
-                      Bevestig
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* HubSpot Workflows (shown on GitLab automations called by HubSpot workflows) */}
-      {links && links.asTarget.length > 0 && (
-        <div className="border-t border-border pt-4">
-          <p className="label-uppercase mb-2">HubSpot Workflows</p>
-          <div className="space-y-2">
-            {links.asTarget.map((link) => (
-              <div key={link.id} className="bg-secondary rounded-[var(--radius-inner)] p-3 flex items-center justify-between gap-3">
-                <div className="min-w-0 flex items-center gap-2">
-                  <span className="font-mono text-xs text-muted-foreground shrink-0">{link.source?.id}</span>
-                  <span className="text-sm font-medium truncate">{link.source?.naam}</span>
-                </div>
-                {link.confirmed ? (
-                  <span className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Gekoppeld</span>
-                ) : (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Suggestie</span>
-                    <button
-                      onClick={() => confirmMutation.mutate(link.id)}
-                      disabled={confirmMutation.isPending}
-                      className="text-xs text-primary hover:underline disabled:opacity-50"
-                    >
-                      Bevestig
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </section>
     </div>
   );
-}
-
-function completenessScore(a: Automatisering): number {
-  const checks = [
-    !!a.doel?.trim(),
-    !!a.trigger?.trim(),
-    a.stappen?.length > 0,
-    a.systemen?.length > 0,
-    !!a.owner?.trim(),
-    a.fasen?.length > 0,
-  ];
-  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
 function isSourceLabel(source: string | undefined, label: string): boolean {
@@ -589,14 +548,30 @@ function isSourceLabel(source: string | undefined, label: string): boolean {
   return normalizedLabel === normalizedSource;
 }
 
-function CompletenessBadge({ score }: { score: number }) {
-  const color =
-    score === 100 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
-    score >= 67   ? "text-amber-600 bg-amber-50 border-amber-200" :
-                    "text-red-600 bg-red-50 border-red-200";
-  return (
-    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${color}`}>
-      {score}%
-    </span>
-  );
+function isHubSpotAutomation(a: Automatisering): boolean {
+  return a.source === "hubspot";
+}
+
+function isGitLabAutomation(a: Automatisering): boolean {
+  return a.source === "gitlab" || Boolean(a.gitlabFilePath);
+}
+
+function isZapierAutomation(a: Automatisering): boolean {
+  return a.source === "zapier";
+}
+
+function isTypeformAutomation(a: Automatisering): boolean {
+  return a.source === "typeform";
+}
+
+function getActiveSourceMissingFinding(a: Automatisering) {
+  return a.sourceFindings?.find((finding) => finding.type === "source_missing" && !finding.resolvedAt);
+}
+
+function formatSourceName(source: string | undefined | null): string {
+  if (source === "hubspot") return "HubSpot";
+  if (source === "gitlab") return "GitLab";
+  if (source === "zapier") return "Zapier";
+  if (source === "typeform") return "Typeform";
+  return "de bron";
 }

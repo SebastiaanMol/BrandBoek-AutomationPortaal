@@ -127,7 +127,7 @@ export default function PipelineDetail(): ReactNode {
         <div
           className="rounded-2xl p-6 mb-6"
           style={{
-            background: `linear-gradient(135deg, ${color.from} 0%, ${color.to} 100%)`,
+            background: color.from,
           }}
         >
           <div className="flex items-start justify-between gap-4">

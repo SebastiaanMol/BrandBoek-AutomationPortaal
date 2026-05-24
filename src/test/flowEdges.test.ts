@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFlowEdges } from "@/components/flows/FlowCanvas";
+import { buildFlowEdges } from "@/lib/flowEdges";
 import type { Automatisering } from "@/lib/types";
 
 function makeAuto(id: string, targets: string[] = []): Automatisering {
@@ -48,6 +48,45 @@ describe("buildFlowEdges", () => {
     expect(edges).toHaveLength(2);
     expect(edges[0]).toMatchObject({ from: "x", to: "y" });
     expect(edges[1]).toMatchObject({ from: "y", to: "z" });
+  });
+
+  it("builds official GitLab flow edges from confirmed automation_links", () => {
+    const ids = ["hubspot", "other", "gitlab"];
+    const autoMap = new Map([
+      ["hubspot", makeAuto("hubspot")],
+      ["other", makeAuto("other")],
+      ["gitlab", makeAuto("gitlab")],
+    ]);
+    const edges = buildFlowEdges(ids, autoMap, [
+      { sourceId: "hubspot", targetId: "gitlab" },
+    ]);
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      from: "hubspot",
+      to: "gitlab",
+      label: "",
+      evidence: { level: "confirmed", label: "Bevestigd" },
+    });
+  });
+
+  it("falls back to koppelingen when no confirmed automation_links exist inside the flow", () => {
+    const ids = ["a", "b"];
+    const autoMap = new Map([
+      ["a", makeAuto("a", ["b"])],
+      ["b", makeAuto("b")],
+    ]);
+    const edges = buildFlowEdges(ids, autoMap, [
+      { sourceId: "external", targetId: "b" },
+    ]);
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      from: "a",
+      to: "b",
+      label: "",
+      evidence: { level: "confirmed", label: "Bevestigd" },
+    });
   });
 
   it("returns empty for single automation", () => {

@@ -340,7 +340,7 @@ export default function Analyse() {
       <Tabs defaultValue="timeline" className="w-full">
         {/* Hero + tab nav as one connected card */}
         <div className="mx-6 mt-6 rounded-2xl border border-border overflow-hidden shadow-sm">
-          <header className="relative bg-gradient-hero px-8 py-8">
+          <header className="relative bg-primary-soft px-8 py-8">
             <div className="flex items-center gap-2 mb-3">
               <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
                 <BarChart3 className="w-4 h-4" />
@@ -441,7 +441,7 @@ export default function Analyse() {
                           key={a.id}
                           className="bg-card border border-border rounded-lg p-2.5 shadow-sm hover:shadow-md transition-shadow cursor-pointer hover:bg-secondary/50"
                           style={{ borderLeftWidth: 3, borderLeftColor: color }}
-                          onClick={() => navigate(`/alle?open=${a.id}`)}
+                          onClick={() => navigate(`/automations/${encodeURIComponent(a.id)}`)}
                         >
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-[9px] text-muted-foreground">{a.id}</span>
@@ -769,7 +769,7 @@ export default function Analyse() {
                     <div
                       key={automation.id}
                       className="flex cursor-pointer flex-col gap-2 py-3 transition-colors hover:bg-secondary/40 sm:flex-row sm:items-center sm:justify-between"
-                      onClick={() => navigate(`/alle?open=${automation.id}`)}
+                      onClick={() => navigate(`/automations/${encodeURIComponent(automation.id)}`)}
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -863,7 +863,7 @@ export default function Analyse() {
                     return (
                       <div
                         key={a.id}
-                        onClick={() => navigate(`/alle?open=${a.id}`)}
+                        onClick={() => navigate(`/automations/${encodeURIComponent(a.id)}`)}
                         className="grid w-full cursor-pointer gap-3 px-4 py-4 text-left transition-colors hover:bg-secondary/50 lg:grid-cols-[190px_1fr_110px_140px_150px] lg:items-start lg:gap-4"
                       >
                         <div>

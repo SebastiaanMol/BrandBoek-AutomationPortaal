@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
 import type { FlowSuggestionGroup } from "@/lib/flowSuggestionGroups";
+import { sourceRuntimeRoleLabel } from "@/lib/automationRoles";
+import { evidenceFromSuggestion, type FlowEvidence } from "@/lib/flowEvidence";
 import {
   useBevestigFlowSuggestie,
   useOngedaanBevestigFlowSuggestie,
@@ -54,12 +56,28 @@ function StepBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
+function RoleBadge({ source, categorie }: { source?: string | null; categorie?: string | null }) {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+      {sourceRuntimeRoleLabel(source, categorie)}
+    </span>
+  );
+}
+
 function getStepLabels(group: FlowSuggestionGroup): Map<string, string> {
   return new Map(group.nodes.map((node, index) => [node.id, String(index + 1)]));
 }
 
 function edgeId(suggestion: FlowSuggestie): string {
   return `${suggestion.fromId}__${suggestion.toId}`;
+}
+
+function evidenceColor(level: FlowEvidence["level"]): string {
+  if (level === "confirmed") return "rgb(22 163 74)";
+  if (level === "hard") return "rgb(37 99 235)";
+  if (level === "strong") return "rgb(79 70 229)";
+  if (level === "weak") return "rgb(234 179 8)";
+  return "rgb(148 163 184)";
 }
 
 function layoutSuggestionNodes(group: FlowSuggestionGroup): Record<string, { x: number; y: number }> {
@@ -133,6 +151,7 @@ function buildSuggestionGraph(
             <div className="mb-2 flex items-center gap-1.5">
               <StepBadge>{stepLabels.get(node.id) ?? "?"}</StepBadge>
               <SourceBadge source={node.source} />
+              <RoleBadge source={node.source} categorie={node.categorie} />
             </div>
             <p className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">{node.naam}</p>
           </div>
@@ -152,13 +171,8 @@ function buildSuggestionGraph(
   const edges: Edge[] = group.suggestions.map((suggestion) => {
     const id = edgeId(suggestion);
     const selected = id === selectedEdgeId;
-    const color = suggestion.confirmed
-      ? "rgb(22 163 74)"
-      : suggestion.rejected
-        ? "rgb(148 163 184)"
-        : suggestion.zekerheid === "webhook"
-          ? "rgb(34 197 94)"
-          : "rgb(234 179 8)";
+    const evidence = evidenceFromSuggestion(suggestion);
+    const color = suggestion.rejected ? "rgb(148 163 184)" : evidenceColor(evidence.level);
 
     return {
       id,
@@ -166,7 +180,7 @@ function buildSuggestionGraph(
       target: suggestion.toId,
       type: "smoothstep",
       animated: selected && !suggestion.rejected,
-      label: suggestion.confirmed ? "geselecteerd" : suggestion.rejected ? "verworpen" : suggestion.zekerheid,
+      label: suggestion.rejected ? "Verworpen" : evidence.label,
       markerEnd: { type: MarkerType.ArrowClosed, color },
       style: {
         stroke: color,
@@ -214,10 +228,12 @@ function SuggestionPanel({
   onOngedaanBevestig: ReturnType<typeof useOngedaanBevestigFlowSuggestie>;
   onOngedaanVerwerp: ReturnType<typeof useOngedaanVerwerpFlowSuggestie>;
 }) {
+  const evidence = evidenceFromSuggestion(s);
+
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Geselecteerde koppeling</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Geselecteerde automation-overgang</p>
         <div className="rounded-xl border border-border bg-muted/20 p-3">
           <div className="mb-3 inline-flex h-7 items-center rounded-full bg-primary/10 px-2.5 text-xs font-bold text-primary">
             {fromStep} → {toStep}
@@ -231,19 +247,17 @@ function SuggestionPanel({
       </div>
 
       <div className="rounded-xl border border-border p-3">
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {s.zekerheid === "webhook" ? "Webhook match" : "AI-suggestie"}
-        </p>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Bewijs voor deze overgang
+          </p>
+          <EvidenceBadge evidence={evidence} />
+          <span className="text-[10px] font-semibold text-muted-foreground">
+            {evidence.score}% zekerheid
+          </span>
+        </div>
         <p className="text-sm leading-relaxed text-foreground">
-          {s.zekerheid === "webhook" ? (
-            <>
-              Endpoint{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{s.redenering}</code>{" "}
-              is exact gematcht.
-            </>
-          ) : (
-            <em>{s.redenering || "Geen toelichting beschikbaar."}</em>
-          )}
+          {evidence.reason}
         </p>
       </div>
 
@@ -304,7 +318,7 @@ function SuggestionPanel({
               )
             }
           >
-            Selecteer koppeling
+            Selecteer overgang
           </Button>
           <Button
             variant="outline"
@@ -321,6 +335,25 @@ function SuggestionPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function EvidenceBadge({ evidence }: { evidence: FlowEvidence }) {
+  const className =
+    evidence.level === "confirmed"
+      ? "bg-green-100 text-green-700"
+      : evidence.level === "hard"
+        ? "bg-blue-100 text-blue-700"
+        : evidence.level === "strong"
+          ? "bg-indigo-100 text-indigo-700"
+          : evidence.level === "weak"
+            ? "bg-yellow-100 text-yellow-800"
+            : "bg-slate-100 text-slate-700";
+
+  return (
+    <span className={`${className} inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold`}>
+      {evidence.label}
+    </span>
   );
 }
 
@@ -354,6 +387,14 @@ export function FlowSuggestionVisualReview({
 
   return (
     <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] rounded-2xl border border-border bg-card shadow-sm">
+      <div className="border-b border-border bg-muted/20 px-5 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Flow = automation-keten
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Selecteer alleen de overgangen tussen automations. De binnenkant van een GitLab backend worker staat in de automation funnel.
+        </p>
+      </div>
       <div className="grid min-h-0 gap-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-h-[520px] border-b border-border bg-[hsl(var(--surface-sunken))] lg:border-b-0 lg:border-r">
           <ReactFlow

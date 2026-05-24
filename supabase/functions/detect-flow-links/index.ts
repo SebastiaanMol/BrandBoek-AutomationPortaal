@@ -34,6 +34,17 @@ type Automation = {
   source: string | null;
   webhook_paths: string[];
   endpoints: string[];
+  external_id: string | null;
+  gitlab_file_path: string | null;
+  import_proposal: {
+    gitlab_endpoint?: {
+      method?: string;
+      endpoint?: string;
+      api_file?: string;
+      handler?: string;
+      calls?: Array<{ depth: number; kind: string; from: string; to: string; file: string | null }>;
+    };
+  } | null;
 };
 
 type Suggestie = {
@@ -50,8 +61,36 @@ type AiDetectionResult = {
   note?: string;
 };
 
+function normalizeEndpointPath(value: string): string {
+  return value
+    .trim()
+    .replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "")
+    .split(/[?#]/)[0]
+    .replace(/\/+$/, "");
+}
+
 function endpointMatches(webhookPath: string, endpoint: string): boolean {
-  return webhookPath.endsWith(endpoint);
+  const normalizedWebhook = normalizeEndpointPath(webhookPath);
+  const normalizedEndpoint = normalizeEndpointPath(endpoint);
+  if (!normalizedWebhook || !normalizedEndpoint) return false;
+  return normalizedWebhook === normalizedEndpoint || normalizedWebhook.endsWith(normalizedEndpoint);
+}
+
+function buildWebhookMatchReason(source: Automation, endpoint: string): string {
+  const normalizedEndpoint = normalizeEndpointPath(endpoint) || endpoint;
+  if (isTypeformAutomation(source)) {
+    return `Webhook-match: Typeform geeft formulierinzending door aan endpoint ${normalizedEndpoint}.`;
+  }
+
+  if (isZapierAutomation(source)) {
+    return `Webhook-match: Zapier roept endpoint ${normalizedEndpoint} aan.`;
+  }
+
+  return `Webhook-match: automation roept endpoint ${normalizedEndpoint} aan.`;
+}
+
+function shouldAutoConfirmSuggestion(suggestion: Suggestie): boolean {
+  return suggestion.confidence >= 1.0 && suggestion.reasoning.toLowerCase().startsWith("webhook-match:");
 }
 
 function truncate(value: string | null | undefined, maxLength = MAX_TEXT_FIELD_LENGTH): string {
@@ -131,7 +170,7 @@ function detectWebhookSuggestions(autos: Automation[]): Suggestie[] {
               from_id: source.id,
               to_id: target.id,
               confidence: 1.0,
-              reasoning: endpoint,
+              reasoning: buildWebhookMatchReason(source, endpoint),
             });
           }
         }
@@ -140,6 +179,94 @@ function detectWebhookSuggestions(autos: Automation[]): Suggestie[] {
   }
 
   return [...suggestions.values()];
+}
+
+function detectGitLabBackendSuggestions(autos: Automation[]): Suggestie[] {
+  const suggestions = new Map<string, Suggestie>();
+  const gitlabAutos = autos.filter((auto) => isGitLabAutomation(auto));
+
+  for (const source of gitlabAutos) {
+    const sourceCalls = meaningfulGitLabCallNames(source);
+    if (sourceCalls.size === 0) continue;
+
+    for (const target of gitlabAutos) {
+      if (source.id === target.id) continue;
+      if (!sharesBusinessContext(source, target)) continue;
+
+      const targetHandler = normalizeFunctionName(target.import_proposal?.gitlab_endpoint?.handler);
+      if (targetHandler && sourceCalls.has(targetHandler)) {
+        addSuggestion(suggestions, {
+          from_id: source.id,
+          to_id: target.id,
+          confidence: 0.95,
+          reasoning: `Backend worker roept handler ${targetHandler} aan`,
+        });
+        continue;
+      }
+
+      const targetCalls = meaningfulGitLabCallNames(target);
+      const shared = [...sourceCalls].find((call) => targetCalls.has(call));
+      if (shared) {
+        addSuggestion(suggestions, {
+          from_id: source.id,
+          to_id: target.id,
+          confidence: 0.95,
+          reasoning: `Backend workers delen vervolgstap ${shared}`,
+        });
+      }
+    }
+  }
+
+  return [...suggestions.values()];
+}
+
+function isGitLabAutomation(auto: Automation): boolean {
+  return auto.source === "gitlab" || Boolean(auto.gitlab_file_path);
+}
+
+function isZapierAutomation(auto: Automation): boolean {
+  return auto.source === "zapier";
+}
+
+function isTypeformAutomation(auto: Automation): boolean {
+  return auto.source === "typeform";
+}
+
+function meaningfulGitLabCallNames(auto: Automation): Set<string> {
+  const calls = auto.import_proposal?.gitlab_endpoint?.calls ?? [];
+  const names = new Set<string>();
+
+  for (const call of calls) {
+    const normalized = normalizeFunctionName(call.to);
+    if (normalized && isMeaningfulBackendFunction(normalized)) names.add(normalized);
+  }
+
+  return names;
+}
+
+function normalizeFunctionName(value: string | null | undefined): string {
+  const raw = value?.split("::").at(-1)?.split(".").at(-1) ?? "";
+  return raw
+    .replace(/[^a-zA-Z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+function isMeaningfulBackendFunction(name: string): boolean {
+  if (name.length < 8) return false;
+  return !/^(get|set|parse|format|client|basic|batch|search|update|create|read|list|do_search|api)$/i.test(name);
+}
+
+function sharesBusinessContext(a: Automation, b: Automation): boolean {
+  const aSystems = new Set((a.systemen ?? []).filter((system) => system !== "GitLab"));
+  const bSystems = new Set((b.systemen ?? []).filter((system) => system !== "GitLab"));
+  if ([...aSystems].some((system) => bSystems.has(system))) return true;
+
+  const aText = `${a.naam} ${a.doel} ${a.endpoints?.join(" ")}`.toLowerCase();
+  const bText = `${b.naam} ${b.doel} ${b.endpoints?.join(" ")}`.toLowerCase();
+  return ["btw", "jr", "ib", "vpb", "va", "sales", "wefact", "contact", "company", "bank"].some(
+    (term) => aText.includes(term) && bText.includes(term),
+  );
 }
 
 function extractSuggestionsFromText(content: string): { from: string; to: string; redenering: string }[] {
@@ -341,7 +468,7 @@ async function replaceSuggestionsForSources(
   db: ReturnType<typeof createClient>,
   sourceIds: string[],
   suggestions: Suggestie[],
-  options: { preserveWebhookSuggestions?: boolean } = {},
+  options: { preserveWebhookSuggestions?: boolean; preserveTechnicalSuggestions?: boolean } = {},
 ) {
   const uniqueSourceIds = [...new Set(sourceIds)].filter(Boolean);
   if (uniqueSourceIds.length === 0) return;
@@ -355,7 +482,7 @@ async function replaceSuggestionsForSources(
     .in("from_id", uniqueSourceIds);
 
   if (options.preserveWebhookSuggestions) {
-    deleteQuery = deleteQuery.lt("confidence", 1);
+    deleteQuery = deleteQuery.lt("confidence", options.preserveTechnicalSuggestions ? 0.9 : 1);
   }
 
   const { error: deleteError } = await deleteQuery;
@@ -365,16 +492,51 @@ async function replaceSuggestionsForSources(
 
   const uniqueSuggestions = new Map<string, Suggestie>();
   for (const suggestion of suggestions) addSuggestion(uniqueSuggestions, suggestion);
+  const suggestionsToInsert = [...uniqueSuggestions.values()];
+  const targetIds = [...new Set(suggestionsToInsert.map((suggestion) => suggestion.to_id))].filter(Boolean);
 
-  const { error: insertError } = await db.from("automatisering_ai_flows").insert(
-    [...uniqueSuggestions.values()].map((s) => ({
+  if (targetIds.length === 0) return;
+
+  const { data: existingRows, error: existingError } = await db
+    .from("automatisering_ai_flows")
+    .select("from_id, to_id")
+    .in("from_id", uniqueSourceIds)
+    .in("to_id", targetIds);
+  if (existingError) throw existingError;
+
+  const existingPairs = new Set(
+    (existingRows ?? []).map((row: { from_id: string; to_id: string }) => `${row.from_id}|${row.to_id}`),
+  );
+  const autoConfirmedSuggestions = suggestionsToInsert.filter(shouldAutoConfirmSuggestion);
+  if (autoConfirmedSuggestions.length > 0) {
+    await Promise.all(
+      autoConfirmedSuggestions.map(async (suggestion) => {
+        const { error: confirmError } = await db
+          .from("automatisering_ai_flows")
+          .update({ confirmed: true, rejected: false })
+          .eq("from_id", suggestion.from_id)
+          .eq("to_id", suggestion.to_id);
+        if (confirmError) throw confirmError;
+      }),
+    );
+  }
+
+  const newSuggestions = suggestionsToInsert.filter(
+    (suggestion) => !existingPairs.has(`${suggestion.from_id}|${suggestion.to_id}`),
+  );
+
+  if (newSuggestions.length === 0) return;
+
+  const { error: insertError } = await db.from("automatisering_ai_flows").upsert(
+    newSuggestions.map((s) => ({
       from_id: s.from_id,
       to_id: s.to_id,
       confidence: s.confidence,
       reasoning: s.reasoning,
-      confirmed: false,
+      confirmed: shouldAutoConfirmSuggestion(s),
       rejected: false,
     })),
+    { onConflict: "from_id,to_id", ignoreDuplicates: true },
   );
   if (insertError) throw insertError;
 }
@@ -396,7 +558,7 @@ serve(async (req) => {
 
     const { data: rows, error: fetchError } = await db
       .from("automatiseringen")
-      .select("id, naam, categorie, doel, trigger_beschrijving, systemen, stappen, status, source, webhook_paths, endpoints")
+      .select("id, naam, categorie, doel, trigger_beschrijving, systemen, stappen, status, source, webhook_paths, endpoints, external_id, gitlab_file_path, import_proposal")
       .or("source.is.null,import_status.is.null,import_status.eq.approved");
     if (fetchError) throw fetchError;
 
@@ -414,19 +576,23 @@ serve(async (req) => {
     }
 
     const webhookSuggestions = detectWebhookSuggestions(autos);
+    const backendSuggestions = detectGitLabBackendSuggestions(autos);
     let savedWebhook = 0;
+    let savedBackend = 0;
     let aiSuggestions: Suggestie[] = [];
     let aiStatus: AiDetectionResult["status"] | undefined;
     let aiRawCount: number | undefined;
     let aiNote: string | undefined;
 
     if (mode === "webhook" || mode === "all") {
+      const technicalSuggestions = [...webhookSuggestions, ...backendSuggestions];
       await replaceSuggestionsForSources(
         db,
-        webhookSuggestions.map((s) => s.from_id),
-        webhookSuggestions,
+        technicalSuggestions.map((s) => s.from_id),
+        technicalSuggestions,
       );
       savedWebhook = webhookSuggestions.length;
+      savedBackend = backendSuggestions.length;
     }
 
     if (mode === "ai" || mode === "all") {
@@ -442,7 +608,7 @@ serve(async (req) => {
           db,
           focusAutos.map((a) => a.id),
           aiSuggestions,
-          { preserveWebhookSuggestions: true },
+          { preserveWebhookSuggestions: true, preserveTechnicalSuggestions: true },
         );
       }
     }
@@ -455,6 +621,7 @@ serve(async (req) => {
       limit,
       processed: mode === "ai" ? Math.min(limit, Math.max(0, aiAutos.length - offset)) : undefined,
       webhook: savedWebhook,
+      backend: savedBackend,
       ai: aiSuggestions.length,
       aiStatus,
       aiRawCount,
