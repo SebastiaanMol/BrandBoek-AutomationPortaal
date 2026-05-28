@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import AutomationDetailPage from "@/pages/AutomationDetailPage";
@@ -130,6 +130,7 @@ vi.mock("@/lib/hooks", () => ({
   useAutomatiseringenIncludingLegacyGitlab: () => useJourneyAutomationsMock(),
   useFlows: () => ({ data: [] }),
   useAllConfirmedAutomationLinks: () => ({ data: [] }),
+  useFlowSuggesties: () => ({ data: [] }),
   usePipelines: () => ({ data: [] }),
   useSetCleanupDeleteCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -145,40 +146,37 @@ describe("Automation detail presentation", () => {
   it("keeps HubSpot webhook URLs and POST language out of the main detail copy", () => {
     renderDetail(hubspotAutomation);
 
-    const standardSection = screen.getByLabelText("Standaard automation uitleg");
-    expect(within(standardSection).getByText("Wat doet deze automatisering?")).toBeInTheDocument();
-    expect(within(standardSection).getByText("Processtappen")).toBeInTheDocument();
-    expect(within(standardSection).getByText("De automatisering start zodra de ingestelde HubSpot-voorwaarde geldt.")).toBeInTheDocument();
+    const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
+    expect(within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation?" })).toBeInTheDocument();
+    expect(within(hubspotTemplate).getByText("Startvoorwaarden")).toBeInTheDocument();
+    expect(within(hubspotTemplate).getByText("Webhook Action")).toBeInTheDocument();
+    expect(within(hubspotTemplate).getByText("Field mappings niet beschikbaar in HubSpot workflowdata")).toBeInTheDocument();
 
-    const standardText = standardSection.textContent ?? "";
-    expect(standardText).not.toContain("POST");
-    expect(standardText).not.toContain("https://example.test/private-webhook");
-    expect(standardText).not.toContain("Webhook ->");
-    expect(standardText).not.toContain("1284704094");
-
-    const sourceDetails = screen.getByLabelText("Brondetails");
-    within(sourceDetails).getByText("Stuurt door naar verwerking");
-
-    fireEvent.click(screen.getByRole("button", { name: /Stuurt door naar verwerking/i }));
-    screen.getByText("/private-webhook");
+    const summaryText = within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation?" }).closest("section")?.textContent ?? "";
+    expect(summaryText).not.toContain("POST");
+    expect(summaryText).not.toContain("https://example.test/private-webhook");
+    expect(summaryText).not.toContain("Webhook ->");
+    expect(summaryText).not.toContain("1284704094");
+    expect(within(hubspotTemplate).getByText("/private-webhook")).toBeInTheDocument();
   });
 
-  it("uses the standard top structure for Zapier automations and keeps Zapier details at the bottom", () => {
+  it("uses the Zapier detail template for Zapier automations", () => {
     renderDetail(zapierAutomation);
 
-    const standardSection = screen.getByLabelText("Standaard automation uitleg");
-    expect(within(standardSection).getByText("Wat doet deze automatisering?")).toBeInTheDocument();
-    expect(within(standardSection).getByText("Processtappen")).toBeInTheDocument();
-    expect(within(standardSection).getByText("Wordt gestart door")).toBeInTheDocument();
+    const zapierTemplate = screen.getByLabelText("Zapier automation detail");
+    expect(within(zapierTemplate).getByRole("heading", { name: "Wat doet deze Zap?" })).toBeInTheDocument();
+    expect(within(zapierTemplate).getByRole("heading", { name: "Betrokken apps" })).toBeInTheDocument();
+    expect(within(zapierTemplate).getByRole("heading", { name: "Zapier metadata" })).toBeInTheDocument();
+    expect(within(zapierTemplate).getByRole("heading", { name: "Gaps in deze Zap" })).toBeInTheDocument();
+    expect(within(zapierTemplate).getAllByText("Trustoo").length).toBeGreaterThan(0);
+    expect(within(zapierTemplate).getAllByText("Webhooks by Zapier").length).toBeGreaterThan(0);
 
-    const standardText = standardSection.textContent ?? "";
-    expect(standardText).not.toContain("POST");
-    expect(standardText).not.toContain("/sales/leads/hubspot/trustoo");
-    expect(standardText).not.toContain("handler");
-    expect(screen.queryByRole("heading", { name: "Wat doet deze Zap?" })).not.toBeInTheDocument();
-
-    const sourceDetails = screen.getByLabelText("Brondetails");
-    expect(within(sourceDetails).getByText("Zapier processtappen")).toBeInTheDocument();
+    const summaryText = within(zapierTemplate).getByRole("heading", { name: "Wat doet deze Zap?" }).closest("section")?.textContent ?? "";
+    expect(summaryText).not.toContain("POST");
+    expect(summaryText).not.toContain("/sales/leads/hubspot/trustoo");
+    expect(summaryText).not.toContain("handler");
+    expect(screen.queryByLabelText("Standaard automation uitleg")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Brondetails")).not.toBeInTheDocument();
   });
 
   it("uses a clean display name for GitLab endpoint automations on the detail header", () => {
@@ -187,16 +185,13 @@ describe("Automation detail presentation", () => {
     screen.getByRole("heading", { name: "Contact change endpoint" });
     expect(screen.queryByRole("heading", { name: /POST \/operations/ })).not.toBeInTheDocument();
 
-    const standardSection = screen.getByLabelText("Standaard automation uitleg");
-    expect(within(standardSection).getByText("Wat doet deze automatisering?")).toBeInTheDocument();
-    expect(within(standardSection).getByText("Processtappen")).toBeInTheDocument();
-    const standardText = standardSection.textContent ?? "";
-    expect(standardText).not.toContain("POST");
-    expect(standardText).not.toContain("/operations/hubspot/contact/updating_dealname");
-    expect(standardText).not.toContain("contact_change_endpoint");
-
-    const sourceDetails = screen.getByLabelText("Brondetails");
-    expect(within(sourceDetails).getByText("Logica")).toBeInTheDocument();
+    const gitlabTemplate = screen.getByLabelText("GitLab automation detail");
+    expect(within(gitlabTemplate).getByRole("heading", { name: "Wat doet deze backend automation?" })).toBeInTheDocument();
+    expect(within(gitlabTemplate).getByRole("heading", { name: "Backend uitvoering" })).toBeInTheDocument();
+    expect(within(gitlabTemplate).getByRole("heading", { name: "GitLab locatie" })).toBeInTheDocument();
+    expect(within(gitlabTemplate).getByRole("heading", { name: "Call graph" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Standaard automation uitleg")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Brondetails")).not.toBeInTheDocument();
   });
 });
 

@@ -1,17 +1,16 @@
-import type { Koppeling } from "./types";
-
 export interface FlowCandidate {
   automationIds: string[];
 }
 
 interface AutomationInput {
   id: string;
-  koppelingen: Koppeling[];
+  koppelingen?: unknown[];
 }
 
 interface ConfirmedLink {
   sourceId: string;
   targetId: string;
+  matchType?: string | null;
 }
 
 export function detectFlows(
@@ -19,6 +18,7 @@ export function detectFlows(
   confirmedLinks: ConfirmedLink[],
 ): FlowCandidate[] {
   const ids = new Set(automations.map((a) => a.id));
+  const webhookLinks = confirmedLinks.filter((link) => !link.matchType || link.matchType === "webhook");
 
   // ── Union-Find ────────────────────────────────────────────────────────────
   const parent: Record<string, string> = {};
@@ -35,15 +35,8 @@ export function detectFlows(
     if (ra !== rb) parent[ra] = rb;
   }
 
-  // Edges from koppelingen
-  for (const auto of automations) {
-    for (const kop of auto.koppelingen ?? []) {
-      if (ids.has(kop.doelId)) union(auto.id, kop.doelId);
-    }
-  }
-
-  // Edges from confirmed automation_links
-  for (const link of confirmedLinks) {
+  // Edges from webhook-proof automation_links only.
+  for (const link of webhookLinks) {
     if (ids.has(link.sourceId) && ids.has(link.targetId)) {
       union(link.sourceId, link.targetId);
     }
@@ -60,11 +53,9 @@ export function detectFlows(
   const multiNode = Object.values(components).filter((c) => c.length >= 2);
 
   // ── Topological sort (Kahn's algorithm) within each component ─────────────
-  const autoMap = new Map(automations.map((a) => [a.id, a]));
-
   // Pre-bucket confirmed links by component root to avoid O(components × links) inner loop
   const linksByRoot = new Map<string, ConfirmedLink[]>();
-  for (const link of confirmedLinks) {
+  for (const link of webhookLinks) {
     if (ids.has(link.sourceId) && ids.has(link.targetId)) {
       const root = find(link.sourceId);
       if (!linksByRoot.has(root)) linksByRoot.set(root, []);
@@ -73,7 +64,6 @@ export function detectFlows(
   }
 
   return multiNode.map((componentIds) => {
-    const componentSet = new Set(componentIds);
     const adj: Record<string, string[]> = {};
     const inDegree: Record<string, number> = {};
 
@@ -90,14 +80,6 @@ export function detectFlows(
       seenEdges.add(key);
       adj[from].push(to);
       inDegree[to]++;
-    }
-
-    for (const id of componentIds) {
-      const auto = autoMap.get(id);
-      if (!auto) continue;
-      for (const kop of auto.koppelingen ?? []) {
-        if (componentSet.has(kop.doelId)) addEdge(id, kop.doelId);
-      }
     }
 
     for (const link of linksByRoot.get(find(componentIds[0])) ?? []) {

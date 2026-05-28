@@ -61,7 +61,7 @@ describe("buildConceptJourneys", () => {
     expect(journeys).toHaveLength(1);
     expect(journeys[0].automationIds).toEqual(["hubspot", "gitlab"]);
     expect(journeys[0].gitlabWorker).toBe("Contact change endpoint");
-    expect(journeys[0].confidenceLabel).toBe("Webhook");
+    expect(journeys[0].confidenceLabel).toBe("100% webhook");
   });
 
   it("renders a Zapier to GitLab webhook match as a concept journey", () => {
@@ -79,5 +79,32 @@ describe("buildConceptJourneys", () => {
     expect(journeys[0].sourceSystem).toBe("Zapier");
     expect(journeys[0].description).toContain("roept Zapier een backend automation aan");
     expect(journeys[0].endpoint).toBe("/sales/leads/hubspot/trustoo");
+  });
+
+  it("renders a Typeform to GitLab webhook match as a concept journey", () => {
+    const journeys = buildConceptJourneys([
+      makeSuggestie("typeform-intake", "gitlab-intake", {
+        fromNaam: "Intakeformulier",
+        fromSource: "typeform",
+        toNaam: "Process intake (POST /forms/intake)",
+        redenering: "Webhook-match: Typeform geeft formulierinzending door aan endpoint /forms/intake.",
+      }),
+    ]);
+
+    expect(journeys).toHaveLength(1);
+    expect(journeys[0].automationIds).toEqual(["typeform-intake", "gitlab-intake"]);
+    expect(journeys[0].sourceSystem).toBe("Typeform");
+    expect(journeys[0].confidenceLabel).toBe("100% webhook");
+  });
+
+  it("ignores AI and non-webhook suggestions", () => {
+    const journeys = buildConceptJourneys([
+      makeSuggestie("hubspot", "gitlab", {
+        zekerheid: "ai",
+        redenering: "Naam lijkt op elkaar.",
+      }),
+    ]);
+
+    expect(journeys).toEqual([]);
   });
 });

@@ -14,7 +14,14 @@ describe("Typeform webhook link detection", () => {
 
   it("uses exact normalized webhook-to-endpoint matching instead of name matching", () => {
     expect(source).toContain("endpointMatches(webhookPath, endpoint)");
+    expect(source).toContain("return normalizedWebhook === normalizedEndpoint;");
+    expect(source).not.toContain("normalizedWebhook.endsWith(normalizedEndpoint)");
     expect(source).toContain("source.webhook_paths");
     expect(source).toContain("target.endpoints");
+  });
+
+  it("does not save AI or backend suggestions as process journey proof", () => {
+    expect(source).toContain("Procesreisvorming gebruikt alleen exacte webhook/endpoint-matches.");
+    expect(source).not.toContain("const technicalSuggestions = [...webhookSuggestions, ...backendSuggestions]");
   });
 });

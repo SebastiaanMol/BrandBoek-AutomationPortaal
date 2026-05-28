@@ -36,4 +36,43 @@ describe("portal-owned sync safety", () => {
     expect(combinedSource).toContain("status: \"auth_failed\"");
     expect(combinedSource).toContain("recordSourceSyncFailure");
   });
+
+  it("allows existing source-owned automations to refresh read-only source snapshots only", () => {
+    expect(helperSource).toContain("updateExistingSourceSnapshot");
+    expect(helperSource).toContain("SOURCE_MANAGED_AUTOMATION_FIELDS");
+    expect(helperSource).toContain("\"import_proposal\"");
+    expect(helperSource).toContain("\"last_synced_at\"");
+    expect(helperSource).not.toContain("SOURCE_MANAGED_AUTOMATION_FIELDS = [\"naam\"");
+    expect(helperSource).not.toContain("SOURCE_MANAGED_AUTOMATION_FIELDS = [\"owner\"");
+  });
+
+  it("preserves previously resolved HubSpot workflow audit actors when a later sync cannot refetch them", () => {
+    expect(helperSource).toContain("import_proposal");
+    expect(helperSource).toContain("preserveHubSpotWorkflowAudit");
+    expect(helperSource).toContain("existingWorkflow.createdBy");
+    expect(helperSource).toContain("existingWorkflow.updatedBy");
+  });
+
+  it("includes HubSpot audit-log lookup support for workflow actors", () => {
+    const source = readSyncSource("hubspot-sync");
+
+    expect(source).toContain("fetchWorkflowAuditLogActors");
+    expect(source).toContain("fetchWorkflowAuditLogActorsForTimestamp");
+    expect(source).toContain("workflowAuditSearchWindows");
+    expect(source).toContain("auditWorkflowId");
+    expect(source).toContain("occurredAfter");
+    expect(source).toContain("occurredBefore");
+    expect(source).toContain("account-info/v3/activity/audit-logs");
+    expect(source).toContain("account-info/2026-03/activity/audit-logs");
+    expect(source).toContain("actingUser");
+    expect(source).toContain("targetObjectId");
+    expect(source).toContain("auditDebug");
+  });
+
+  it("supports persistent incomplete source-data findings with stable evidence keys", () => {
+    expect(helperSource).toContain("source_data_incomplete");
+    expect(helperSource).toContain("buildSourceQualityMissingEvidence");
+    expect(helperSource).toContain("missing_evidence_key");
+    expect(helperSource).toContain("resolveSourceQualityFindings");
+  });
 });

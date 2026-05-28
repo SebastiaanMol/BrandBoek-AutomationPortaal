@@ -34,7 +34,11 @@ export function buildConceptJourneys(suggesties: FlowSuggestie[]): ConceptJourne
   const journeys: ConceptJourney[] = [];
   const seen = new Set<string>();
   const startSuggestions = collapseSuggestionsByStartAndEndpoint(
-    suggesties.filter((suggestie) => isSupportedStartSource(suggestie.fromSource) && suggestie.toSource === "gitlab"),
+    suggesties.filter((suggestie) =>
+      suggestie.zekerheid === "webhook" &&
+      isSupportedStartSource(suggestie.fromSource) &&
+      suggestie.toSource === "gitlab",
+    ),
   );
 
   for (const startSuggestion of startSuggestions) {
@@ -49,8 +53,7 @@ export function buildConceptJourneys(suggesties: FlowSuggestie[]): ConceptJourne
 
     const gitlabWorker = buildGitLabWorkerLabel(gitlabNodes, last?.naam);
     const endpoint = buildEndpointSummary(chain);
-    const webhookCount = chain.filter((suggestion) => suggestion.zekerheid === "webhook").length;
-    const isWebhook = webhookCount > 0;
+    const webhookCount = chain.length;
     const endpointText = endpoint ? ` via ${endpoint}` : "";
     const sourceSystem = sourceSystemLabel(startNode?.source ?? null);
 
@@ -69,11 +72,11 @@ export function buildConceptJourneys(suggesties: FlowSuggestie[]): ConceptJourne
       gitlabWorker,
       endpoint,
       sourceSystem,
-      confidenceLabel: buildConfidenceLabel(webhookCount, chain.length),
-      confidenceTone: isWebhook ? "strong" : "inferred",
+      confidenceLabel: buildConfidenceLabel(webhookCount),
+      confidenceTone: "strong",
       automationIds: nodes.map((node) => node.id),
       href: `/flows/suggesties/${encodeURIComponent(key)}`,
-      evidenceLabel: isWebhook ? "Webhook endpoint" : "Afgeleid door AI",
+      evidenceLabel: "100% webhook-match",
       structureSummary: buildStructureSummary(buildChainStructureSummary(chain), gitlabNodes.length, endpoint),
     });
   }
@@ -87,7 +90,7 @@ export function buildConceptJourneys(suggesties: FlowSuggestie[]): ConceptJourne
 }
 
 function isSupportedStartSource(source: string | null): boolean {
-  return source === "hubspot" || source === "zapier";
+  return source === "hubspot" || source === "zapier" || source === "typeform";
 }
 
 function buildBackendChain(
@@ -172,10 +175,8 @@ function buildEndpointSummary(suggesties: FlowSuggestie[]): string {
   return `${endpoints[0]} +${endpoints.length - 1} extra endpoints`;
 }
 
-function buildConfidenceLabel(webhookCount: number, totalCount: number): string {
-  if (webhookCount === 0) return "AI-afgeleid";
-  if (webhookCount === totalCount) return webhookCount === 1 ? "Webhook" : `${webhookCount} webhooks`;
-  return `${webhookCount} webhook + AI`;
+function buildConfidenceLabel(webhookCount: number): string {
+  return webhookCount === 1 ? "100% webhook" : `${webhookCount}x 100% webhook`;
 }
 
 function buildStructureSummary(baseSummary: string, gitlabCount: number, endpoint: string): string {
@@ -206,6 +207,7 @@ function sourceSystemLabel(source: string | null): string {
   if (source === "zapier") return "Zapier";
   if (source === "hubspot") return "HubSpot";
   if (source === "gitlab") return "GitLab";
+  if (source === "typeform") return "Typeform";
   return "De bronautomation";
 }
 

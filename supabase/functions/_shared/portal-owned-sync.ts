@@ -38,6 +38,7 @@ type ExistingAutomation = {
   status?: string | null;
   endpoints?: string[] | null;
   webhook_paths?: string[] | null;
+  import_proposal?: Record<string, unknown> | null;
 };
 
 export type PortalOwnedSyncResult = {
@@ -53,6 +54,19 @@ export type PortalOwnedSyncResult = {
 };
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|authorization|password|cookie|response|responses|answer|answers|submission|payload)/i;
+const SOURCE_MANAGED_AUTOMATION_FIELDS = [
+  "branches",
+  "endpoints",
+  "external_id",
+  "gitlab_file_path",
+  "hubspot_last_run_at",
+  "hubspot_run_count_365d",
+  "import_proposal",
+  "last_synced_at",
+  "pipeline_id",
+  "stage_id",
+  "webhook_paths",
+];
 
 export async function startSourceSyncRun(
   db: SupabaseClientLike,
@@ -123,7 +137,7 @@ export async function recordPortalOwnedSync(
 
   const { data: existingRows, error: existingError } = await db
     .from("automatiseringen")
-    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal")
     .eq("source", source);
   throwIfSupabaseError("Bestaande automations ophalen", existingError);
 
@@ -136,6 +150,7 @@ export async function recordPortalOwnedSync(
   let findings = 0;
   let missing = 0;
   let changed = 0;
+  let updated = 0;
 
   for (const payload of payloads) {
     const externalId = String(payload.external_id ?? "").trim();
@@ -155,6 +170,8 @@ export async function recordPortalOwnedSync(
       syncRunId,
       now,
     });
+    await updateExistingSourceSnapshot(db, existingAutomation, payload, now);
+    updated++;
 
     const webhookDiffs = diffArrayField(existingAutomation.webhook_paths, payload.webhook_paths);
     const endpointDiffs = diffArrayField(existingAutomation.endpoints, payload.endpoints);
@@ -217,6 +234,34 @@ export async function recordPortalOwnedSync(
         now,
       });
     }
+
+    const sourceQualityMissingEvidence = buildSourceQualityMissingEvidence(
+      buildSourceQualitySnapshot(existingAutomation, payload, source),
+    );
+    for (const missingEvidence of sourceQualityMissingEvidence) {
+      await upsertFinding(db, {
+        automation: existingAutomation,
+        type: "source_data_incomplete",
+        severity: "warning",
+        message: missingEvidence.message,
+        details: {
+          source,
+          missing_evidence_key: missingEvidence.key,
+          label: missingEvidence.label,
+          description: missingEvidence.description,
+        },
+        dedupeKeySuffix: missingEvidence.key,
+        syncRunId,
+        now,
+      });
+      findings++;
+    }
+    await resolveSourceQualityFindings(db, {
+      automation: existingAutomation,
+      activeMissingEvidenceKeys: sourceQualityMissingEvidence.map((item) => item.key),
+      syncRunId,
+      now,
+    });
   }
 
   for (const row of existing) {
@@ -246,7 +291,7 @@ export async function recordPortalOwnedSync(
 
   return {
     inserted: 0,
-    updated: 0,
+    updated,
     deactivated: 0,
     total: payloads.length,
     proposed,
@@ -255,6 +300,68 @@ export async function recordPortalOwnedSync(
     changed,
     syncRunId,
   };
+}
+
+async function updateExistingSourceSnapshot(
+  db: SupabaseClientLike,
+  existingAutomation: ExistingAutomation,
+  payload: PortalOwnedAutomationPayload,
+  now: string,
+): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  for (const field of SOURCE_MANAGED_AUTOMATION_FIELDS) {
+    if (field === "last_synced_at") {
+      patch[field] = now;
+      continue;
+    }
+    if (field in payload) {
+      patch[field] = field === "import_proposal"
+        ? preserveHubSpotWorkflowAudit(existingAutomation.import_proposal, payload.import_proposal)
+        : payload[field];
+    }
+  }
+
+  const { error } = await db
+    .from("automatiseringen")
+    .update(patch)
+    .eq("id", existingAutomation.id);
+  throwIfSupabaseError("Bron-snapshot bijwerken", error);
+}
+
+function preserveHubSpotWorkflowAudit(
+  existingProposal: Record<string, unknown> | null | undefined,
+  nextProposal: unknown,
+): unknown {
+  if (!isRecord(nextProposal)) return nextProposal;
+  const existingWorkflow = isRecord(existingProposal?.hubspot_workflow) ? existingProposal.hubspot_workflow : null;
+  const nextWorkflow = isRecord(nextProposal.hubspot_workflow) ? nextProposal.hubspot_workflow : null;
+  if (!existingWorkflow || !nextWorkflow) return nextProposal;
+
+  const mergedWorkflow: Record<string, unknown> = { ...nextWorkflow };
+  if (!hasHubSpotUserAudit(mergedWorkflow.createdBy) && hasHubSpotUserAudit(existingWorkflow.createdBy)) {
+    mergedWorkflow.createdBy = existingWorkflow.createdBy;
+  }
+  if (!hasHubSpotUserAudit(mergedWorkflow.updatedBy) && hasHubSpotUserAudit(existingWorkflow.updatedBy)) {
+    mergedWorkflow.updatedBy = existingWorkflow.updatedBy;
+  }
+
+  return {
+    ...nextProposal,
+    hubspot_workflow: mergedWorkflow,
+  };
+}
+
+function hasHubSpotUserAudit(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return Boolean(
+    String(value.label ?? "").trim()
+      || String(value.email ?? "").trim()
+      || String(value.id ?? "").trim(),
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function upsertImportProposal(
@@ -313,15 +420,16 @@ async function upsertFinding(
   db: SupabaseClientLike,
   input: {
     automation: ExistingAutomation;
-    type: "source_missing" | "source_changed" | "webhook_changed" | "metadata_changed";
+    type: "source_missing" | "source_data_incomplete" | "source_changed" | "webhook_changed" | "metadata_changed";
     severity: "info" | "warning" | "critical";
     message: string;
     details: Record<string, unknown>;
+    dedupeKeySuffix?: string;
     syncRunId: string;
     now: string;
   },
 ): Promise<void> {
-  const dedupeKey = findingKey(input.automation, input.type);
+  const dedupeKey = findingKey(input.automation, input.type, input.dedupeKeySuffix);
   const { data: existing, error: findError } = await db
     .from(AUTOMATION_SOURCE_FINDINGS_TABLE)
     .select("id, first_seen_at")
@@ -384,6 +492,197 @@ async function resolveFinding(
   throwIfSupabaseError("Bronwaarschuwing oplossen", error);
 }
 
+type SourceQualitySnapshot = ExistingAutomation & {
+  gitlab_file_path?: string | null;
+};
+
+type SourceQualityMissingEvidence = {
+  key: string;
+  label: string;
+  description: string;
+  message: string;
+};
+
+function buildSourceQualitySnapshot(
+  existingAutomation: ExistingAutomation,
+  payload: PortalOwnedAutomationPayload,
+  source: PortalOwnedSyncSource,
+): SourceQualitySnapshot {
+  return {
+    ...existingAutomation,
+    external_id: existingAutomation.external_id ?? payload.external_id,
+    source,
+    naam: typeof payload.naam === "string" ? payload.naam : existingAutomation.naam,
+    doel: typeof payload.doel === "string" ? payload.doel : existingAutomation.doel,
+    trigger_beschrijving: typeof payload.trigger_beschrijving === "string" ? payload.trigger_beschrijving : existingAutomation.trigger_beschrijving,
+    systemen: Array.isArray(payload.systemen) ? payload.systemen : existingAutomation.systemen,
+    stappen: Array.isArray(payload.stappen) ? payload.stappen : existingAutomation.stappen,
+    categorie: typeof payload.categorie === "string" ? payload.categorie : existingAutomation.categorie,
+    status: typeof payload.status === "string" ? payload.status : existingAutomation.status,
+    endpoints: Array.isArray(payload.endpoints) ? payload.endpoints : existingAutomation.endpoints,
+    webhook_paths: Array.isArray(payload.webhook_paths) ? payload.webhook_paths : existingAutomation.webhook_paths,
+    import_proposal: isRecord(payload.import_proposal) ? payload.import_proposal : existingAutomation.import_proposal,
+    gitlab_file_path: typeof payload.gitlab_file_path === "string" ? payload.gitlab_file_path : null,
+  };
+}
+
+function buildSourceQualityMissingEvidence(snapshot: SourceQualitySnapshot): SourceQualityMissingEvidence[] {
+  return sourceQualityChecks(snapshot)
+    .filter((check) => !check.passes)
+    .map((check) => ({
+      key: check.key,
+      label: check.label,
+      description: check.missingDetail,
+      message: `${check.label} ontbreekt voor procesreisvorming.`,
+    }));
+}
+
+async function resolveSourceQualityFindings(
+  db: SupabaseClientLike,
+  input: {
+    automation: ExistingAutomation;
+    activeMissingEvidenceKeys: string[];
+    syncRunId: string;
+    now: string;
+  },
+): Promise<void> {
+  const activeKeys = new Set(input.activeMissingEvidenceKeys);
+  for (const evidenceKey of sourceQualityEvidenceKeysForSource(input.automation.source)) {
+    if (activeKeys.has(evidenceKey)) continue;
+    await resolveFinding(db, {
+      dedupeKey: findingKey(input.automation, "source_data_incomplete", evidenceKey),
+      resolvedReason: "Procesreis-kritieke brondata is opnieuw aanwezig.",
+      syncRunId: input.syncRunId,
+      now: input.now,
+    });
+  }
+}
+
+function sourceQualityEvidenceKeysForSource(source: string | null | undefined): string[] {
+  if (source === "hubspot") return ["hubspot_workflow", "hubspot_triggers", "hubspot_actions", "hubspot_webhook_path"];
+  if (source === "zapier") return ["zapier_metadata", "zapier_steps", "zapier_webhook_handoff"];
+  if (source === "gitlab") return ["gitlab_endpoint", "gitlab_handler", "gitlab_call_graph"];
+  if (source === "typeform") return ["typeform_fields", "typeform_active_webhook"];
+  return [];
+}
+
+function sourceQualityChecks(snapshot: SourceQualitySnapshot): Array<{
+  key: string;
+  label: string;
+  passes: boolean;
+  missingDetail: string;
+}> {
+  if (snapshot.source === "hubspot") return hubSpotSourceQualityChecks(snapshot);
+  if (snapshot.source === "zapier") return zapierSourceQualityChecks(snapshot);
+  if (snapshot.source === "gitlab") return gitLabSourceQualityChecks(snapshot);
+  if (snapshot.source === "typeform") return typeformSourceQualityChecks(snapshot);
+  return [];
+}
+
+function hubSpotSourceQualityChecks(snapshot: SourceQualitySnapshot) {
+  const workflow = getRecord(snapshot.import_proposal?.hubspot_workflow);
+  const triggers = [
+    ...arrayValue(workflow?.triggers),
+    ...arrayValue(workflow?.criteria),
+    ...arrayValue(workflow?.enrollmentCriteria),
+  ];
+  const actions = arrayValue(workflow?.actions).map(getRecord).filter(Boolean) as Record<string, unknown>[];
+  const expectsWebhook = actions.some((action) => isWebhookActionRecord(action)) || normalizeStringArray(snapshot.webhook_paths).length > 0;
+  const hasWebhookPath = actions.some((action) => Boolean(stringValue(action.webhookPath) || stringValue(action.webhookUrl) || stringValue(action.url)))
+    || normalizeStringArray(snapshot.webhook_paths).length > 0;
+
+  return [
+    sourceQualityCheck("hubspot_workflow", "HubSpot workflowdata", Boolean(workflow), "HubSpot workflowdata ontbreekt."),
+    sourceQualityCheck("hubspot_triggers", "HubSpot triggercriteria", triggers.length > 0, "Triggercriteria ontbreken in HubSpot brondata."),
+    sourceQualityCheck("hubspot_actions", "HubSpot acties", actions.length > 0, "Workflowacties ontbreken in HubSpot brondata."),
+    ...(expectsWebhook
+      ? [sourceQualityCheck("hubspot_webhook_path", "HubSpot webhookpad", hasWebhookPath, "Webhookpad ontbreekt of is niet matchbaar.")]
+      : []),
+  ];
+}
+
+function zapierSourceQualityChecks(snapshot: SourceQualitySnapshot) {
+  const proposal = snapshot.import_proposal ?? {};
+  const zap = getRecord(proposal.zap);
+  const process = getRecord(zap?.process);
+  const zapierExport = getRecord(proposal.zapier_export);
+  const sanitizedNodes = getRecord(zapierExport?.sanitized_nodes);
+  const steps = [
+    ...arrayValue(zap?.steps),
+    ...arrayValue(process?.steps),
+    ...(sanitizedNodes ? Object.values(sanitizedNodes) : []),
+  ];
+  const expectsWebhook = normalizeStringArray(snapshot.webhook_paths).length > 0
+    || normalizeStringArray(proposal.webhookPaths).length > 0;
+  const hasWebhookHandoff = arrayValue(process?.webhookHandoffs).length > 0
+    || arrayValue(zap?.webhookHandoffs).length > 0
+    || arrayValue(process?.steps).some((step) => arrayValue(getRecord(step)?.webhookPaths).length > 0)
+    || arrayValue(zap?.steps).some((step) => arrayValue(getRecord(step)?.webhookPaths).length > 0);
+
+  return [
+    sourceQualityCheck("zapier_metadata", "Zapier metadata", Boolean(zap || zapierExport), "Zapier metadata ontbreekt."),
+    sourceQualityCheck("zapier_steps", "Zapier step flow", steps.length > 0, "Zapier step flow ontbreekt."),
+    ...(expectsWebhook
+      ? [sourceQualityCheck("zapier_webhook_handoff", "Zapier webhook-overdracht", hasWebhookHandoff, "Webhook-overdracht ontbreekt in Zapier brondata.")]
+      : []),
+  ];
+}
+
+function gitLabSourceQualityChecks(snapshot: SourceQualitySnapshot) {
+  const proposal = snapshot.import_proposal ?? {};
+  const gitlab = getRecord(proposal.gitlab);
+  const endpoint = getRecord(proposal.gitlab_endpoint) ?? getRecord(gitlab?.endpoint);
+  const endpointValue = stringValue(endpoint?.endpoint)
+    || stringValue(endpoint?.path)
+    || normalizeStringArray(snapshot.endpoints)[0]
+    || "";
+  const handler = stringValue(endpoint?.handler);
+  const calls = [
+    ...arrayValue(endpoint?.calls),
+    ...arrayValue(gitlab?.calls),
+  ];
+
+  return [
+    sourceQualityCheck("gitlab_endpoint", "GitLab endpoint", Boolean(endpointValue), "GitLab endpoint ontbreekt of is niet matchbaar."),
+    sourceQualityCheck("gitlab_handler", "GitLab handler", Boolean(handler), "GitLab handler ontbreekt."),
+    sourceQualityCheck("gitlab_call_graph", "GitLab call graph", calls.length > 0, "Call graph of read/write-bewijs ontbreekt."),
+  ];
+}
+
+function typeformSourceQualityChecks(snapshot: SourceQualitySnapshot) {
+  const proposal = snapshot.import_proposal ?? {};
+  const typeform = getRecord(proposal.typeform) ?? getRecord(proposal.typeform_api);
+  const form = getRecord(typeform?.form);
+  const fields = arrayValue(form?.fields);
+  const process = getRecord(typeform?.process);
+  const webhooks = arrayValue(typeform?.webhooks);
+  const hasActiveWebhook = webhooks.some((webhook) => getRecord(webhook)?.enabled === true)
+    || arrayValue(process?.webhookHandoffs).length > 0
+    || normalizeStringArray(snapshot.webhook_paths).length > 0;
+
+  return [
+    sourceQualityCheck("typeform_fields", "Typeform velden", fields.length > 0, "Typeform formuliervelden ontbreken."),
+    sourceQualityCheck("typeform_active_webhook", "Actieve Typeform webhook", hasActiveWebhook, "Actieve Typeform webhook ontbreekt."),
+  ];
+}
+
+function sourceQualityCheck(key: string, label: string, passes: boolean, missingDetail: string) {
+  return { key, label, passes, missingDetail };
+}
+
+function isWebhookActionRecord(action: Record<string, unknown>): boolean {
+  const type = `${action.type ?? action.actionType ?? action.action_type ?? ""}`.toLowerCase();
+  return type.includes("webhook") || Boolean(action.webhookPath || action.webhookUrl || action.url);
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function diffMetadata(existing: ExistingAutomation, payload: PortalOwnedAutomationPayload) {
   const checks: Array<{ field: string; portal: unknown; source: unknown }> = [
     { field: "naam", portal: existing.naam ?? "", source: payload.naam ?? "" },
@@ -407,13 +706,16 @@ function diffArrayField(portalValue: unknown, sourceValue: unknown): { changed: 
 function findingKey(
   automation: Pick<ExistingAutomation, "id" | "source" | "external_id">,
   type: string,
+  evidenceKey?: string,
 ): string {
-  return [
+  const parts = [
     automation.id,
     automation.source ?? "unknown",
     automation.external_id ?? "",
     type,
-  ].join(":");
+  ];
+  if (evidenceKey) parts.push(evidenceKey);
+  return parts.join(":");
 }
 
 function buildComparableSnapshot(payload: PortalOwnedAutomationPayload): Record<string, unknown> {

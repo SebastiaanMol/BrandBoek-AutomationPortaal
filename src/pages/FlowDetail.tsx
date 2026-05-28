@@ -1,108 +1,122 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, Info, XCircle } from "lucide-react";
 import {
-  useFlows,
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  ChevronLeft,
+  ExternalLink,
+  GitBranch,
+  Layers,
+  Link2,
+  Save,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import {
   useAutomatiseringenIncludingLegacyGitlab,
-  usePipelines,
-  useUpdateFlow,
   useDeleteFlow,
+  useFlows,
+  useUpdateFlow,
 } from "@/lib/hooks";
 import {
+  useAllConfirmedAutomationLinks,
   useBevestigFlowSuggestie,
-  useVerwerpFlowSuggestie,
   useOngedaanVerwerpFlowSuggestie,
   useOpenSuggestiesVoorFlow,
-  useAllConfirmedAutomationLinks,
+  useVerwerpFlowSuggestie,
 } from "@/lib/queryHooks/automationLinks";
-import type { FlowSuggestie } from "@/lib/storage/automationLinks";
-import type { Automatisering, Systeem } from "@/lib/types";
-import { FlowHeader } from "@/components/flows/FlowHeader";
-import { buildFlowEdges, type FlowEdge } from "@/lib/flowEdges";
-import { AutomationList } from "@/components/flows/AutomationList";
-import { AutomationDetail } from "@/components/flows/AutomationDetail";
-import { FlowRuntimeChain } from "@/components/flows/FlowRuntimeChain";
-import { ProcessJourneyNarrative } from "@/components/flows/ProcessJourneyNarrative";
-import { buildAutomationFunnel } from "@/lib/automationFunnel";
-import { displayAutomationName } from "@/lib/automationDisplay";
-import { expandFlowAutomationIds } from "@/lib/flowRuntimeChain";
-import { getSystemMeta } from "@/lib/systemMeta";
-import { findNextProcessJourney } from "@/lib/processJourneyLinks";
 import {
-  getFlowDetailPresentation,
-  getPresentationAutomationLabel,
-  getPresentationAutomationSummary,
-  type FlowDetailPresentation,
-} from "@/lib/flowDetailPresentation";
+  getProcessJourneyDetailPresentation,
+  type ProcessJourneyAutomationCardPresentation,
+  type ProcessJourneyChangeSummary,
+  type ProcessJourneyDetailPresentation,
+  type ProcessJourneyEvidenceItem,
+  type ProcessJourneyMetricPresentation,
+  type ProcessJourneyNodePresentation,
+  type ProcessJourneyStepPresentation,
+  type ProcessJourneyTransitionPresentation,
+} from "@/lib/processJourneyDetailPresentation";
+import type { FlowSuggestie } from "@/lib/storage/automationLinks";
+import type { Automatisering, Flow, Systeem } from "@/lib/types";
+import { expandFlowAutomationIds } from "@/lib/flowRuntimeChain";
 
 export default function FlowDetail(): React.ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: flows = [], isLoading: flowsLoading } = useFlows();
   const { data: automations = [] } = useAutomatiseringenIncludingLegacyGitlab();
-  const { data: pipelines = [] } = usePipelines();
   const { data: confirmedLinks = [] } = useAllConfirmedAutomationLinks();
   const updateFlow = useUpdateFlow();
   const deleteFlow = useDeleteFlow();
 
-  const flow = useMemo(() => flows.find((f) => f.id === id), [flows, id]);
+  const flow = useMemo(() => flows.find((item) => item.id === id), [flows, id]);
+  const { data: openSuggestions = [] } = useOpenSuggestiesVoorFlow(flow?.id);
   const autoMap = useMemo(
-    () => new Map(automations.map((a) => [a.id, a])),
+    () => new Map(automations.map((automation) => [automation.id, automation])),
     [automations],
   );
 
   const [naam, setNaam] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const initializedRef = useRef<string | null>(null);
   const flowId = flow?.id;
   const flowNaam = flow?.naam;
-  const flowBeschrijving = cleanConfirmedFlowDescription(flow?.beschrijving ?? "");
-  const firstAutoId = flow?.automationIds[0] ?? null;
+
   const runtimeAutomationIds = useMemo(
-    () => flow ? expandFlowAutomationIds(flow.automationIds, confirmedLinks) : [],
+    () => (flow ? expandFlowAutomationIds(flow.automationIds, confirmedLinks) : []),
     [flow, confirmedLinks],
   );
-  const runtimeFlow = useMemo(
-    () => flow ? { ...flow, automationIds: runtimeAutomationIds } : null,
+  const flowForDisplay = useMemo(
+    () => (flow ? { ...flow, automationIds: runtimeAutomationIds } : null),
     [flow, runtimeAutomationIds],
   );
+  const firstAutoId = flowForDisplay?.automationIds[0] ?? null;
 
   useEffect(() => {
     if (flowId && initializedRef.current !== flowId) {
       initializedRef.current = flowId;
       setNaam(flowNaam ?? "");
-      setSelectedId(firstAutoId);
+      setShowDeleteConfirm(false);
     }
   }, [flowId, flowNaam, firstAutoId]);
 
-  const isDirty =
-    flow !== undefined &&
-    naam !== flow.naam;
+  const isDirty = flow !== undefined && naam !== flow.naam;
 
   if (flowsLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-sm text-muted-foreground">Laden...</p>
       </div>
     );
   }
 
-  if (!flow) {
+  if (!flow || !flowForDisplay) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-sm text-muted-foreground">Procesreis niet gevonden.</p>
       </div>
     );
   }
 
+  const missingRuntimeIds = flowForDisplay.automationIds.filter((autoId) => !autoMap.get(autoId));
+  const involvedAutomations = flowForDisplay.automationIds
+    .map((autoId) => autoMap.get(autoId))
+    .filter((automation): automation is Automatisering => automation !== undefined);
+  const journey = getProcessJourneyDetailPresentation({
+    flow: { ...flowForDisplay, naam },
+    automations: involvedAutomations,
+    confirmedLinks,
+    openSuggestions,
+  });
+
   async function handleSave(): Promise<void> {
     try {
       await updateFlow.mutateAsync({ id: flow!.id, naam });
       toast.success("Opgeslagen");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Opslaan mislukt");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Opslaan mislukt");
     }
   }
 
@@ -111,46 +125,46 @@ export default function FlowDetail(): React.ReactNode {
       await deleteFlow.mutateAsync(flow!.id);
       toast.success("Procesreis verwijderd");
       navigate("/flows");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Verwijderen mislukt");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Verwijderen mislukt");
     }
   }
 
   async function handleRemoveAutomation(autoId: string): Promise<void> {
-    const newIds = flow!.automationIds.filter((i) => i !== autoId);
-    const remainingAutos = newIds
-      .map((i) => autoMap.get(i))
-      .filter((a): a is Automatisering => a !== undefined);
-    const newSystemen = [...new Set(remainingAutos.flatMap((a) => a.systemen))] as Systeem[];
+    const newIds = flow!.automationIds.filter((automationId) => automationId !== autoId);
+    const remainingAutomations = newIds
+      .map((automationId) => autoMap.get(automationId))
+      .filter((automation): automation is Automatisering => automation !== undefined);
+    const systemen = [...new Set(remainingAutomations.flatMap((automation) => automation.systemen))] as Systeem[];
+
     try {
-      await updateFlow.mutateAsync({ id: flow!.id, automationIds: newIds, systemen: newSystemen });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Verwijderen mislukt");
+      await updateFlow.mutateAsync({ id: flow!.id, automationIds: newIds, systemen });
+      toast.success("Automation verwijderd uit procesreis");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Verwijderen mislukt");
     }
   }
 
-  const flowForDisplay = runtimeFlow ?? flow;
-  const missingRuntimeIds = flowForDisplay.automationIds.filter((autoId) => !autoMap.get(autoId));
-  const involvedAutomations = flowForDisplay.automationIds
-    .map((autoId) => autoMap.get(autoId))
-    .filter((automation): automation is Automatisering => automation !== undefined);
-  const presentation = getFlowDetailPresentation(flow, involvedAutomations);
-  const downstreamJourney = findNextProcessJourney(flow, flows, confirmedLinks, autoMap);
+  async function handleConfirmSuggestion(fromId: string, toId: string): Promise<void> {
+    const newIds = [...new Set([...flow!.automationIds, fromId, toId])];
+    const newAutomations = newIds
+      .map((automationId) => autoMap.get(automationId))
+      .filter((automation): automation is Automatisering => automation !== undefined);
+    const systemen = [...new Set(newAutomations.flatMap((automation) => automation.systemen))] as Systeem[];
 
-  const sharedListProps = {
-    flow: flowForDisplay,
-    autoMap,
-    selectedId,
-    onSelect: setSelectedId,
-    presentation,
-  } as const;
+    await updateFlow.mutateAsync({
+      id: flow!.id,
+      automationIds: newIds,
+      systemen,
+    });
+  }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-[1400px] space-y-8 px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
-          <FlowHeader
-            flow={flow}
-            automationCount={flowForDisplay.automationIds.length}
+    <div className="min-h-screen bg-slate-50/70">
+      <main className="mx-auto max-w-[1440px] space-y-6 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <ProcessJourneyHeader
+          flow={flow}
+          journey={journey}
           naam={naam}
           setNaam={setNaam}
           isDirty={isDirty}
@@ -158,343 +172,598 @@ export default function FlowDetail(): React.ReactNode {
           isSaving={updateFlow.isPending}
         />
 
-        <div className="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_400px] xl:gap-10">
-          {/* Left: process journey */}
-          <section className="min-w-0 space-y-7">
-            <section className="min-w-0 rounded-2xl border border-border bg-card p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-                Procesverhaal
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                Wat gebeurt er in deze procesreis?
-              </h2>
-              <ProcessJourneyNarrative
-                automations={involvedAutomations}
-                pipelines={pipelines}
-                autoMap={autoMap}
-                approvedDescription={presentation?.approvedDescription ?? flowBeschrijving}
-              />
-            </section>
+        <MetricGrid metrics={journey.metrics} />
 
-            <div className="space-y-1.5">
-              <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                Procesreis
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {presentation?.processJourneyIntro ?? "Een stap-voor-stap overzicht van wat er gebeurt. Startsignaal en vervolgcontrole staan apart."}
-              </p>
-            </div>
+        <StoryCard journey={journey} />
 
-            {!presentation && (
-              <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary-soft px-4 py-3 text-xs leading-relaxed text-foreground/80">
-                <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-primary" />
-                <p>
-                  Deze procesreis lees je als volgorde van acties: stap 1, stap 2, de overgang tussen stappen, en daarna pas apart de controle of er een vervolgproces bewezen is.
-                </p>
-              </div>
-            )}
+        <JourneyChain nodes={journey.nodes} transitions={journey.transitions} />
 
-            <FlowRuntimeChain
-              flow={flowForDisplay}
-              autoMap={autoMap}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              downstreamJourney={downstreamJourney}
-              pipelines={pipelines}
-              presentation={presentation}
-            />
-
-            <section className="min-w-0 space-y-4">
-              <div className="space-y-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Automations in deze procesreis
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {presentation?.automationCardsIntro ?? "Dit zijn de automation-records waaruit deze procesreis bestaat. Klik door om het volledige automation-record te openen."}
-                </p>
-              </div>
-              <ProcessAutomationCards flow={flowForDisplay} autoMap={autoMap} presentation={presentation} />
-            </section>
-
-            <FlowEvidenceSummary edges={buildFlowEdges(flowForDisplay.automationIds, autoMap, confirmedLinks)} autoMap={autoMap} presentation={presentation} />
-          </section>
-          {/* Right: details */}
-          <aside className="min-w-0 space-y-6 self-start lg:sticky lg:top-6">
-            <div className="card-elevated p-5">
-              <p className="px-1 pb-2 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
-                Snelle navigatie
-              </p>
-              <AutomationList {...sharedListProps} />
-              {missingRuntimeIds.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-border space-y-1">
-                  {missingRuntimeIds.map((autoId) => (
-                    <div key={autoId} className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-muted-foreground truncate">{autoId} - niet meer beschikbaar</p>
-                      <button
-                        type="button"
-                        className="text-xs text-destructive hover:underline shrink-0"
-                        onClick={() => handleRemoveAutomation(autoId)}
-                      >
-                        Verwijder
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-1.5 pt-1">
-              <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                Geselecteerde automation
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {presentation?.selectedAutomationIntro ?? "Wat deze automation doet, in mensentaal."}
-              </p>
-            </div>
-            <AutomationDetail
-              automationId={selectedId}
-              currentFlowId={flow.id}
-              autoMap={autoMap}
-              allFlows={flows}
-              presentation={presentation}
-            />
-
-            {!presentation && (
-              <OpenSuggestiesCard
-                flowId={flow.id}
-                automationIds={flow.automationIds}
-                onBevestig={async (fromId: string, toId: string) => {
-                  const newIds = [...new Set([...flow.automationIds, fromId, toId])];
-                  const newAutos = newIds
-                    .map((id) => autoMap.get(id))
-                    .filter((a): a is Automatisering => a !== undefined);
-                  const newSystemen = [...new Set(newAutos.flatMap((a) => a.systemen))] as Systeem[];
-                  await updateFlow.mutateAsync({
-                    id: flow.id,
-                    automationIds: newIds,
-                    systemen: newSystemen,
-                  });
-                }}
-              />
-            )}
-
-            <div className="card-elevated p-5">
-              {showDeleteConfirm ? (
-                <div className="flex items-center gap-3">
-                  <p className="text-sm text-muted-foreground">Procesreis verwijderen?</p>
-                  <button
-                    type="button"
-                    className="text-sm text-destructive font-medium hover:underline disabled:opacity-50"
-                    onClick={handleDelete}
-                    disabled={deleteFlow.isPending}
-                  >
-                    Ja, verwijder
-                  </button>
-                  <button
-                    type="button"
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowDeleteConfirm(false)}
-                  >
-                    Annuleer
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="text-sm text-destructive hover:text-destructive/80 transition-colors"
-                  onClick={() => setShowDeleteConfirm(true)}
-                >
-                  Procesreis verwijderen
-                </button>
-              )}
-            </div>
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
+          <ProcessSteps steps={journey.steps} transitions={journey.transitions} />
+          <aside className="min-w-0 space-y-6">
+            <EvidenceCard evidenceItems={journey.evidenceItems} />
+            <ChangeCard changeSummary={journey.changeSummary} />
+            {journey.gaps.length > 0 && <GapCard gaps={journey.gaps} />}
           </aside>
         </div>
-      </div>
+
+        <AutomationCards cards={journey.automationCards} />
+
+        <OpenSuggestiesCard
+          flowId={flow.id}
+          automationIds={flow.automationIds}
+          onBevestig={handleConfirmSuggestion}
+        />
+
+        {missingRuntimeIds.length > 0 && (
+          <MissingAutomationRecords
+            ids={missingRuntimeIds}
+            onRemoveAutomation={handleRemoveAutomation}
+          />
+        )}
+
+        <DeleteFlowCard
+          showDeleteConfirm={showDeleteConfirm}
+          setShowDeleteConfirm={setShowDeleteConfirm}
+          onDelete={handleDelete}
+          isDeleting={deleteFlow.isPending}
+        />
+      </main>
     </div>
   );
 }
 
-function cleanConfirmedFlowDescription(value: string | null | undefined): string {
-  return (value ?? "")
-    .replace(/\s*Controleer voor het opslaan of de naam en beschrijving correct zijn ingevuld\.?\s*$/i, "")
-    .trim();
-}
-
-function FlowEvidenceSummary({
-  edges,
-  autoMap,
-  presentation,
+function ProcessJourneyHeader({
+  flow,
+  journey,
+  naam,
+  setNaam,
+  isDirty,
+  onSave,
+  isSaving,
 }: {
-  edges: FlowEdge[];
-  autoMap: Map<string, Automatisering>;
-  presentation?: FlowDetailPresentation | null;
+  flow: Flow;
+  journey: ProcessJourneyDetailPresentation;
+  naam: string;
+  setNaam: (value: string) => void;
+  isDirty: boolean;
+  onSave: () => void;
+  isSaving: boolean;
 }) {
   return (
-    <div className="card-elevated p-4">
-      <div className="mb-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Bewijs per overgang
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {presentation?.evidenceIntro ?? "Zo weet je of een overgang hard bevestigd is of alleen uit de volgorde is afgeleid."}
+    <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <Link
+            to="/flows"
+            className="inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm font-medium text-slate-500 transition-colors hover:text-slate-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Terug naar procesreizen
+          </Link>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {journey.statusBadges.map((badge) => (
+              <HeaderBadge key={badge} label={badge} />
+            ))}
+          </div>
+
+          <label className="sr-only" htmlFor="process-journey-name">
+            Procesreisnaam
+          </label>
+          <input
+            id="process-journey-name"
+            value={naam}
+            onChange={(event) => setNaam(event.target.value)}
+            className="mt-4 block w-full border-b border-transparent bg-transparent pb-1 text-3xl font-bold tracking-normal text-slate-950 outline-none transition-colors hover:border-slate-200 focus:border-slate-300 sm:text-4xl"
+          />
+
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            {journey.subtitle}
+          </p>
+
+          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-500">
+            {journey.meta.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          {isDirty && (
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={isSaving}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {isSaving ? "Opslaan..." : "Opslaan"}
+            </button>
+          )}
+          <Link
+            to="/flows"
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+          >
+            Overzicht
+          </Link>
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Procesreis
+        </span>
+        <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+          <GitBranch className="h-3.5 w-3.5" />
+          ID {flow.id}
+        </span>
+      </div>
+    </header>
+  );
+}
+
+function MetricGrid({ metrics }: { metrics: ProcessJourneyMetricPresentation[] }) {
+  return (
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Procesreis metrics">
+      {metrics.map((metric) => (
+        <article
+          key={metric.label}
+          className={`rounded-2xl border bg-white p-5 shadow-sm ${metricToneClass(metric.tone)}`}
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            {metric.label}
+          </p>
+          <p className="mt-3 text-2xl font-bold tracking-normal text-slate-950">
+            {metric.value}
+          </p>
+          <p className="mt-1 text-sm leading-5 text-slate-500">{metric.detail}</p>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function StoryCard({ journey }: { journey: ProcessJourneyDetailPresentation }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Procesbetekenis
+          </p>
+          <h2 className="mt-2 text-xl font-bold tracking-normal text-slate-950">
+            Wat gebeurt er in deze procesreis?
+          </h2>
+        </div>
+        <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${qualityClass(journey.analysisQuality)}`}>
+          Bewijs: {journey.analysisQuality}
+        </span>
+      </div>
+      <div className="mt-4 max-w-5xl space-y-3 text-sm leading-7 text-slate-600">
+        {journey.storyParagraphs.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function JourneyChain({
+  nodes,
+  transitions,
+}: {
+  nodes: ProcessJourneyNodePresentation[];
+  transitions: ProcessJourneyTransitionPresentation[];
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Keten
+          </p>
+          <h2 className="mt-1 text-xl font-bold tracking-normal text-slate-950">Visuele keten</h2>
+        </div>
+        <p className="text-sm text-slate-500">
+          Pijlen tonen het bewijs voor de overgang, niet de volledige automation-inhoud.
         </p>
       </div>
-      {presentation?.evidenceItems.length ? (
-        <div className="space-y-2">
-          {presentation.evidenceItems.map((item, index) => (
-            <div key={item.label} className="rounded-lg border border-border bg-background p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
-                  {index + 1}
-                </span>
-                <EvidenceBadge level={item.status === "Bevestigd" ? "confirmed" : item.status === "Afgeleid" ? "weak" : "uncertain"} label={item.status} />
-                <span className="text-xs font-semibold text-muted-foreground">
-                  {item.label}
-                </span>
+
+      {nodes.length === 0 ? (
+        <EmptyPanel text="Er zijn nog geen beschikbare automations in deze procesreis." />
+      ) : (
+        <div className="mt-5 overflow-x-auto pb-2" aria-label="Visuele procesketen">
+          <div className="flex min-w-max items-stretch gap-3">
+            {nodes.map((node, index) => (
+              <div key={node.id} className="flex items-stretch gap-3">
+                <ChainNode node={node} />
+                {transitions[index] && <ChainTransition transition={transitions[index]} />}
               </div>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {item.reason}
-              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ChainNode({ node }: { node: ProcessJourneyNodePresentation }) {
+  return (
+    <Link
+      to={node.href}
+      className={`group flex min-h-[148px] w-[250px] flex-col justify-between rounded-2xl border bg-white p-4 shadow-sm transition-colors hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 ${sourceBorderClass(node.tone)}`}
+    >
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <SourceBadge tone={node.tone} label={node.sourceLabel} />
+          <ExternalLink className="h-3.5 w-3.5 text-slate-400 transition-colors group-hover:text-slate-900" />
+        </div>
+        <h3 className="mt-3 line-clamp-2 text-sm font-bold leading-5 text-slate-950">
+          {node.title}
+        </h3>
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{node.roleLabel}</p>
+      </div>
+      <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-600">{node.description}</p>
+    </Link>
+  );
+}
+
+function ChainTransition({ transition }: { transition: ProcessJourneyTransitionPresentation }) {
+  return (
+    <div
+      role="separator"
+      aria-label={`${transition.label}: ${transition.description}`}
+      className="flex min-w-[150px] flex-col items-center justify-center gap-2"
+    >
+      <div className="flex w-full items-center gap-2">
+        <div className="h-px flex-1 bg-slate-200" />
+        <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${transitionToneClass(transition.tone)}`}>
+          <ArrowRight className="h-4 w-4" />
+        </span>
+        <div className="h-px flex-1 bg-slate-200" />
+      </div>
+      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${transitionTonePillClass(transition.tone)}`}>
+        {transition.label}
+      </span>
+      <span className="text-[11px] text-slate-500">100% bewezen</span>
+    </div>
+  );
+}
+
+function ProcessSteps({
+  steps,
+  transitions,
+}: {
+  steps: ProcessJourneyStepPresentation[];
+  transitions: ProcessJourneyTransitionPresentation[];
+}) {
+  return (
+    <section
+      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+      aria-label="Stap voor stap overzicht"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Processtappen
+          </p>
+          <h2 className="mt-1 text-xl font-bold tracking-normal text-slate-950">Hoe beweegt het werk?</h2>
+        </div>
+        <span className="w-fit rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">
+          {steps.length} stappen
+        </span>
+      </div>
+
+      {steps.length === 0 ? (
+        <EmptyPanel text="Geen processtappen beschikbaar." />
+      ) : (
+        <div className="mt-5 space-y-0">
+          {steps.map((step, index) => (
+            <div key={`${step.index}-${step.href}`} className="relative pl-12">
+              {index < steps.length - 1 && (
+                <div className="absolute left-[17px] top-10 h-full w-px bg-slate-200" aria-hidden="true" />
+              )}
+              <div className={`absolute left-0 top-1 flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold ${sourceCircleClass(step.tone)}`}>
+                {step.index}
+              </div>
+
+              <Link
+                to={step.href}
+                className="group block rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-slate-400 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SourceBadge tone={step.tone} label={step.sourceLabel} />
+                      {step.badges.slice(1, 3).map((badge) => (
+                        <span key={badge} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                    <h3 className="mt-2 text-base font-bold tracking-normal text-slate-950">
+                      {step.title}
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">{step.description}</p>
+                  </div>
+                  <ExternalLink className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-900" />
+                </div>
+              </Link>
+
+              {transitions[index] && (
+                <div
+                  role="separator"
+                  aria-label={`Overgang na stap ${step.index}: ${transitions[index].label}`}
+                  className="ml-0 flex items-center gap-3 py-3 text-xs text-slate-500"
+                >
+                  <span className={`rounded-full px-2.5 py-1 font-semibold ${transitionTonePillClass(transitions[index].tone)}`}>
+                    {transitions[index].evidenceLabel}
+                  </span>
+                  <span className="min-w-0">{transitions[index].description}</span>
+                </div>
+              )}
             </div>
           ))}
         </div>
-      ) : edges.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3">
-          <p className="text-sm font-medium text-foreground">
-            Nog geen overgangsbewijs gevonden.
+      )}
+    </section>
+  );
+}
+
+function EvidenceCard({ evidenceItems }: { evidenceItems: ProcessJourneyEvidenceItem[] }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+        Bewijs
+      </p>
+      <h2 className="mt-1 text-xl font-bold tracking-normal text-slate-950">Bewijs per overgang</h2>
+      <div className="mt-4 space-y-3">
+        {evidenceItems.map((item, index) => (
+          <EvidenceRow key={`${item.title}-${index}`} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ChangeCard({ changeSummary }: { changeSummary: ProcessJourneyChangeSummary }) {
+  const rows = [
+    { label: "Komt binnen", values: changeSummary.receives },
+    { label: "Wordt opgehaald", values: changeSummary.reads },
+    { label: "Wordt bepaald", values: changeSummary.determines },
+    { label: "Wordt bijgewerkt", values: changeSummary.writes },
+  ];
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+        Procesdata
+      </p>
+      <h2 className="mt-1 text-xl font-bold tracking-normal text-slate-950">Wat verandert er?</h2>
+      <div className="mt-4 space-y-3">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              {row.label}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {row.values.map((value) => (
+                <span key={value} className="rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200">
+                  {value}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GapCard({ gaps }: { gaps: ProcessJourneyEvidenceItem[] }) {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm sm:p-6">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-1 h-5 w-5 shrink-0 text-amber-600" />
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
+            Open gaps
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Deze procesreis is opgeslagen, maar er is nog geen directe koppeling tussen de stappen
-            bevestigd. Controleer of de juiste automations in deze procesreis staan.
+          <h2 className="mt-1 text-xl font-bold tracking-normal text-slate-950">Mogelijke vervolgen</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Deze verbindingen zijn niet bewezen met een exacte webhook-match en staan daarom los van de keten.
           </p>
         </div>
+      </div>
+      <div className="mt-4 space-y-3">
+        {gaps.map((gap, index) => (
+          <EvidenceRow key={`${gap.title}-${index}`} item={gap} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AutomationCards({ cards }: { cards: ProcessJourneyAutomationCardPresentation[] }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Automation-records
+          </p>
+          <h2 className="mt-1 text-xl font-bold tracking-normal text-slate-950">
+            Automations in deze procesreis
+          </h2>
+        </div>
+        <p className="text-sm text-slate-500">Klik door voor bronanalyse, raw data en beheer.</p>
+      </div>
+
+      {cards.length === 0 ? (
+        <EmptyPanel text="Er zijn nog geen automation-records gekoppeld aan deze procesreis." />
       ) : (
-        <div className="space-y-2">
-          {edges.map((edge, index) => {
-            const from = autoMap.get(edge.from);
-            const to = autoMap.get(edge.to);
-            return (
-              <div key={`${edge.from}-${edge.to}`} className="rounded-lg border border-border bg-background p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
-                    {index + 1}
-                  </span>
-                  <EvidenceBadge level={edge.evidence.level} label={edge.evidence.label} />
-                  <span className="text-xs font-semibold text-muted-foreground">
-                    {edge.evidence.score}% zekerheid
-                  </span>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {cards.map((card) => (
+            <Link
+              key={card.id}
+              to={card.href}
+              className={`group rounded-2xl border bg-white p-4 shadow-sm transition-colors hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 ${sourceBorderClass(card.tone)}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <SourceBadge tone={card.tone} label={card.sourceLabel} />
+                  <h3 className="mt-3 line-clamp-2 text-sm font-bold leading-5 text-slate-950">
+                    {card.title}
+                  </h3>
                 </div>
-                <p className="mt-2 text-sm font-medium leading-snug text-foreground">
-                  {from?.naam ?? edge.from}
-                  <span className="mx-2 text-muted-foreground">-&gt;</span>
-                  {to?.naam ?? edge.to}
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {edge.evidence.reason}
-                </p>
+                <ExternalLink className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-900" />
               </div>
-            );
-          })}
+              <p className="mt-3 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-600">
+                Rol: {card.role}
+              </p>
+              <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{card.description}</p>
+            </Link>
+          ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-function ProcessAutomationCards({
-  flow,
-  autoMap,
-  presentation,
+function MissingAutomationRecords({
+  ids,
+  onRemoveAutomation,
 }: {
-  flow: { automationIds: string[] };
-  autoMap: Map<string, Automatisering>;
-  presentation?: FlowDetailPresentation | null;
+  ids: string[];
+  onRemoveAutomation: (id: string) => Promise<void>;
 }) {
-  const automations = flow.automationIds
-    .map((automationId) => autoMap.get(automationId))
-    .filter((automation): automation is Automatisering => automation !== undefined);
-
-  if (automations.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
-        <p className="text-sm text-muted-foreground">
-          Er zijn nog geen automation-records gekoppeld aan deze procesreis.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {automations.map((automation, index) => {
-        const primarySystem = automation.systemen[0] ?? "Anders";
-        const system = getSystemMeta(primarySystem);
-        const summary = getPresentationAutomationSummary(
-          presentation ?? null,
-          automation,
-          buildAutomationFunnel(automation)?.narrative || automation.doel || automation.trigger,
-        );
-
-        return (
-          <Link
-            key={automation.id}
-            to={`/automations/${encodeURIComponent(automation.id)}`}
-            className="group rounded-lg border border-border bg-card p-3.5 shadow-sm transition-colors hover:border-primary/50 hover:bg-primary-soft/40 focus-ring"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border bg-background px-1 text-[9px] font-bold"
-                    style={{
-                      borderColor: `hsl(var(${system.hue}))`,
-                      color: `hsl(var(${system.hue}))`,
-                    }}
-                  >
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {system.label}
-                  </span>
-                </div>
-                <h3 className="mt-1.5 line-clamp-1 text-sm font-semibold leading-snug text-foreground">
-                  {getPresentationAutomationLabel(presentation ?? null, automation, displayAutomationName(automation))}
-                </h3>
+    <section className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-1 h-5 w-5 shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-bold text-slate-950">Ontbrekende automation-records</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Deze IDs staan nog in de procesreis, maar het automation-record is niet beschikbaar.
+          </p>
+          <div className="mt-3 space-y-2">
+            {ids.map((id) => (
+              <div key={id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <span className="min-w-0 truncate text-xs font-mono text-slate-500">{id}</span>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-red-600 hover:text-red-700"
+                  onClick={() => onRemoveAutomation(id)}
+                >
+                  Verwijder
+                </button>
               </div>
-              <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-            </div>
-            {summary && (
-              <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-                {summary}
-              </p>
-            )}
-            <p className="mt-2 text-[10px] font-semibold text-primary">
-              Open automation
-            </p>
-          </Link>
-        );
-      })}
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DeleteFlowCard({
+  showDeleteConfirm,
+  setShowDeleteConfirm,
+  onDelete,
+  isDeleting,
+}: {
+  showDeleteConfirm: boolean;
+  setShowDeleteConfirm: (value: boolean) => void;
+  onDelete: () => Promise<void>;
+  isDeleting: boolean;
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      {showDeleteConfirm ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-slate-600">Procesreis verwijderen?</p>
+          <button
+            type="button"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+            onClick={onDelete}
+            disabled={isDeleting}
+          >
+            <Trash2 className="h-4 w-4" />
+            Ja, verwijder
+          </button>
+          <button
+            type="button"
+            className="h-10 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            onClick={() => setShowDeleteConfirm(false)}
+          >
+            Annuleer
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-100 px-3 text-sm font-semibold text-red-600 hover:bg-red-50"
+          onClick={() => setShowDeleteConfirm(true)}
+        >
+          <Trash2 className="h-4 w-4" />
+          Procesreis verwijderen
+        </button>
+      )}
+    </section>
+  );
+}
+
+function EvidenceRow({ item }: { item: ProcessJourneyEvidenceItem }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full ${evidenceDotClass(item.tone)}`} />
+        <p className="text-sm font-semibold text-slate-950">{item.title}</p>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${evidenceTagClass(item.tone)}`}>
+          {item.tag}
+        </span>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>
     </div>
   );
 }
 
-function EvidenceBadge({ level, label }: { level: FlowEdge["evidence"]["level"]; label: string }) {
-  const className =
-    level === "confirmed"
-      ? "bg-green-100 text-green-700"
-      : level === "hard"
-        ? "bg-blue-100 text-blue-700"
-        : level === "strong"
-          ? "bg-indigo-100 text-indigo-700"
-          : level === "weak"
-            ? "bg-yellow-100 text-yellow-800"
-            : "bg-slate-100 text-slate-700";
-
+function HeaderBadge({ label }: { label: string }) {
+  const good = /bevestig|bewezen/i.test(label);
+  const warning = /gap/i.test(label);
   return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${className}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+        warning
+          ? "bg-amber-50 text-amber-700"
+          : good
+            ? "bg-emerald-50 text-emerald-700"
+            : "bg-slate-100 text-slate-700"
+      }`}
+    >
+      {good && <CheckCircle2 className="h-3.5 w-3.5" />}
+      {warning && <AlertTriangle className="h-3.5 w-3.5" />}
+      {!good && !warning && <Layers className="h-3.5 w-3.5" />}
       {label}
     </span>
+  );
+}
+
+function SourceBadge({ tone, label }: { tone: ProcessJourneyNodePresentation["tone"]; label: string }) {
+  return (
+    <span className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ${sourceBadgeClass(tone)}`}>
+      {label}
+    </span>
+  );
+}
+
+function EmptyPanel({ text }: { text: string }) {
+  return (
+    <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5">
+      <p className="text-sm text-slate-500">{text}</p>
+    </div>
   );
 }
 
@@ -512,123 +781,230 @@ function OpenSuggestiesCard({
   const verwerp = useVerwerpFlowSuggestie();
   const ongedaanVerwerp = useOngedaanVerwerpFlowSuggestie();
 
-  const nogTeBeoordelen = suggesties.filter((s) => !s.rejected);
-  const afgewezen = suggesties.filter((s) => s.rejected);
+  const nogTeBeoordelen = suggesties.filter((suggestion) => !suggestion.rejected);
+  const afgewezen = suggesties.filter((suggestion) => suggestion.rejected);
 
   if (suggesties.length === 0) return null;
 
   const anyPending = bevestig.isPending || verwerp.isPending || ongedaanVerwerp.isPending;
 
-  async function handleBevestig(s: FlowSuggestie): Promise<void> {
+  async function handleBevestig(suggestion: FlowSuggestie): Promise<void> {
+    if (suggestion.zekerheid !== "webhook") {
+      toast.error("Alleen exacte webhook-matches kunnen aan een procesreis worden toegevoegd.");
+      return;
+    }
     try {
-      await onBevestig(s.fromId, s.toId);
-      await bevestig.mutateAsync({ fromId: s.fromId, toId: s.toId });
+      await onBevestig(suggestion.fromId, suggestion.toId);
+      await bevestig.mutateAsync({ fromId: suggestion.fromId, toId: suggestion.toId });
       toast.success("Koppeling bevestigd");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Bevestigen mislukt");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Bevestigen mislukt");
     }
   }
 
   return (
-    <div className="card-elevated p-4 space-y-3">
-      <p className="px-1 pb-1 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
-        Openstaande suggesties
-      </p>
-
-      {nogTeBeoordelen.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-foreground">
-            Nog te beoordelen ({nogTeBeoordelen.length})
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Suggesties beheren
           </p>
-          {nogTeBeoordelen.map((s) => (
-            <div
-              key={`${s.fromId}-${s.toId}`}
-              className="grid gap-2 rounded-lg border border-border bg-background p-2"
-            >
-              <div className="min-w-0 text-xs leading-relaxed">
-                <span className="font-medium text-foreground">{s.fromNaam}</span>
-                <span className="text-muted-foreground mx-1">-&gt;</span>
-                <span className="font-medium text-foreground">{s.toNaam}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <ZekerheidBadge zekerheid={s.zekerheid} />
-                <button
-                  type="button"
-                  className="rounded border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
-                  disabled={anyPending}
-                  onClick={() =>
-                    verwerp.mutate(
-                      { fromId: s.fromId, toId: s.toId },
-                      { onError: (e) => toast.error(e instanceof Error ? e.message : "Verwerpen mislukt") },
-                    )
-                  }
-                >
-                  Verwerp
-                </button>
-                <button
-                  type="button"
-                  className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
-                  disabled={anyPending}
-                  onClick={() => handleBevestig(s)}
-                >
-                  Bevestig
-                </button>
-              </div>
-            </div>
-          ))}
+          <h2 className="mt-1 text-xl font-bold tracking-normal text-slate-950">
+            Openstaande koppelingen
+          </h2>
         </div>
-      )}
+        <span className="w-fit rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">
+          {automationIds.length} huidige automations
+        </span>
+      </div>
 
-      {afgewezen.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-foreground">
-            Afgewezen ({afgewezen.length})
-          </p>
-          {afgewezen.map((s) => (
-            <div
-              key={`${s.fromId}-${s.toId}`}
-              className="grid gap-2 rounded-lg border border-border bg-background p-2 opacity-60"
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        {nogTeBeoordelen.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-slate-900">
+              Nog te beoordelen ({nogTeBeoordelen.length})
+            </p>
+            {nogTeBeoordelen.map((suggestion) => (
+              <SuggestionRow
+                key={`${suggestion.fromId}-${suggestion.toId}`}
+                suggestion={suggestion}
+                disabled={anyPending}
+                canConfirm={suggestion.zekerheid === "webhook"}
+                onReject={() =>
+                  verwerp.mutate(
+                    { fromId: suggestion.fromId, toId: suggestion.toId },
+                    { onError: (error) => toast.error(error instanceof Error ? error.message : "Verwerpen mislukt") },
+                  )
+                }
+                onConfirm={() => handleBevestig(suggestion)}
+              />
+            ))}
+          </div>
+        )}
+
+        {afgewezen.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-slate-900">Afgewezen ({afgewezen.length})</p>
+            {afgewezen.map((suggestion) => (
+              <SuggestionRow
+                key={`${suggestion.fromId}-${suggestion.toId}`}
+                suggestion={suggestion}
+                disabled={anyPending}
+                rejected
+                onUndoReject={() =>
+                  ongedaanVerwerp.mutate(
+                    { fromId: suggestion.fromId, toId: suggestion.toId },
+                    { onError: (error) => toast.error(error instanceof Error ? error.message : "Ongedaan maken mislukt") },
+                  )
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SuggestionRow({
+  suggestion,
+  disabled,
+  rejected = false,
+  onReject,
+  onConfirm,
+  onUndoReject,
+  canConfirm = true,
+}: {
+  suggestion: FlowSuggestie;
+  disabled: boolean;
+  rejected?: boolean;
+  onReject?: () => void;
+  onConfirm?: () => void;
+  onUndoReject?: () => void;
+  canConfirm?: boolean;
+}) {
+  return (
+    <div className={`rounded-xl border border-slate-200 bg-slate-50/70 p-3 ${rejected ? "opacity-65" : ""}`}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+        {rejected ? (
+          <XCircle className="h-4 w-4 shrink-0 text-red-500" />
+        ) : (
+          <Link2 className="h-4 w-4 shrink-0 text-slate-500" />
+        )}
+        <span className="font-semibold text-slate-950">{suggestion.fromNaam}</span>
+        <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+        <span className="font-semibold text-slate-950">{suggestion.toNaam}</span>
+      </div>
+      <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{suggestion.redenering}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <ZekerheidBadge zekerheid={suggestion.zekerheid} />
+        {!rejected && (
+          <>
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              disabled={disabled}
+              onClick={onReject}
             >
-              <div className="flex min-w-0 gap-2 text-xs leading-relaxed">
-                <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-                <span>
-                  <span className="font-medium text-foreground">{s.fromNaam}</span>
-                  <span className="text-muted-foreground mx-1">-&gt;</span>
-                  <span className="font-medium text-foreground">{s.toNaam}</span>
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 pl-5">
-                <ZekerheidBadge zekerheid={s.zekerheid} />
-                <button
-                  type="button"
-                  className="rounded border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
-                  disabled={anyPending}
-                  onClick={() =>
-                    ongedaanVerwerp.mutate(
-                      { fromId: s.fromId, toId: s.toId },
-                      { onError: (e) => toast.error(e instanceof Error ? e.message : "Ongedaan maken mislukt") },
-                    )
-                  }
-                >
-                  Ongedaan maken
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+              Verwerp
+            </button>
+            {canConfirm && (
+              <button
+                type="button"
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                disabled={disabled}
+                onClick={onConfirm}
+              >
+                Bevestig
+              </button>
+            )}
+          </>
+        )}
+        {rejected && (
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            disabled={disabled}
+            onClick={onUndoReject}
+          >
+            Ongedaan maken
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 function ZekerheidBadge({ zekerheid }: { zekerheid: "webhook" | "ai" }) {
   return zekerheid === "webhook" ? (
-    <span className="shrink-0 rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">
+    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
       webhook
     </span>
   ) : (
-    <span className="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700">
-      AI
+    <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+      Niet bewezen
     </span>
   );
+}
+
+function sourceBadgeClass(tone: ProcessJourneyNodePresentation["tone"]): string {
+  if (tone === "hubspot") return "bg-red-50 text-red-600";
+  if (tone === "zapier") return "bg-orange-50 text-orange-700";
+  if (tone === "gitlab") return "bg-violet-50 text-violet-700";
+  if (tone === "typeform") return "bg-slate-100 text-slate-700";
+  return "bg-blue-50 text-blue-700";
+}
+
+function sourceBorderClass(tone: ProcessJourneyNodePresentation["tone"]): string {
+  if (tone === "hubspot") return "border-t-4 border-t-red-300";
+  if (tone === "zapier") return "border-t-4 border-t-orange-300";
+  if (tone === "gitlab") return "border-t-4 border-t-violet-300";
+  if (tone === "typeform") return "border-t-4 border-t-slate-300";
+  return "border-t-4 border-t-blue-300";
+}
+
+function sourceCircleClass(tone: ProcessJourneyNodePresentation["tone"]): string {
+  if (tone === "hubspot") return "bg-red-50 text-red-700 ring-1 ring-red-100";
+  if (tone === "zapier") return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
+  if (tone === "gitlab") return "bg-violet-50 text-violet-700 ring-1 ring-violet-100";
+  if (tone === "typeform") return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+  return "bg-blue-50 text-blue-700 ring-1 ring-blue-100";
+}
+
+function metricToneClass(tone: ProcessJourneyMetricPresentation["tone"]): string {
+  if (tone === "good") return "border-emerald-200";
+  if (tone === "warning") return "border-amber-200";
+  return "border-slate-200";
+}
+
+function transitionToneClass(tone: ProcessJourneyTransitionPresentation["tone"]): string {
+  if (tone === "good") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function transitionTonePillClass(tone: ProcessJourneyTransitionPresentation["tone"]): string {
+  if (tone === "good") return "bg-emerald-50 text-emerald-700";
+  if (tone === "warning") return "bg-amber-50 text-amber-700";
+  return "bg-slate-100 text-slate-700";
+}
+
+function qualityClass(quality: ProcessJourneyDetailPresentation["analysisQuality"]): string {
+  if (quality === "100% webhook") return "bg-emerald-50 text-emerald-700";
+  if (quality === "Keten stopt") return "bg-amber-50 text-amber-700";
+  return "bg-amber-50 text-amber-700";
+}
+
+function evidenceDotClass(tone: ProcessJourneyEvidenceItem["tone"]): string {
+  if (tone === "good") return "bg-emerald-500";
+  if (tone === "critical") return "bg-red-500";
+  if (tone === "warning") return "bg-amber-500";
+  return "bg-slate-400";
+}
+
+function evidenceTagClass(tone: ProcessJourneyEvidenceItem["tone"]): string {
+  if (tone === "good") return "bg-emerald-50 text-emerald-700";
+  if (tone === "critical") return "bg-red-50 text-red-700";
+  if (tone === "warning") return "bg-amber-50 text-amber-700";
+  return "bg-slate-100 text-slate-700";
 }

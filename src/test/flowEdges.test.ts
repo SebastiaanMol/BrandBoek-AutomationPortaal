@@ -12,8 +12,26 @@ function makeAuto(id: string, targets: string[] = []): Automatisering {
   };
 }
 
+function makeWebhookSender(id: string, path: string): Automatisering {
+  return {
+    ...makeAuto(id),
+    source: "hubspot",
+    categorie: "HubSpot Workflow",
+    webhookPaths: [path],
+  };
+}
+
+function makeGitLabReceiver(id: string, endpoint: string): Automatisering {
+  return {
+    ...makeAuto(id),
+    source: "gitlab",
+    categorie: "Backend Script",
+    gitlabEndpoint: { method: "POST", endpoint, handler: "handler" },
+  };
+}
+
 describe("buildFlowEdges", () => {
-  it("builds edges from koppelingen within the flow", () => {
+  it("does not build edges from legacy koppelingen", () => {
     const ids = ["a", "b", "c"];
     const autoMap = new Map([
       ["a", makeAuto("a", ["b"])],
@@ -21,9 +39,7 @@ describe("buildFlowEdges", () => {
       ["c", makeAuto("c")],
     ]);
     const edges = buildFlowEdges(ids, autoMap);
-    expect(edges).toHaveLength(2);
-    expect(edges[0]).toMatchObject({ from: "a", to: "b" });
-    expect(edges[1]).toMatchObject({ from: "b", to: "c" });
+    expect(edges).toEqual([]);
   });
 
   it("ignores koppelingen pointing outside the flow", () => {
@@ -33,11 +49,10 @@ describe("buildFlowEdges", () => {
       ["b", makeAuto("b")],
     ]);
     const edges = buildFlowEdges(ids, autoMap);
-    expect(edges).toHaveLength(1);
-    expect(edges[0]).toMatchObject({ from: "a", to: "b" });
+    expect(edges).toEqual([]);
   });
 
-  it("falls back to sequential chain when no koppelingen", () => {
+  it("does not fall back to a sequential chain", () => {
     const ids = ["x", "y", "z"];
     const autoMap = new Map([
       ["x", makeAuto("x")],
@@ -45,17 +60,15 @@ describe("buildFlowEdges", () => {
       ["z", makeAuto("z")],
     ]);
     const edges = buildFlowEdges(ids, autoMap);
-    expect(edges).toHaveLength(2);
-    expect(edges[0]).toMatchObject({ from: "x", to: "y" });
-    expect(edges[1]).toMatchObject({ from: "y", to: "z" });
+    expect(edges).toEqual([]);
   });
 
-  it("builds official GitLab flow edges from confirmed automation_links", () => {
+  it("builds process journey edges only from confirmed exact webhook matches", () => {
     const ids = ["hubspot", "other", "gitlab"];
     const autoMap = new Map([
-      ["hubspot", makeAuto("hubspot")],
+      ["hubspot", makeWebhookSender("hubspot", "/wefact/hubspot/upsert_debtor")],
       ["other", makeAuto("other")],
-      ["gitlab", makeAuto("gitlab")],
+      ["gitlab", makeGitLabReceiver("gitlab", "/wefact/hubspot/upsert_debtor")],
     ]);
     const edges = buildFlowEdges(ids, autoMap, [
       { sourceId: "hubspot", targetId: "gitlab" },
@@ -66,27 +79,21 @@ describe("buildFlowEdges", () => {
       from: "hubspot",
       to: "gitlab",
       label: "",
-      evidence: { level: "confirmed", label: "Bevestigd" },
+      evidence: { level: "confirmed", label: "100% webhook-match", score: 100 },
     });
   });
 
-  it("falls back to koppelingen when no confirmed automation_links exist inside the flow", () => {
+  it("ignores confirmed links without an exact webhook match", () => {
     const ids = ["a", "b"];
     const autoMap = new Map([
-      ["a", makeAuto("a", ["b"])],
-      ["b", makeAuto("b")],
+      ["a", makeWebhookSender("a", "/api/customer")],
+      ["b", makeGitLabReceiver("b", "/customer")],
     ]);
     const edges = buildFlowEdges(ids, autoMap, [
-      { sourceId: "external", targetId: "b" },
+      { sourceId: "a", targetId: "b" },
     ]);
 
-    expect(edges).toHaveLength(1);
-    expect(edges[0]).toMatchObject({
-      from: "a",
-      to: "b",
-      label: "",
-      evidence: { level: "confirmed", label: "Bevestigd" },
-    });
+    expect(edges).toEqual([]);
   });
 
   it("returns empty for single automation", () => {

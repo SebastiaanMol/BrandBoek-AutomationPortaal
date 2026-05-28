@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import AutomationDetailPage from "@/pages/AutomationDetailPage";
@@ -43,6 +43,8 @@ vi.mock("@/lib/hooks", () => ({
   useAutomatiseringenIncludingLegacyGitlab: () => ({ data: [automation] }),
   useFlows: () => ({ data: [] }),
   useAllConfirmedAutomationLinks: () => ({ data: [] }),
+  useFlowSuggesties: () => ({ data: [] }),
+  usePipelines: () => ({ data: [] }),
   useSetCleanupDeleteCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -63,9 +65,23 @@ describe("automation detail source finding alert", () => {
       </MemoryRouter>,
     );
 
-    screen.getByRole("alert");
-    screen.getByText("Deze automation kan niet meer worden teruggevonden bij Typeform.");
+    const alert = screen.getByRole("alert");
+    within(alert).getByText("Deze automation kan niet meer worden teruggevonden bij Typeform.");
     screen.getByText(/Voor het eerst gezien/i);
     screen.getByText(/Laatst bevestigd/i);
+  });
+
+  it("shows source quality with concrete missing evidence on the detail page", () => {
+    render(
+      <MemoryRouter initialEntries={["/automations/AUTO-TF-001"]}>
+        <Routes>
+          <Route path="/automations/:id" element={<AutomationDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    screen.getByText("Bronkwaliteit");
+    screen.getByText(/Procesreis nog niet klaar/i);
+    expect(screen.getAllByText(/Actieve Typeform webhook/i).length).toBeGreaterThan(0);
   });
 });

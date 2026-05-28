@@ -68,6 +68,12 @@ export interface HubSpotWorkflowActionInfo {
   propertyValue?: string | number | boolean | null;
 }
 
+export interface HubSpotWorkflowUserAuditInfo {
+  id?: string | null;
+  email?: string | null;
+  label: string;
+}
+
 export interface HubSpotWorkflowBranchInfo {
   id: string;
   label: string;
@@ -81,6 +87,10 @@ export interface HubSpotWorkflowInfo {
   objectType?: string | null;
   enrollmentType?: string | null;
   shouldReEnroll?: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  createdBy?: HubSpotWorkflowUserAuditInfo | null;
+  updatedBy?: HubSpotWorkflowUserAuditInfo | null;
   triggers: HubSpotWorkflowTriggerInfo[];
   actions: HubSpotWorkflowActionInfo[];
   branches?: HubSpotWorkflowBranchInfo[];
@@ -218,6 +228,7 @@ export interface AutomationImportProposal {
 
 export type AutomationSourceFindingType =
   | "source_missing"
+  | "source_data_incomplete"
   | "source_changed"
   | "webhook_changed"
   | "metadata_changed";

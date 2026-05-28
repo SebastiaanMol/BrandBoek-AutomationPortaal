@@ -80,6 +80,84 @@ describe("flowSuggestionReviewPresentation", () => {
     expect(presentation.transitions).toEqual([]);
   });
 
+  it("keeps a stored webhook suggestion visible when source handoff fields are incomplete", () => {
+    const presentation = getFlowSuggestionReviewPresentation({
+      group: makeGroup("Webhook-match: automation roept endpoint /operations/hubspot/create_new_deal aan."),
+      automations: [
+        makeHubSpotAutomation({
+          webhookPaths: [],
+          hubspotWorkflow: {
+            name: "Create new deal",
+            triggers: [],
+            actions: [],
+          },
+        }),
+        makeGitLabAutomation({
+          gitlabEndpoint: {
+            method: "POST",
+            endpoint: "/operations/hubspot/create_new_deal",
+            handler: "createNewDeal",
+            calls: [{ depth: 1, kind: "hubspot_repository_call", from: "worker", to: "repo", file: "repo.py" }],
+          },
+        }),
+      ],
+      endpointEvidence: "/operations/hubspot/create_new_deal",
+      aiResult: null,
+    });
+
+    expect(presentation.transitions).toHaveLength(1);
+    expect(presentation.transitions[0]).toMatchObject({
+      label: "100% webhook-match",
+      normalizedPath: "/operations/hubspot/create_new_deal",
+      sourcePath: "/operations/hubspot/create_new_deal",
+      targetPath: "/operations/hubspot/create_new_deal",
+    });
+    expect(presentation.badges).toContain("1 webhook-overgangen");
+    expect(presentation.metrics.find((metric) => metric.label === "Bewijsstatus")?.value).toBe("100%");
+    expect(presentation.approvalState.status).toBe("blocked");
+    expect(presentation.sourceQualityMessages).toContainEqual(
+      expect.objectContaining({
+        label: "HubSpot triggercriteria",
+        tone: "warning",
+      }),
+    );
+  });
+
+  it("keeps a stored webhook suggestion visible when receiver endpoint metadata is unavailable", () => {
+    const presentation = getFlowSuggestionReviewPresentation({
+      group: makeGroup("Webhook-match: automation roept endpoint /operations/hubspot/create_new_deal aan."),
+      automations: [
+        makeHubSpotAutomation({
+          webhookPaths: [],
+          hubspotWorkflow: {
+            name: "Create new deal",
+            triggers: [],
+            actions: [],
+          },
+        }),
+        baseAutomation({
+          id: "gl",
+          naam: "HubSpot Operations API",
+          categorie: "Backend Script",
+          source: "gitlab",
+          systemen: ["GitLab", "HubSpot"],
+        }),
+      ],
+      endpointEvidence: "/operations/hubspot/create_new_deal",
+      aiResult: null,
+    });
+
+    expect(presentation.transitions).toHaveLength(1);
+    expect(presentation.transitions[0]).toMatchObject({
+      label: "100% webhook-match",
+      normalizedPath: "/operations/hubspot/create_new_deal",
+      sourcePath: "/operations/hubspot/create_new_deal",
+      targetPath: "/operations/hubspot/create_new_deal",
+    });
+    expect(presentation.metrics.find((metric) => metric.label === "Bewijsstatus")?.value).toBe("100%");
+    expect(presentation.approvalState.status).toBe("blocked");
+  });
+
   it("uses AI result for descriptive fields without changing proof", () => {
     const presentation = getFlowSuggestionReviewPresentation({
       group: makeGroup("Webhook-match: /backend/process-deal"),

@@ -81,10 +81,11 @@ describe("AutomationProcessJourneyMembership", () => {
 
     screen.getByText("Nog niet gekoppeld aan een procesreis");
     screen.getByText(
-      "Deze automation staat op dit moment los in het portaal. Er is nog geen bevestigde procesreis gevonden waarin deze automation meedoet. Een koppeling wordt pas getoond wanneer een procesreis of bewezen overgang dit expliciet bevestigt.",
+      "Deze automation staat op dit moment los in het portaal. Er is nog geen exacte webhook-overdracht gevonden waarin deze automation meedoet.",
     );
     expect(screen.queryByText("Onderdeel van procesreis")).not.toBeInTheDocument();
     expect(screen.queryByText("Bevestigde procesreis")).not.toBeInTheDocument();
+    expect(screen.queryByText("Webhook-bewezen procesreis")).not.toBeInTheDocument();
     expect(screen.queryByText("HubSpot Workflows")).not.toBeInTheDocument();
     expect(screen.queryByText("Backend Script")).not.toBeInTheDocument();
     expect(screen.queryByText("Suggestie")).not.toBeInTheDocument();

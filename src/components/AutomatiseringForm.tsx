@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Automatisering, Systeem, Categorie, Status, KlantFase } from "@/lib/types";
+import type { Automatisering, Systeem, Categorie, Status, KlantFase, HubSpotWorkflowUserAuditInfo } from "@/lib/types";
 import { CATEGORIEEN, SYSTEMEN, STATUSSEN, KLANT_FASEN } from "@/lib/types";
 import { useAutomatiseringen, useSaveAutomatisering, useUpdateAutomatisering, useNextId, usePortalSettings } from "@/lib/hooks";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { X, Loader2 } from "lucide-react";
+import { ExternalLink, Lock, X, Loader2 } from "lucide-react";
+import { getHubSpotWorkflowSourceUrl, isHubSpotAutomation } from "@/lib/hubspotSourceUrl";
 
 interface AutomatiseringFormProps {
   prefill?: Partial<Automatisering>;
@@ -62,6 +63,9 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
     ...prefill,
   });
 
+  const sourceItem = prefill as Automatisering | undefined;
+  const isHubSpotEdit = Boolean(editMode && sourceItem && isHubSpotAutomation(sourceItem));
+
   const set = (key: string, value: unknown) => setForm((f) => ({ ...f, [key]: value }));
 
   const toggleSysteem = (s: string): void => {
@@ -100,7 +104,8 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
   };
 
   const submit = async () => {
-    if (!form.naam?.trim()) {
+    const effectiveNaam = isHubSpotEdit ? sourceItem?.naam : form.naam;
+    if (!effectiveNaam?.trim()) {
       toast.error("Name is required");
       return;
     }
@@ -135,16 +140,17 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
     }
 
     const item: Automatisering = {
+      ...(editMode && sourceItem ? sourceItem : {}),
       id,
-      naam: form.naam!,
-      categorie: form.categorie as Categorie,
-      doel: form.doel || "",
-      trigger: form.trigger || "",
-      systemen: (form.systemen || []) as Systeem[],
-      stappen: (form.stappen || []).filter((s) => s.trim()),
+      naam: isHubSpotEdit ? sourceItem!.naam : form.naam!,
+      categorie: isHubSpotEdit ? sourceItem!.categorie : form.categorie as Categorie,
+      doel: isHubSpotEdit ? sourceItem!.doel : form.doel || "",
+      trigger: isHubSpotEdit ? sourceItem!.trigger : form.trigger || "",
+      systemen: isHubSpotEdit ? sourceItem!.systemen : (form.systemen || []) as Systeem[],
+      stappen: isHubSpotEdit ? sourceItem!.stappen : (form.stappen || []).filter((s) => s.trim()),
       afhankelijkheden: form.afhankelijkheden || "",
       owner: form.owner || "",
-      status: form.status as Status,
+      status: isHubSpotEdit ? sourceItem!.status : form.status as Status,
       verbeterideeën: form.verbeterideeën || "",
       mermaidDiagram: form.mermaidDiagram || "",
       koppelingen: (form.koppelingen || []).filter((k) => k.doelId),
@@ -186,38 +192,44 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
         </p>
       </div>
 
-      <Field label="Name">
-        <Input value={form.naam} onChange={(e) => set("naam", e.target.value)} placeholder="Automation name" />
-      </Field>
+      {isHubSpotEdit && sourceItem ? (
+        <HubSpotReadOnlySourcePanel automation={sourceItem} />
+      ) : (
+        <>
+          <Field label="Name">
+            <Input aria-label="Name" value={form.naam} onChange={(e) => set("naam", e.target.value)} placeholder="Automation name" />
+          </Field>
 
-      <Field label="Category">
-        <Select value={form.categorie} onValueChange={(v) => set("categorie", v)}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {activeCategorieen.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </Field>
+          <Field label="Category">
+            <Select value={form.categorie} onValueChange={(v) => set("categorie", v)}>
+              <SelectTrigger aria-label="Category"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {activeCategorieen.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
 
-      <Field label="Goal">
-        <Textarea value={form.doel} onChange={(e) => set("doel", e.target.value)} placeholder="What does this automation do?" />
-      </Field>
+          <Field label="Goal">
+            <Textarea aria-label="Goal" value={form.doel} onChange={(e) => set("doel", e.target.value)} placeholder="What does this automation do?" />
+          </Field>
 
-      <Field label="Trigger">
-        <Input value={form.trigger} onChange={(e) => set("trigger", e.target.value)} placeholder="What starts it?" />
-      </Field>
+          <Field label="Trigger">
+            <Input aria-label="Trigger" value={form.trigger} onChange={(e) => set("trigger", e.target.value)} placeholder="What starts it?" />
+          </Field>
 
-      <Field label="Primary Systems">
-        <p className="text-[10px] text-muted-foreground mb-2">Select all systems used by this automation</p>
-        <div className="flex flex-wrap gap-3">
-          {effectiveSystemen.map((s) => (
-            <label key={s} className="flex items-center gap-2 text-sm">
-              <Checkbox checked={form.systemen?.includes(s as Systeem)} onCheckedChange={() => toggleSysteem(s)} />
-              {s}
-            </label>
-          ))}
-        </div>
-      </Field>
+          <Field label="Primary Systems">
+            <p className="text-[10px] text-muted-foreground mb-2">Select all systems used by this automation</p>
+            <div className="flex flex-wrap gap-3">
+              {effectiveSystemen.map((s) => (
+                <label key={s} className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={form.systemen?.includes(s as Systeem)} onCheckedChange={() => toggleSysteem(s)} />
+                  {s}
+                </label>
+              ))}
+            </div>
+          </Field>
+        </>
+      )}
 
       <Field label="Customer Process Phase">
         <p className="text-[10px] text-muted-foreground mb-2">In which phase(s) of the customer journey is this automation active?</p>
@@ -234,12 +246,13 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
         </div>
       </Field>
 
-      <Field label="Flow / Steps">
+      {!isHubSpotEdit && (
+        <Field label="Flow / Steps">
         <div className="space-y-2">
           {(form.stappen || []).map((stap, i) => (
             <div key={i} className="flex gap-2 items-center">
               <span className="text-xs text-muted-foreground font-mono w-6">{i + 1}.</span>
-              <Input value={stap} onChange={(e) => updateStap(i, e.target.value)} placeholder={`Stap ${i + 1}`} />
+              <Input aria-label={`Stap ${i + 1}`} value={stap} onChange={(e) => updateStap(i, e.target.value)} placeholder={`Stap ${i + 1}`} />
               {(form.stappen || []).length > 1 && (
                 <button onClick={() => removeStap(i)} className="text-destructive text-sm hover:underline">×</button>
               )}
@@ -247,7 +260,8 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
           ))}
           <button onClick={addStap} className="text-sm text-ring hover:underline">+ Add step</button>
         </div>
-      </Field>
+        </Field>
+      )}
 
       <Field label="Links">
         <p className="text-[10px] text-muted-foreground mb-2">
@@ -292,21 +306,23 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
       </Field>
 
       <Field label="Dependencies">
-        <Textarea value={form.afhankelijkheden} onChange={(e) => set("afhankelijkheden", e.target.value)} />
+        <Textarea aria-label="Dependencies" value={form.afhankelijkheden} onChange={(e) => set("afhankelijkheden", e.target.value)} />
       </Field>
 
       <Field label="Owner">
-        <Input value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Naam" />
+        <Input aria-label="Owner" value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Naam" />
       </Field>
 
-      <Field label="Status">
+      {!isHubSpotEdit && (
+        <Field label="Status">
         <Select value={form.status} onValueChange={(v) => set("status", v)}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
           <SelectContent>
             {(portalSettings?.beschikbareStatussen ?? STATUSSEN).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
-      </Field>
+        </Field>
+      )}
 
       <Field label="Improvement Ideas">
         <Textarea value={form.verbeterideeën} onChange={(e) => set("verbeterideeën", e.target.value)} />
@@ -314,6 +330,7 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
 
       <Field label="Flow Diagram (Mermaid)">
         <Textarea
+          aria-label="Flow Diagram (Mermaid)"
           className="font-mono text-xs"
           rows={6}
           value={form.mermaidDiagram}
@@ -339,6 +356,132 @@ export function AutomatiseringForm({ prefill, editMode, editId }: Automatisering
             Cancel
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function HubSpotReadOnlySourcePanel({ automation }: { automation: Automatisering }): React.ReactNode {
+  const [sourceEditAttempted, setSourceEditAttempted] = useState(false);
+  const sourceUrl = getHubSpotWorkflowSourceUrl(automation);
+  const workflowId = automation.hubspotWorkflow?.workflowId || automation.externalId || "Niet beschikbaar";
+  const trigger = automation.hubspotWorkflow?.triggers?.[0]?.label || automation.trigger || "Niet beschikbaar";
+  const hubspotActions = automation.hubspotWorkflow?.actions
+    ?.map((action) => action.label || action.type)
+    .filter(Boolean)
+    .join(", ");
+  const actions = automation.stappen?.filter(Boolean).join(", ") || hubspotActions || "Niet beschikbaar";
+
+  const showSourceEditMessage = (): void => {
+    setSourceEditAttempted(true);
+    toast.error("Dit veld komt uit HubSpot. Pas dit aan bij de bron en sync daarna opnieuw.");
+  };
+
+  return (
+    <section
+      aria-label="HubSpot bronvelden"
+      className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+              <Lock className="h-4 w-4" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">HubSpot bronvelden zijn read-only</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Pas bronvelden aan in HubSpot en sync daarna opnieuw.
+          </p>
+        </div>
+        {sourceUrl ? (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            Open in HubSpot
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        ) : (
+          <span className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm text-muted-foreground">
+            Bronlink niet beschikbaar
+          </span>
+        )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ReadOnlySourceField label="Naam" value={automation.naam} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="Workflow ID" value={workflowId} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="Categorie / source" value={`${automation.categorie} - HubSpot`} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="Status" value={automation.status} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="HubSpot created by" value={formatHubSpotAuditUser(automation.hubspotWorkflow?.createdBy)} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="HubSpot updated by" value={formatHubSpotAuditUser(automation.hubspotWorkflow?.updatedBy)} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="Created at" value={formatHubSpotAuditDate(automation.hubspotWorkflow?.createdAt)} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="Updated at" value={formatHubSpotAuditDate(automation.hubspotWorkflow?.updatedAt)} onEditAttempt={showSourceEditMessage} />
+        <ReadOnlySourceField label="Beschrijving" value={automation.doel || "Niet beschikbaar"} onEditAttempt={showSourceEditMessage} wide />
+        <ReadOnlySourceField label="Trigger" value={trigger} onEditAttempt={showSourceEditMessage} wide />
+        <ReadOnlySourceField label="Acties" value={actions} onEditAttempt={showSourceEditMessage} wide />
+      </div>
+
+      {sourceEditAttempted && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Dit veld komt uit HubSpot. Pas dit aan bij de bron en sync daarna opnieuw.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function formatHubSpotAuditUser(user: HubSpotWorkflowUserAuditInfo | null | undefined): string {
+  if (!user) return HUBSPOT_AUDIT_SYNC_FALLBACK;
+  const value = user as { id?: string | null; email?: string | null; label?: string | null };
+  const label = value.label?.trim();
+  const email = value.email?.trim();
+  const id = value.id?.trim();
+  if (label && email && label !== email) return `${label} (${email})`;
+  return label || email || (id ? `HubSpot user ${id}` : HUBSPOT_AUDIT_SYNC_FALLBACK);
+}
+
+function formatHubSpotAuditDate(value: string | null | undefined): string {
+  if (!value) return HUBSPOT_AUDIT_SYNC_FALLBACK;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return HUBSPOT_AUDIT_SYNC_FALLBACK;
+  return date.toLocaleDateString("nl-NL", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+const HUBSPOT_AUDIT_SYNC_FALLBACK = "Niet beschikbaar via HubSpot API";
+
+function ReadOnlySourceField({
+  label,
+  value,
+  wide,
+  onEditAttempt,
+}: {
+  label: string;
+  value: string;
+  wide?: boolean;
+  onEditAttempt: () => void;
+}): React.ReactNode {
+  return (
+    <div className={`rounded-lg border border-border bg-background p-3 ${wide ? "sm:col-span-2" : ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="label-uppercase mb-1">{label}</p>
+          <p className="text-sm text-foreground break-words">{value || "Niet beschikbaar"}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onEditAttempt}
+          className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          Edit
+        </button>
       </div>
     </div>
   );

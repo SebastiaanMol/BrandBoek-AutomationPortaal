@@ -55,6 +55,8 @@ vi.mock("@/lib/hooks", () => ({
   useAutomatiseringenIncludingLegacyGitlab: () => ({ data: [typeformAutomation] }),
   useFlows: () => ({ data: [] }),
   useAllConfirmedAutomationLinks: () => ({ data: [] }),
+  useFlowSuggesties: () => ({ data: [] }),
+  usePipelines: () => ({ data: [] }),
   useSetCleanupDeleteCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -77,18 +79,14 @@ function renderAutomationDetail(): void {
 }
 
 describe("AutomationDetailPage Typeform order", () => {
-  it("starts with the standard automation explanation and keeps the Typeform preview in source details", () => {
+  it("starts Typeform details with the Typeform-specific explanation", () => {
     renderAutomationDetail();
 
-    const standardSection = screen.getByLabelText("Standaard automation uitleg");
-    expect(within(standardSection).getByText("Wat doet deze automatisering?")).toBeInTheDocument();
-    expect(within(standardSection).getByText("Processtappen")).toBeInTheDocument();
-    expect(within(standardSection).getByText("Wordt gestart door")).toBeInTheDocument();
-    expect(standardSection.textContent ?? "").not.toContain("POST");
-
-    const sourceDetails = screen.getByLabelText("Brondetails");
-    expect(within(sourceDetails).getByText("Typeform enquête-preview")).toBeInTheDocument();
-    expect(within(sourceDetails).getByText("Welke dienstverlening wil de klant bespreken?")).toBeInTheDocument();
-    expect(standardSection.compareDocumentPosition(sourceDetails) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const typeformTemplate = screen.getByLabelText("Typeform automation detail");
+    expect(within(typeformTemplate).getByText("Wat doet dit Typeform formulier?")).toBeInTheDocument();
+    expect(within(typeformTemplate).getByText("Formulieropbouw")).toBeInTheDocument();
+    expect(within(typeformTemplate).getByText("Welke dienstverlening wil de klant bespreken?")).toBeInTheDocument();
+    expect(typeformTemplate.textContent ?? "").not.toContain("POST");
+    expect(screen.queryByLabelText("Standaard automation uitleg")).not.toBeInTheDocument();
   });
 });

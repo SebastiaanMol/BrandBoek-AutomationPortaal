@@ -44,14 +44,15 @@ export async function confirmAutomationLink(linkId: string): Promise<void> {
 }
 
 export async function fetchAllConfirmedAutomationLinks(): Promise<
-  Array<{ sourceId: string; targetId: string }>
+  Array<{ sourceId: string; targetId: string; matchType: string | null }>
 > {
   const { data, error } = await supabase
     .from("automation_links")
-    .select("source_id, target_id")
-    .eq("confirmed", true);
+    .select("source_id, target_id, match_type")
+    .eq("confirmed", true)
+    .eq("match_type", "webhook");
   if (error) throw error;
-  return (data ?? []).map((r) => ({ sourceId: r.source_id, targetId: r.target_id }));
+  return (data ?? []).map((r) => ({ sourceId: r.source_id, targetId: r.target_id, matchType: r.match_type }));
 }
 
 export type FlowSuggestie = {
@@ -138,7 +139,7 @@ export async function ongedaanVerwerpFlowSuggestie(fromId: string, toId: string)
 export async function accepteerFlowKandidaat(nodeIds: string[], flowId: string): Promise<void> {
   const { data: confirmedSuggestions, error: fetchError } = await supabase
     .from("automatisering_ai_flows")
-    .select("from_id, to_id")
+    .select("from_id, to_id, confidence, reasoning")
     .in("from_id", nodeIds)
     .in("to_id", nodeIds)
     .is("flow_id", null)
@@ -146,14 +147,19 @@ export async function accepteerFlowKandidaat(nodeIds: string[], flowId: string):
     .eq("rejected", false);
   if (fetchError) throw fetchError;
 
-  if (confirmedSuggestions?.length) {
+  const webhookSuggestions = (confirmedSuggestions ?? []).filter((suggestion) =>
+    suggestion.confidence >= 1 &&
+    (suggestion.reasoning ?? "").toLowerCase().startsWith("webhook-match:"),
+  );
+
+  if (webhookSuggestions.length) {
     const { error: insertError } = await supabase
       .from("automation_links")
       .upsert(
-        confirmedSuggestions.map((suggestion) => ({
+        webhookSuggestions.map((suggestion) => ({
           source_id: suggestion.from_id,
           target_id: suggestion.to_id,
-          match_type: "manual",
+          match_type: "webhook",
           confirmed: true,
         })),
         { onConflict: "source_id,target_id" },
@@ -166,7 +172,9 @@ export async function accepteerFlowKandidaat(nodeIds: string[], flowId: string):
     .update({ flow_id: flowId })
     .in("from_id", nodeIds)
     .in("to_id", nodeIds)
-    .is("flow_id", null);
+    .is("flow_id", null)
+    .gte("confidence", 1)
+    .ilike("reasoning", "Webhook-match:%");
   if (error) throw error;
 }
 

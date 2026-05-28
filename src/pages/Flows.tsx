@@ -106,12 +106,12 @@ export default function Flows() {
         limit: batchSize,
       });
 
-      setProgress({ label: "Webhook en backend-bewijs controleren", current: 1, total: 2 });
+      setProgress({ label: "Exacte webhook-matches controleren", current: 1, total: 2 });
       await invokeEdgeFunction("detect-flow-links", { mode: "webhook", limit: batchSize });
 
       setProgress({ label: "Conceptprocesreizen verversen", current: 2, total: 2 });
       await queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
-      toast.success("Conceptprocesreizen gedetecteerd");
+      toast.success("Webhook-bewezen procesreizen gedetecteerd");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Detectie mislukt");
     } finally {
@@ -135,12 +135,12 @@ export default function Flows() {
             </div>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Procesreizen</h1>
             <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-              Een procesreis laat zien hoe werk door HubSpot, GitLab workers en vervolgprocessen
-              beweegt: wat iets start, wat er verandert en wat daarna kan gebeuren.
+              Een procesreis ontstaat alleen wanneer twee automations via exact dezelfde webhook- en
+              endpoint-route aan elkaar gekoppeld zijn.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <StatBadge label="Bevestigd" value={confirmedJourneys.length} />
-              <StatBadge label="Concepten" value={conceptJourneys.length} />
+              <StatBadge label="Webhook-bewezen" value={confirmedJourneys.length} />
+              <StatBadge label="100% matches" value={conceptJourneys.length} />
               <StatBadge label="Automations" value={automations.length} />
               <StatBadge label="Systemen" value={totalSystems} />
             </div>
@@ -165,11 +165,10 @@ export default function Flows() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
-                    Bevestigde procesreis = gecontroleerde route van startsignaal naar vervolgproces.
+                    Webhook-bewezen procesreis = exacte webhook/endpoint-overdracht tussen automations.
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Dit zijn procesreizen die zijn beoordeeld en opgeslagen als officiele uitleg van hoe
-                    werk door het bedrijf beweegt.
+                    Naamgelijkenis, AI-suggesties en property-wijzigingen tellen hier niet als bewijs.
                   </p>
                 </div>
                 <Button size="sm" onClick={handleDetectProcessJourneys} disabled={isDetecting}>
@@ -284,8 +283,8 @@ export default function Flows() {
             ) : (
               <div className="card-elevated p-12 text-center">
                 <p className="text-sm text-muted-foreground">
-                  Nog geen bevestigde procesreizen. Bekijk de conceptprocesreizen om routes te
-                  beoordelen en vast te leggen.
+                  Nog geen webhook-bewezen procesreizen. Detecteer exacte webhook-matches om routes te
+                  vinden en vast te leggen.
                 </p>
               </div>
             )}
@@ -296,12 +295,10 @@ export default function Flows() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
-                    Conceptprocesreis = gereconstrueerde route uit startsignaal, endpoint en
-                    automation-bewijs.
+                    Conceptprocesreis = nog niet opgeslagen route met 100% webhook-match.
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Beoordeel hier of de reconstructie klopt. Na bevestiging kan een conceptprocesreis
-                    een officiele procesreis worden.
+                    Alleen exacte webhook/endpoint-overdrachten komen in deze lijst terecht.
                   </p>
                 </div>
                 <Button size="sm" onClick={handleDetectProcessJourneys} disabled={isDetecting}>
@@ -410,8 +407,7 @@ export default function Flows() {
             ) : (
               <div className="card-elevated p-12 text-center">
                 <p className="text-sm text-muted-foreground">
-                  Geen conceptprocesreizen gevonden. Detecteer suggesties om nieuwe procesreizen te
-                  reconstrueren.
+                  Geen webhook-matches gevonden. Automations zonder webhook blijven losse automations.
                 </p>
               </div>
             )}

@@ -48,11 +48,6 @@ type DetectProgress = {
   total: number;
 };
 
-type DetectMetaResult = {
-  aiTotal: number;
-  batches: number;
-};
-
 export function FlowSuggestiesTab() {
   const queryClient = useQueryClient();
   const { data: suggesties = [], isLoading } = useFlowSuggesties();
@@ -74,7 +69,11 @@ export function FlowSuggestiesTab() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [progress, setProgress] = useState<DetectProgress | null>(null);
 
-  const groups = useMemo(() => groupFlowSuggesties(suggesties), [suggesties]);
+  const webhookOnlySuggesties = useMemo(
+    () => suggesties.filter((suggestie) => suggestie.zekerheid === "webhook"),
+    [suggesties],
+  );
+  const groups = useMemo(() => groupFlowSuggesties(webhookOnlySuggesties), [webhookOnlySuggesties]);
 
   async function handleDetect() {
     const batchSize = 10;
@@ -82,32 +81,17 @@ export function FlowSuggestiesTab() {
     setProgress({ label: "Voorbereiden", current: 0, total: 1 });
 
     try {
-      const meta = await invokeEdgeFunction<DetectMetaResult>("detect-flow-links", {
+      await invokeEdgeFunction("detect-flow-links", {
         mode: "meta",
         limit: batchSize,
       });
-      const totalBatches = Math.max(1, meta.batches || Math.ceil((meta.aiTotal ?? 0) / batchSize));
-      const totalSteps = 1 + totalBatches;
 
-      setProgress({ label: "Webhook matches controleren", current: 0, total: totalSteps });
+      setProgress({ label: "Exacte webhook-matches controleren", current: 1, total: 1 });
       await invokeEdgeFunction("detect-flow-links", { mode: "webhook", limit: batchSize });
 
-      for (let batch = 0; batch < totalBatches; batch += 1) {
-        setProgress({
-          label: `AI batch ${batch + 1} van ${totalBatches}`,
-          current: 1 + batch,
-          total: totalSteps,
-        });
-        await invokeEdgeFunction("detect-flow-links", {
-          mode: "ai",
-          offset: batch * batchSize,
-          limit: batchSize,
-        });
-      }
-
-      setProgress({ label: "Suggesties verversen", current: totalSteps, total: totalSteps });
+      setProgress({ label: "Webhook-matches verversen", current: 1, total: 1 });
       await queryClient.invalidateQueries({ queryKey: ["flowSuggesties"] });
-      toast.success("Suggesties gedetecteerd");
+      toast.success("Webhook-matches gedetecteerd");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Detectie mislukt");
     } finally {
@@ -116,7 +100,7 @@ export function FlowSuggestiesTab() {
     }
   }
 
-  const webhookSuggesties = suggesties.filter(
+  const webhookSuggesties = webhookOnlySuggesties.filter(
     (s) => s.zekerheid === "webhook" && !s.confirmed && !s.rejected,
   );
 
@@ -223,24 +207,19 @@ export function FlowSuggestiesTab() {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-        <span className="font-semibold text-foreground">Procesreis = route door meerdere automations.</span>{" "}
-        Een GitLab automation telt als een backend worker; de interne endpoint-code staat in de automation funnel.
+        <span className="font-semibold text-foreground">Procesreis = exacte webhook-overdracht tussen automations.</span>{" "}
+        Naamgelijkenis, AI-suggesties en property-wijzigingen tellen hier niet als procesreis-bewijs.
       </div>
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          {suggesties.length > 0 && (
+          {webhookOnlySuggesties.length > 0 && (
             <span className="text-sm text-muted-foreground">
-              {suggesties.length} suggesties
+              {webhookOnlySuggesties.length} webhook-match{webhookOnlySuggesties.length === 1 ? "" : "es"}
             </span>
           )}
           {webhookSuggesties.length > 0 && (
             <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
-              {webhookSuggesties.length} hoge zekerheid
-            </span>
-          )}
-          {suggesties.filter((s) => s.zekerheid === "ai" && !s.confirmed && !s.rejected).length > 0 && (
-            <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-700">
-              {suggesties.filter((s) => s.zekerheid === "ai" && !s.confirmed && !s.rejected).length} AI-suggestie
+              {webhookSuggesties.length} 100% webhook
             </span>
           )}
         </div>
@@ -251,7 +230,7 @@ export function FlowSuggestiesTab() {
               Detecteren...
             </>
           ) : (
-            "Detecteer suggesties"
+            "Detecteer webhook-matches"
           )}
         </Button>
       </div>
@@ -264,10 +243,10 @@ export function FlowSuggestiesTab() {
         </div>
       )}
 
-      {!isLoading && suggesties.length === 0 && (
+      {!isLoading && webhookOnlySuggesties.length === 0 && (
         <div className="py-12 text-center text-muted-foreground">
-          <p>Geen suggesties gevonden.</p>
-          <p className="mt-1 text-sm">Klik "Detecteer suggesties" om te starten.</p>
+          <p>Geen webhook-matches gevonden.</p>
+          <p className="mt-1 text-sm">Automations zonder exacte webhook-overdracht blijven los.</p>
         </div>
       )}
 
@@ -478,12 +457,7 @@ function FlowKandidaatCard({
             <StructureBadge type={group.structureType} />
             {group.webhookCount > 0 && (
               <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
-                {group.webhookCount} webhook
-              </span>
-            )}
-            {group.aiCount > 0 && (
-              <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold text-yellow-700">
-                {group.aiCount} AI
+                {group.webhookCount}x 100% webhook
               </span>
             )}
           </div>
@@ -529,7 +503,7 @@ function FlowKandidaatCard({
       {open && (
         <div className="grid min-h-[3.5rem] grid-cols-[minmax(0,1fr)_16rem] items-center gap-3 border-t border-border bg-muted/20 px-4 py-3">
           <p className="truncate text-xs text-muted-foreground">
-            Selecteer automation-overgangen en sla daarna op als bevestigde procesreis.
+            Selecteer webhook-overgangen en sla daarna op als webhook-bewezen procesreis.
           </p>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm" className="h-8 flex-1 text-xs">
@@ -588,7 +562,7 @@ function SuggestieDetailDialog({
             <span>{s.toNaam}</span>
           </DialogTitle>
           <DialogDescription>
-            Bekijk waarom deze koppeling wordt voorgesteld en selecteer of verwerp de suggestie.
+            Bekijk de exacte webhook-match en selecteer of verwerp de koppeling.
           </DialogDescription>
         </DialogHeader>
 
@@ -602,18 +576,18 @@ function SuggestieDetailDialog({
             "text-[10px] font-semibold uppercase tracking-wide mb-1",
             s.zekerheid === "webhook" ? "text-green-700" : "text-yellow-700",
           ].join(" ")}>
-            {s.zekerheid === "webhook" ? "Hoge zekerheid, webhook match" : "AI-suggestie"}
+            {s.zekerheid === "webhook" ? "100% webhook-match" : "Niet bewezen"}
           </p>
           {s.zekerheid === "webhook" ? (
             <p className="text-foreground">
-              Webhook van <strong>{s.fromNaam}</strong> eindigt op endpoint{" "}
+              Webhook van <strong>{s.fromNaam}</strong> matcht exact op endpoint{" "}
               <code className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] border border-green-200">
                 {s.redenering}
               </code>{" "}
               van <strong>{s.toNaam}</strong>.
             </p>
           ) : (
-            <p className="text-foreground italic">{s.redenering}</p>
+            <p className="text-foreground italic">Deze koppeling telt niet als procesreis-bewijs.</p>
           )}
         </div>
 
@@ -933,10 +907,10 @@ function MiniChain({ group }: { group: FlowSuggestionGroup }) {
                   "rounded-full px-2 py-0.5 text-[10px] font-semibold",
                   edge?.zekerheid === "webhook"
                     ? "bg-green-100 text-green-700"
-                    : "bg-yellow-100 text-yellow-700",
+                    : "bg-slate-100 text-slate-700",
                 ].join(" ")}
               >
-                {edge?.zekerheid === "webhook" ? "webhook" : "AI"}
+                {edge?.zekerheid === "webhook" ? "100% webhook" : "niet bewezen"}
               </span>
             )}
           </div>
@@ -1027,7 +1001,7 @@ function SuggestieRij({
               {" "}exact match op endpoint
             </>
           ) : (
-            <>AI: <em>{s.redenering}</em></>
+            <>Niet bewezen: <em>{s.redenering}</em></>
           )}
         </p>
       </button>

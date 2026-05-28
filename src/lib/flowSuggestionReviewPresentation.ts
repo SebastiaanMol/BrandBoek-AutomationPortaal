@@ -1,7 +1,11 @@
 import { getAutomationSourceQualityPresentation } from "./automationSourceQuality";
 import type { FlowSuggestionAiResult } from "./flowSuggestionAi";
 import type { FlowSuggestionGroup } from "./flowSuggestionGroups";
-import { getExactWebhookProof } from "./webhookProof";
+import {
+  collectWebhookReceiverPaths,
+  getExactWebhookProof,
+  normalizeWebhookRoute,
+} from "./webhookProof";
 import type { Automatisering } from "./types";
 
 export interface FlowSuggestionReviewMetric {
@@ -20,6 +24,7 @@ export interface FlowSuggestionReviewTransition {
   sourcePath: string;
   targetPath: string;
   normalizedPath: string;
+  evidenceSource: "source-data" | "stored-suggestion";
 }
 
 export interface FlowSuggestionReviewPresentation {
@@ -77,25 +82,13 @@ export function getFlowSuggestionReviewPresentation({
   const involvedAutomations = automations.filter((automation) => groupNodeIds.has(automation.id));
   const autoMap = new Map(involvedAutomations.map((automation) => [automation.id, automation]));
   const transitions = group.suggestions
-    .map((suggestion) => {
-      const proof = getExactWebhookProof(
+    .map((suggestion) =>
+      buildTransitionFromSuggestion(
+        suggestion,
         autoMap.get(suggestion.fromId),
         autoMap.get(suggestion.toId),
-      );
-
-      if (!proof) return null;
-
-      return {
-        fromId: suggestion.fromId,
-        toId: suggestion.toId,
-        fromLabel: suggestion.fromNaam,
-        toLabel: suggestion.toNaam,
-        label: "100% webhook-match" as const,
-        sourcePath: proof.sourcePath,
-        targetPath: proof.targetPath,
-        normalizedPath: proof.normalizedPath,
-      };
-    })
+      ),
+    )
     .filter((transition): transition is FlowSuggestionReviewTransition => Boolean(transition));
 
   const sourceQualityPresentations = involvedAutomations.map((automation) => ({
@@ -155,7 +148,6 @@ export function getFlowSuggestionReviewPresentation({
       `${aiSuggestions.length} AI-voorstellen`,
     ],
     metrics: buildMetrics({
-      ready,
       allSuggestionsProven,
       sourceQualityMessages,
       businessObject: aiResult?.businessObject ?? "",
@@ -170,7 +162,9 @@ export function getFlowSuggestionReviewPresentation({
     transitions,
     evidenceItems: transitions.map((transition) => ({
       title: `${transition.fromLabel} -> ${transition.toLabel}`,
-      description: `Exacte webhook/endpoint match op ${transition.normalizedPath}.`,
+      description: transition.evidenceSource === "stored-suggestion"
+        ? `Opgeslagen webhook-match op ${transition.normalizedPath}; bronkwaliteit staat apart ter review.`
+        : `Exacte webhook/endpoint match op ${transition.normalizedPath}.`,
       tag: "100% webhook-match",
       tone: "success",
     })),
@@ -180,14 +174,86 @@ export function getFlowSuggestionReviewPresentation({
   };
 }
 
+function buildTransitionFromSuggestion(
+  suggestion: FlowSuggestionGroup["suggestions"][number],
+  from?: Automatisering,
+  to?: Automatisering,
+): FlowSuggestionReviewTransition | null {
+  if (suggestion.zekerheid !== "webhook") return null;
+
+  const proof = getExactWebhookProof(from, to);
+  if (proof) {
+    return {
+      fromId: suggestion.fromId,
+      toId: suggestion.toId,
+      fromLabel: suggestion.fromNaam,
+      toLabel: suggestion.toNaam,
+      label: "100% webhook-match",
+      sourcePath: proof.sourcePath,
+      targetPath: proof.targetPath,
+      normalizedPath: proof.normalizedPath,
+      evidenceSource: "source-data",
+    };
+  }
+
+  const storedProof = getStoredSuggestionWebhookProof(suggestion, to);
+  if (!storedProof) return null;
+
+  return {
+    fromId: suggestion.fromId,
+    toId: suggestion.toId,
+    fromLabel: suggestion.fromNaam,
+    toLabel: suggestion.toNaam,
+    label: "100% webhook-match",
+    sourcePath: storedProof.sourcePath,
+    targetPath: storedProof.targetPath,
+    normalizedPath: storedProof.normalizedPath,
+    evidenceSource: "stored-suggestion",
+  };
+}
+
+function getStoredSuggestionWebhookProof(
+  suggestion: FlowSuggestionGroup["suggestions"][number],
+  to?: Automatisering,
+): Pick<FlowSuggestionReviewTransition, "sourcePath" | "targetPath" | "normalizedPath"> | null {
+  const suggestedPath = extractWebhookPathFromReason(suggestion.redenering);
+  const normalizedPath = normalizeWebhookRoute(suggestedPath);
+  if (!normalizedPath) return null;
+
+  const targetPaths = to ? collectWebhookReceiverPaths(to) : [];
+  if (targetPaths.length === 0) {
+    return {
+      sourcePath: suggestedPath,
+      targetPath: suggestedPath,
+      normalizedPath,
+    };
+  }
+
+  const targetPath = targetPaths.find(
+    (candidate) => normalizeWebhookRoute(candidate) === normalizedPath,
+  );
+  if (!targetPath) return null;
+
+  return {
+    sourcePath: suggestedPath,
+    targetPath,
+    normalizedPath,
+  };
+}
+
+function extractWebhookPathFromReason(reason: string): string {
+  const match = reason
+    .trim()
+    .match(/(?:\b(?:GET|POST|PUT|PATCH|DELETE)\s+)?((?:https?:\/\/[^\s]+)|(?:\/[^\s]+))/i);
+  return match?.[1]?.replace(/[.,;:)]*$/g, "") ?? "";
+}
+
 function buildMetrics({
-  ready,
   allSuggestionsProven,
   sourceQualityMessages,
   businessObject,
   lastNodeLabel,
 }: {
-  ready: boolean;
   allSuggestionsProven: boolean;
   sourceQualityMessages: FlowSuggestionReviewPresentation["sourceQualityMessages"];
   businessObject: string;
@@ -196,11 +262,11 @@ function buildMetrics({
   return [
     {
       label: "Bewijsstatus",
-      value: ready ? "100%" : "Niet klaar",
+      value: allSuggestionsProven ? "100%" : "Niet klaar",
       detail: allSuggestionsProven
         ? "Alle overgangen via exacte webhook-match"
         : "Er mist exacte webhook-bewijsvoering",
-      tone: ready ? "success" : "danger",
+      tone: allSuggestionsProven ? "success" : "danger",
     },
     {
       label: "Bronkwaliteit",

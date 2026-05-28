@@ -459,17 +459,170 @@ function extractTriggerDetail(wf: any): string {
   return "";
 }
 
-function extractWorkflowAudit(wf: any, actions: any[]) {
+type HubSpotUserAudit = {
+  id?: string | null;
+  email?: string | null;
+  label: string;
+};
+
+type HubSpotWorkflowAuditActors = {
+  createdBy?: HubSpotUserAudit | null;
+  updatedBy?: HubSpotUserAudit | null;
+  events: any[];
+  debug?: Record<string, unknown>;
+};
+
+function extractWorkflowAudit(
+  wf: any,
+  actions: any[],
+  usersById: Map<string, HubSpotUserAudit> = new Map(),
+  auditActors?: HubSpotWorkflowAuditActors | null,
+) {
   return {
     workflowId: getWorkflowId(wf) ?? null,
     name: wf.name ?? "Naamloze workflow",
     objectType: OBJECT_TYPE_LABEL[wf.objectTypeId ?? ""] ?? wf.objectTypeId ?? null,
     enrollmentType: wf.enrollmentCriteria?.type ?? null,
     shouldReEnroll: wf.enrollmentCriteria?.shouldReEnroll ?? false,
+    createdAt: normalizeDateString(wf.createdAt ?? wf.created_at ?? wf.insertedAt ?? wf.creationDate) ?? null,
+    updatedAt: normalizeDateString(wf.updatedAt ?? wf.updated_at ?? wf.lastUpdatedAt ?? wf.updated) ?? null,
+    createdBy: auditActors?.createdBy ?? extractWorkflowUserAudit(wf, "created", usersById),
+    updatedBy: auditActors?.updatedBy ?? extractWorkflowUserAudit(wf, "updated", usersById),
     triggers: extractAuditTriggers(wf),
     actions: extractAuditActions(actions),
     branches: extractAuditBranches(wf.actions ?? []),
   };
+}
+
+function normalizeDateString(value: unknown): string | null {
+  if (value == null) return null;
+  const raw = typeof value === "number" ? value : String(value);
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function extractWorkflowUserAudit(
+  wf: any,
+  kind: "created" | "updated",
+  usersById: Map<string, HubSpotUserAudit>,
+): HubSpotUserAudit | null {
+  const direct = kind === "created"
+    ? firstDefined(wf.createdBy, wf.createdByUser, wf.creator, wf.createdUser)
+    : firstDefined(wf.updatedBy, wf.updatedByUser, wf.lastUpdatedBy, wf.lastModifiedBy, wf.updatedUser);
+  const directAudit = normalizeUserAudit(direct, usersById);
+  if (directAudit) return directAudit;
+
+  const rawId = kind === "created"
+    ? firstDefined(wf.createdByUserId, wf.createdUserId, wf.createUserId, wf.creatorId, wf.authorId)
+    : firstDefined(wf.updatedByUserId, wf.updatedUserId, wf.updateUserId, wf.lastUpdatedByUserId, wf.lastModifiedByUserId);
+  return normalizeUserAudit(rawId, usersById);
+}
+
+function firstDefined(...values: unknown[]): unknown {
+  return values.find((value) => value !== undefined && value !== null && String(value).trim() !== "");
+}
+
+function normalizeUserAudit(value: unknown, usersById: Map<string, HubSpotUserAudit>): HubSpotUserAudit | null {
+  if (value == null) return null;
+  if (typeof value === "string" || typeof value === "number") {
+    const id = String(value).trim();
+    if (!id) return null;
+    return usersById.get(id) ?? { id, label: `HubSpot user ${id}` };
+  }
+
+  if (typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const id = stringValue(record.id ?? record.userId ?? record.user_id ?? record.hubspotUserId ?? record.hs_internal_user_id);
+  const firstName = stringValue(record.firstName ?? record.first_name);
+  const lastName = stringValue(record.lastName ?? record.last_name);
+  const email = stringValue(record.email ?? record.userEmail ?? record.user_email);
+  const name = stringValue(record.name ?? record.fullName ?? record.label) || [firstName, lastName].filter(Boolean).join(" ").trim();
+  if (id && usersById.has(id)) return usersById.get(id) ?? null;
+  if (!id && !email && !name) return null;
+  return {
+    id: id || null,
+    email: email || null,
+    label: name || email || (id ? `HubSpot user ${id}` : "Onbekend"),
+  };
+}
+
+function auditEventDate(event: any): Date | null {
+  const raw = firstDefined(
+    event?.occurredAt,
+    event?.timestamp,
+    event?.createdAt,
+    event?.eventTime,
+    event?.eventTimestamp,
+    event?.activityTimestamp,
+  );
+  const normalized = normalizeDateString(raw);
+  return normalized ? new Date(normalized) : null;
+}
+
+function auditEventAction(event: any): "created" | "updated" | "unknown" {
+  const rawAction = [
+    event?.action,
+    event?.actionType,
+    event?.eventType,
+    event?.category,
+    event?.subCategory,
+    event?.operation,
+    event?.activityType,
+  ].map((value) => String(value ?? "").toLowerCase()).join(" ");
+
+  if (/\b(create|created|creation|new)\b/.test(rawAction)) return "created";
+  if (/\b(update|updated|edit|edited|modify|modified|publish|published|change|changed|delete|deleted)\b/.test(rawAction)) return "updated";
+  return "unknown";
+}
+
+function auditEventActor(event: any, usersById: Map<string, HubSpotUserAudit>): HubSpotUserAudit | null {
+  return normalizeUserAudit(
+    firstDefined(
+      event?.actingUser,
+      event?.actor,
+      event?.user,
+      event?.userId,
+      event?.actingUserId,
+      event?.actorUserId,
+      event?.performedBy,
+      event?.updatedBy,
+      event?.createdBy,
+    ),
+    usersById,
+  );
+}
+
+function auditEventTargetsWorkflow(event: any, workflowId: string): boolean {
+  const directTargets = [
+    event?.targetObjectId,
+    event?.targetObject?.id,
+    event?.target?.id,
+    event?.target?.objectId,
+    event?.objectId,
+    event?.entityId,
+    event?.resourceId,
+  ].map((value) => String(value ?? "").trim()).filter(Boolean);
+  if (directTargets.includes(workflowId)) return true;
+
+  try {
+    return JSON.stringify(event).includes(workflowId);
+  } catch {
+    return false;
+  }
+}
+
+function summarizeAuditEvent(event: any) {
+  return {
+    occurredAt: normalizeDateString(firstDefined(event?.occurredAt, event?.timestamp, event?.createdAt, event?.eventTime)) ?? null,
+    action: firstDefined(event?.action, event?.actionType, event?.eventType, event?.operation) ?? null,
+    targetObjectId: firstDefined(event?.targetObjectId, event?.targetObject?.id, event?.target?.objectId, event?.objectId) ?? null,
+    actingUser: firstDefined(event?.actingUser, event?.actingUserId, event?.actor, event?.actorUserId, event?.userId) ?? null,
+  };
+}
+
+function stringValue(value: unknown): string {
+  return value == null ? "" : String(value).trim();
 }
 
 function extractAuditBranches(actions: any[]) {
@@ -1108,7 +1261,11 @@ function extractWorkflowUsage(performance: any): WorkflowUsage {
   };
 }
 
-function mapWorkflow(wf: any) {
+function mapWorkflow(
+  wf: any,
+  usersById: Map<string, HubSpotUserAudit> = new Map(),
+  auditActors?: HubSpotWorkflowAuditActors | null,
+) {
   const actions = flattenActions(wf.actions ?? []);
   const stappen   = normalizeHubSpotSteps(extractStappen(actions));
   const systemen = [...new Set(["HubSpot", ...extractSystemen(actions)])] as string[];
@@ -1161,7 +1318,7 @@ function mapWorkflow(wf: any) {
     categorie,
     fasen:                        inferredFasen,
     enrollment,
-    hubspot_workflow:              extractWorkflowAudit(wf, actions),
+    hubspot_workflow:              extractWorkflowAudit(wf, actions, usersById, auditActors),
     beschrijving_in_simpele_taal: beschrijvingInSimpeleTaal,
     confidence,
     webhookPaths:                 extractWebhookPaths(actions),
@@ -1177,6 +1334,7 @@ serve(async (req) => {
     const url = new URL(req.url);
     const debugMode = url.searchParams.get("debug") === "1";
     const debugWorkflowId = url.searchParams.get("workflowId");
+    const priorityAuditWorkflowId = url.searchParams.get("auditWorkflowId") || debugWorkflowId;
 
     const db = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -1317,6 +1475,276 @@ serve(async (req) => {
       return { lastRunAt: null, runCount365d: null };
     }
 
+    async function fetchHubSpotUsers(): Promise<Map<string, HubSpotUserAudit>> {
+      for (const endpoint of [
+        "https://api.hubapi.com/settings/users/2026-03",
+        "https://api.hubapi.com/settings/v3/users",
+      ]) {
+        try {
+          const users = await fetchHubSpotUsersFromEndpoint(endpoint);
+          if (users.size > 0) return users;
+        } catch {
+          // User lookup requires additional HubSpot scopes in some portals.
+          // Workflow sync should still succeed and store the raw user IDs.
+        }
+      }
+      return new Map();
+    }
+
+    async function fetchHubSpotUsersFromEndpoint(endpoint: string): Promise<Map<string, HubSpotUserAudit>> {
+      const users = new Map<string, HubSpotUserAudit>();
+      let after: string | null = null;
+      let pages = 0;
+
+      while (true) {
+        const pageUrl = new URL(endpoint);
+        pageUrl.searchParams.set("limit", "100");
+        if (after) pageUrl.searchParams.set("after", after);
+
+        const response = await fetch(pageUrl.toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error(`HubSpot users API ${response.status}`);
+
+        const body = await response.json();
+        for (const user of body.results ?? []) {
+          const audit = normalizeUserAudit(user, new Map());
+          if (audit?.id) users.set(audit.id, audit);
+        }
+
+        pages++;
+        const nextAfter = body.paging?.next?.after
+          ?? (body.paging?.next?.link ? new URL(body.paging.next.link, endpoint).searchParams.get("after") : null);
+        if (!nextAfter || pages > 20) return users;
+        after = String(nextAfter);
+      }
+    }
+
+    async function fetchWorkflowAuditLogActors(
+      workflowsToInspect: any[],
+      usersById: Map<string, HubSpotUserAudit>,
+      options: { maxTargetedWorkflowLookups?: number } = {},
+    ): Promise<Map<string, HubSpotWorkflowAuditActors>> {
+      const workflowInfos = workflowsToInspect
+        .map((wf) => ({
+          workflowId: getWorkflowId(wf),
+          createdAt: normalizeDateString(wf.createdAt ?? wf.created_at ?? wf.insertedAt ?? wf.creationDate),
+          updatedAt: normalizeDateString(wf.updatedAt ?? wf.updated_at ?? wf.lastUpdatedAt ?? wf.updated),
+        }))
+        .filter((wf): wf is { workflowId: string; createdAt: string | null; updatedAt: string | null } => Boolean(wf.workflowId));
+      const wantedWorkflowIds = [...new Set(workflowInfos.map((wf) => wf.workflowId))];
+      const actorsByWorkflowId = new Map<string, HubSpotWorkflowAuditActors>();
+      if (!wantedWorkflowIds.length) return actorsByWorkflowId;
+
+      for (const workflowId of wantedWorkflowIds) {
+        actorsByWorkflowId.set(workflowId, { createdBy: null, updatedBy: null, events: [], debug: {} });
+      }
+
+      for (const endpoint of [
+        "https://api.hubapi.com/account-info/v3/activity/audit-logs",
+        "https://api.hubapi.com/account-info/2026-03/activity/audit-logs",
+      ]) {
+        try {
+          let after: string | null = null;
+          let pages = 0;
+          let matchedEvents = 0;
+
+          while (true) {
+            const pageUrl = new URL(endpoint);
+            pageUrl.searchParams.set("limit", "100");
+            if (after) pageUrl.searchParams.set("after", after);
+
+            const response = await fetch(pageUrl.toString(), {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error(`HubSpot audit logs API ${response.status}`);
+
+            const body = await response.json();
+            const events = Array.isArray(body.results) ? body.results : Array.isArray(body) ? body : [];
+            for (const event of events) {
+              for (const workflowId of wantedWorkflowIds) {
+                if (!auditEventTargetsWorkflow(event, workflowId)) continue;
+
+                const actor = auditEventActor(event, usersById);
+                if (!actor) continue;
+
+                const current = actorsByWorkflowId.get(workflowId) ?? { createdBy: null, updatedBy: null, events: [], debug: {} };
+                const action = auditEventAction(event);
+                const eventDate = auditEventDate(event);
+                current.events.push(event);
+
+                if (action === "created") {
+                  const existingDate = current.events
+                    .filter((candidate) => auditEventAction(candidate) === "created")
+                    .map(auditEventDate)
+                    .filter((date): date is Date => Boolean(date))
+                    .sort((a, b) => a.getTime() - b.getTime())[0];
+                  if (!current.createdBy || (eventDate && existingDate && eventDate <= existingDate)) current.createdBy = actor;
+                } else if (action === "updated" || !current.updatedBy) {
+                  current.updatedBy = actor;
+                }
+
+                current.debug = {
+                  ...(current.debug ?? {}),
+                  endpoint,
+                  matchedEventCount: current.events.length,
+                  eventSamples: current.events.slice(0, 5).map(summarizeAuditEvent),
+                };
+                actorsByWorkflowId.set(workflowId, current);
+                matchedEvents++;
+              }
+            }
+
+            pages++;
+            const nextAfter = body.paging?.next?.after
+              ?? (body.paging?.next?.link ? new URL(body.paging.next.link, endpoint).searchParams.get("after") : null);
+            if (!nextAfter || pages >= 25 || matchedEvents >= wantedWorkflowIds.length * 10) break;
+            after = String(nextAfter);
+          }
+          break;
+        } catch (error) {
+          for (const workflowId of wantedWorkflowIds) {
+            const current = actorsByWorkflowId.get(workflowId) ?? { createdBy: null, updatedBy: null, events: [], debug: {} };
+            current.debug = {
+              ...(current.debug ?? {}),
+              failedEndpoint: endpoint,
+              error: error instanceof Error ? error.message : String(error),
+            };
+            actorsByWorkflowId.set(workflowId, current);
+          }
+        }
+      }
+
+      const maxTargetedWorkflowLookups = options.maxTargetedWorkflowLookups ?? 12;
+      const targetedWorkflows = workflowInfos.filter((workflow) => {
+        const current = actorsByWorkflowId.get(workflow.workflowId);
+        return !current?.createdBy || !current?.updatedBy;
+      }).slice(0, maxTargetedWorkflowLookups);
+      for (let i = 0; i < targetedWorkflows.length; i += 8) {
+        const batch = targetedWorkflows.slice(i, i + 8);
+        await Promise.all(batch.map(async (workflow) => {
+          const current = actorsByWorkflowId.get(workflow.workflowId) ?? { createdBy: null, updatedBy: null, events: [], debug: {} };
+          for (const window of workflowAuditSearchWindows(workflow)) {
+            if (window.kind === "created" && current.createdBy) continue;
+            if (window.kind === "updated" && current.updatedBy) continue;
+
+            const targeted = await fetchWorkflowAuditLogActorsForTimestamp(workflow.workflowId, window.kind, window.timestamp, usersById);
+            if (!targeted || targeted.events.length === 0) continue;
+
+            current.events.push(...targeted.events);
+            current.createdBy = current.createdBy ?? targeted.createdBy ?? null;
+            current.updatedBy = current.updatedBy ?? targeted.updatedBy ?? null;
+            current.debug = {
+              ...(current.debug ?? {}),
+              targetedWindows: [
+                ...((current.debug?.targetedWindows as unknown[] | undefined) ?? []),
+                ...((targeted.debug?.targetedWindows as unknown[] | undefined) ?? []),
+              ],
+              targetedEventSamples: [
+                ...((current.debug?.targetedEventSamples as unknown[] | undefined) ?? []),
+                ...targeted.events.slice(0, 3).map(summarizeAuditEvent),
+              ].slice(0, 8),
+            };
+          }
+          actorsByWorkflowId.set(workflow.workflowId, current);
+        }));
+      }
+
+      return actorsByWorkflowId;
+    }
+
+    async function fetchWorkflowAuditLogActorsForTimestamp(
+      workflowId: string,
+      kind: "created" | "updated",
+      timestamp: string,
+      usersById: Map<string, HubSpotUserAudit>,
+    ): Promise<HubSpotWorkflowAuditActors | null> {
+      const result: HubSpotWorkflowAuditActors = { createdBy: null, updatedBy: null, events: [], debug: {} };
+      const timestampDate = new Date(timestamp);
+      if (Number.isNaN(timestampDate.getTime())) return null;
+
+      const occurredAfter = new Date(timestampDate.getTime() - 10 * 60 * 1000).toISOString();
+      const occurredBefore = new Date(timestampDate.getTime() + 10 * 60 * 1000).toISOString();
+
+      for (const endpoint of [
+        "https://api.hubapi.com/account-info/v3/activity/audit-logs",
+        "https://api.hubapi.com/account-info/2026-03/activity/audit-logs",
+      ]) {
+        try {
+          let after: string | null = null;
+          let pages = 0;
+          while (pages < 3) {
+            const pageUrl = new URL(endpoint);
+            pageUrl.searchParams.set("limit", "100");
+            pageUrl.searchParams.set("occurredAfter", occurredAfter);
+            pageUrl.searchParams.set("occurredBefore", occurredBefore);
+            if (after) pageUrl.searchParams.set("after", after);
+
+            const response = await fetch(pageUrl.toString(), {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error(`HubSpot audit logs API ${response.status}`);
+
+            const body = await response.json();
+            const events = Array.isArray(body.results) ? body.results : Array.isArray(body) ? body : [];
+            for (const event of events) {
+              if (!auditEventTargetsWorkflow(event, workflowId)) continue;
+              const actor = auditEventActor(event, usersById);
+              if (!actor) continue;
+
+              result.events.push(event);
+              if (kind === "created" || auditEventAction(event) === "created") result.createdBy = result.createdBy ?? actor;
+              if (kind === "updated" || auditEventAction(event) === "updated") result.updatedBy = actor;
+            }
+
+            pages++;
+            const nextAfter = body.paging?.next?.after
+              ?? (body.paging?.next?.link ? new URL(body.paging.next.link, endpoint).searchParams.get("after") : null);
+            if (result.events.length > 0 || !nextAfter) break;
+            after = String(nextAfter);
+          }
+
+          result.debug = {
+            ...(result.debug ?? {}),
+            targetedWindows: [
+              ...((result.debug?.targetedWindows as unknown[] | undefined) ?? []),
+              { workflowId, kind, endpoint, occurredAfter, occurredBefore, matchedEventCount: result.events.length },
+            ],
+          };
+          if (result.events.length > 0) return result;
+        } catch (error) {
+          result.debug = {
+            ...(result.debug ?? {}),
+            targetedWindows: [
+              ...((result.debug?.targetedWindows as unknown[] | undefined) ?? []),
+              {
+                workflowId,
+                kind,
+                endpoint,
+                occurredAfter,
+                occurredBefore,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            ],
+          };
+        }
+      }
+
+      return result.events.length > 0 ? result : null;
+    }
+
+    function workflowAuditSearchWindows(workflow: { createdAt: string | null; updatedAt: string | null }) {
+      const minAuditDate = new Date("2024-01-01T00:00:00.000Z").getTime();
+      return [
+        { kind: "updated" as const, timestamp: workflow.updatedAt },
+        { kind: "created" as const, timestamp: workflow.createdAt },
+      ].filter((window): window is { kind: "created" | "updated"; timestamp: string } => {
+        if (!window.timestamp) return false;
+        const time = new Date(window.timestamp).getTime();
+        return Number.isFinite(time) && time >= minAuditDate;
+      });
+    }
+
     // Fetch details in batches of 15 to avoid rate limiting
     const workflows: any[] = [];
     for (let i = 0; i < workflowList.length; i += 15) {
@@ -1326,8 +1754,8 @@ serve(async (req) => {
         return workflowId ? fetchDetail(workflowId) : Promise.resolve(null);
       }));
       for (let j = 0; j < batch.length; j++) {
-        // Merge list metadata with detail (detail may be null if fetch failed)
-        workflows.push(details[j] ?? batch[j]);
+        // Merge list metadata with detail; audit fields can be present on either response.
+        workflows.push(details[j] ? { ...batch[j], ...details[j] } : batch[j]);
       }
     }
 
@@ -1345,12 +1773,28 @@ serve(async (req) => {
       }
     }
 
+    const hubSpotUsersById = await fetchHubSpotUsers();
+    const auditWorkflows = debugMode && debugWorkflowId
+      ? workflows.filter((wf) => getWorkflowId(wf) === debugWorkflowId)
+      : priorityAuditWorkflowId
+        ? [
+          ...workflows.filter((wf) => getWorkflowId(wf) === priorityAuditWorkflowId),
+          ...workflows.filter((wf) => getWorkflowId(wf) !== priorityAuditWorkflowId),
+        ]
+        : workflows;
+    const auditActorsByWorkflowId = await fetchWorkflowAuditLogActors(auditWorkflows, hubSpotUsersById, {
+      maxTargetedWorkflowLookups: debugMode && debugWorkflowId ? 1 : 12,
+    });
+
     // Debug mode: return raw first workflow so we can inspect the actual API structure
     if (debugMode) {
+      const auditDebug = url.searchParams.get("auditDebug") === "1";
       const sample = debugWorkflowId
         ? workflows.find((wf) => getWorkflowId(wf) === debugWorkflowId) ?? null
         : workflows[0] ?? null;
-      const mappedSample = sample ? mapWorkflow(sample) : null;
+      const sampleWorkflowId = sample ? getWorkflowId(sample) : null;
+      const sampleAuditActors = sampleWorkflowId ? auditActorsByWorkflowId.get(sampleWorkflowId) ?? null : null;
+      const mappedSample = sample ? mapWorkflow(sample, hubSpotUsersById, sampleAuditActors) : null;
       return new Response(
         JSON.stringify({
           debug: true,
@@ -1363,6 +1807,25 @@ serve(async (req) => {
           first_workflow_triggerSets: sample?.triggerSets ?? null,
           first_workflow_segmentCriteria: sample?.segmentCriteria ?? null,
           first_workflow_usage: sample ? usageByWorkflowId[getWorkflowId(sample) ?? ""] ?? null : null,
+          hubspot_users_resolved: hubSpotUsersById.size,
+          audit_debug: auditDebug ? {
+            workflow_id: sampleWorkflowId,
+            actor_lookup: sampleAuditActors ? {
+              createdBy: sampleAuditActors.createdBy ?? null,
+              updatedBy: sampleAuditActors.updatedBy ?? null,
+              matchedEventCount: sampleAuditActors.events.length,
+              debug: sampleAuditActors.debug ?? null,
+            } : null,
+            workflows_with_audit_events: [...auditActorsByWorkflowId.entries()]
+              .filter(([, actors]) => actors.events.length > 0)
+              .map(([workflowId, actors]) => ({
+                workflowId,
+                createdBy: actors.createdBy ?? null,
+                updatedBy: actors.updatedBy ?? null,
+                matchedEventCount: actors.events.length,
+              }))
+              .slice(0, 25),
+          } : undefined,
           mapped_result: mappedSample,
         }, null, 2),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -1376,7 +1839,7 @@ serve(async (req) => {
         if (!externalId) return null;
         const usage = usageByWorkflowId[externalId] ?? { lastRunAt: null, runCount365d: null };
         const { pipelineId, stageId } = extractPipelineStage(wf);
-        const mapped = mapWorkflow(wf);
+        const mapped = mapWorkflow(wf, hubSpotUsersById, auditActorsByWorkflowId.get(externalId) ?? null);
 
         return {
           naam: mapped.naam,

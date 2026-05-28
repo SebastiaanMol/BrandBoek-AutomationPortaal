@@ -62,18 +62,32 @@ type AiDetectionResult = {
 };
 
 function normalizeEndpointPath(value: string): string {
-  return value
-    .trim()
+  const trimmed = value.trim();
+  const withoutMethod = trimmed.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
+  let route = withoutMethod;
+
+  try {
+    if (/^https?:\/\//i.test(withoutMethod)) {
+      route = new URL(withoutMethod).pathname;
+    }
+  } catch {
+    route = withoutMethod.replace(/^https?:\/\/[^/]+/i, "");
+  }
+
+  return route
     .replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "")
+    .replace(/^https?:\/\/[^/]+/i, "")
     .split(/[?#]/)[0]
-    .replace(/\/+$/, "");
+    .replace(/\/+$/, "")
+    .trim()
+    .toLowerCase();
 }
 
 function endpointMatches(webhookPath: string, endpoint: string): boolean {
   const normalizedWebhook = normalizeEndpointPath(webhookPath);
   const normalizedEndpoint = normalizeEndpointPath(endpoint);
   if (!normalizedWebhook || !normalizedEndpoint) return false;
-  return normalizedWebhook === normalizedEndpoint || normalizedWebhook.endsWith(normalizedEndpoint);
+  return normalizedWebhook === normalizedEndpoint;
 }
 
 function buildWebhookMatchReason(source: Automation, endpoint: string): string {
@@ -576,41 +590,25 @@ serve(async (req) => {
     }
 
     const webhookSuggestions = detectWebhookSuggestions(autos);
-    const backendSuggestions = detectGitLabBackendSuggestions(autos);
     let savedWebhook = 0;
-    let savedBackend = 0;
-    let aiSuggestions: Suggestie[] = [];
+    const savedBackend = 0;
+    const aiSuggestions: Suggestie[] = [];
     let aiStatus: AiDetectionResult["status"] | undefined;
     let aiRawCount: number | undefined;
     let aiNote: string | undefined;
 
     if (mode === "webhook" || mode === "all") {
-      const technicalSuggestions = [...webhookSuggestions, ...backendSuggestions];
       await replaceSuggestionsForSources(
         db,
-        technicalSuggestions.map((s) => s.from_id),
-        technicalSuggestions,
+        webhookSuggestions.map((s) => s.from_id),
+        webhookSuggestions,
       );
       savedWebhook = webhookSuggestions.length;
-      savedBackend = backendSuggestions.length;
     }
 
     if (mode === "ai" || mode === "all") {
-      const focusAutos = mode === "all" ? aiAutos.slice(0, limit) : aiAutos.slice(offset, offset + limit);
-      const aiResult = await fetchAiSuggestions(focusAutos, aiAutos, webhookSuggestions);
-      aiSuggestions = aiResult.suggestions;
-      aiStatus = aiResult.status;
-      aiRawCount = aiResult.rawCount;
-      aiNote = aiResult.note;
-
-      if ((aiResult.status === "ok" || aiResult.status === "partial-json") && aiSuggestions.length > 0) {
-        await replaceSuggestionsForSources(
-          db,
-          focusAutos.map((a) => a.id),
-          aiSuggestions,
-          { preserveWebhookSuggestions: true, preserveTechnicalSuggestions: true },
-        );
-      }
+      aiStatus = "skipped";
+      aiNote = "Procesreisvorming gebruikt alleen exacte webhook/endpoint-matches.";
     }
 
     return jsonResponse({

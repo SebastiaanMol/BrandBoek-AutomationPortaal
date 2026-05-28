@@ -16,10 +16,9 @@ describe("detectFlows", () => {
     expect(result).toEqual([]);
   });
 
-  it("detects a simple chain via koppelingen", () => {
+  it("ignores old koppelingen because procesreizen require webhook-proof links", () => {
     const result = detectFlows([auto("a", ["b"]), auto("b", ["c"]), auto("c")], []);
-    expect(result).toHaveLength(1);
-    expect(result[0].automationIds).toEqual(["a", "b", "c"]);
+    expect(result).toEqual([]);
   });
 
   it("detects a chain via confirmed automation_links", () => {
@@ -33,8 +32,8 @@ describe("detectFlows", () => {
 
   it("detects two independent chains", () => {
     const result = detectFlows(
-      [auto("a", ["b"]), auto("b"), auto("c", ["d"]), auto("d")],
-      [],
+      [auto("a"), auto("b"), auto("c"), auto("d")],
+      [{ sourceId: "a", targetId: "b" }, { sourceId: "c", targetId: "d" }],
     );
     expect(result).toHaveLength(2);
     const sorted = result.map((r) => r.automationIds.join(",")).sort();
@@ -42,7 +41,7 @@ describe("detectFlows", () => {
   });
 
   it("topological order: source comes before target", () => {
-    const result = detectFlows([auto("b", []), auto("a", ["b"])], []);
+    const result = detectFlows([auto("b"), auto("a")], [{ sourceId: "a", targetId: "b" }]);
     expect(result).toHaveLength(1);
     expect(result[0].automationIds[0]).toBe("a");
     expect(result[0].automationIds[1]).toBe("b");
@@ -55,8 +54,8 @@ describe("detectFlows", () => {
 
   it("handles a branching automation (one source → two targets)", () => {
     const result = detectFlows(
-      [auto("a", ["b", "c"]), auto("b"), auto("c")],
-      [],
+      [auto("a"), auto("b"), auto("c")],
+      [{ sourceId: "a", targetId: "b" }, { sourceId: "a", targetId: "c" }],
     );
     expect(result).toHaveLength(1);
     // All three IDs present; a comes first

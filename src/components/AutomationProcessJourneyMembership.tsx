@@ -73,7 +73,7 @@ export function AutomationProcessJourneyMembership({
                 Nog niet gekoppeld aan een procesreis
               </h3>
               <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                Deze automation staat op dit moment los in het portaal. Er is nog geen bevestigde procesreis gevonden waarin deze automation meedoet. Een koppeling wordt pas getoond wanneer een procesreis of bewezen overgang dit expliciet bevestigt.
+                Deze automation staat op dit moment los in het portaal. Er is nog geen exacte webhook-overdracht gevonden waarin deze automation meedoet.
               </p>
             </div>
           </div>
@@ -131,7 +131,7 @@ function ProcessJourneyMembershipCard({
                 )}
               </div>
               <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                Bevestigde procesreis
+                Webhook-bewezen procesreis
               </span>
             </div>
 

@@ -26,6 +26,76 @@ gitlabtest/ blijft read-only analyse-input.
 Wijzigingen aan runtimegedrag horen niet in gitlabtest/.
 ```
 
+## 2026-05-24 - Automatiseringspagina Als Beslis-dashboard
+
+### Wat Is Aangepast?
+
+De automatiseringspagina heeft nu een compacte beslis-dashboardlaag gekregen.
+
+Elke automation blijft als rustige lijstregel zichtbaar, maar kan worden uitgeklapt naar een proceslijn:
+
+```text
+Trigger -> Acties -> Outcome
+```
+
+Daaronder staan compacte bewijs-badges die laten zien welke brondata de samenvatting ondersteunt.
+
+De bronmapping gebruikt bestaande data uit:
+
+- HubSpot workflow triggers, actions, webhooks en run-data
+- Zapier processtappen, condities, lookups en webhook-overdrachten
+- GitLab endpoints, handlers en herkende HubSpot reads/writes
+- Typeform formulierstructuur, hidden fields en actieve webhooks
+
+### Waarom?
+
+De gebruiker wil de automatiseringspagina gebruiken om snel te begrijpen wat een automation doet.
+
+Daarom toont de lijst niet alle ruwe brondata direct, maar vertaalt de belangrijkste broninformatie naar een korte, vergelijkbare procesuitleg per automation.
+
+### Geraakte Bestanden
+
+```text
+src/lib/automationOverviewPresentation.ts
+src/pages/AlleAutomatiseringen.tsx
+src/test/automationOverviewPresentation.test.ts
+src/test/automationsOverviewUi.test.tsx
+docs/automation-navigator-wijzigingen.md
+```
+
+### Effect Voor De Gebruiker
+
+De gebruiker kan per automation nu sneller zien:
+
+- waardoor de automation start
+- welke hoofdactie er gebeurt
+- wat de verwachte uitkomst is
+- welk bewijs uit de brondata beschikbaar is
+
+Er kan steeds maar een automation tegelijk openstaan, zodat de pagina rustig blijft.
+
+### Getest
+
+Uitgevoerd:
+
+```bash
+npx vitest run src/test/automationOverviewPresentation.test.ts src/test/automationsOverviewUi.test.tsx
+npm run test
+npm run build
+npm run lint
+```
+
+Resultaat:
+
+- 60 testbestanden geslaagd
+- 332 tests geslaagd, 3 todo
+- productie-build geslaagd
+- lint zonder errors, met bestaande Fast Refresh/useMemo warnings
+
+### Open Punten
+
+Browsercontrole op echte data blijft nuttig om te beoordelen of de bewijs-badges precies de juiste informatiedichtheid hebben.
+
 ## 2026-05-08 - Genest GitLab Backendblok In Procesreis
 
 ### Wat Is Aangepast?

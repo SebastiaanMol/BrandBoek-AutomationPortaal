@@ -4,7 +4,8 @@ import type { Edge, Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Automatisering, Flow } from "@/lib/types";
 import { AutomationNode } from "./AutomationNode";
-import { evaluateFlowEvidence, type FlowEvidence } from "@/lib/flowEvidence";
+import type { FlowEvidence } from "@/lib/flowEvidence";
+import { getExactWebhookProof } from "@/lib/webhookProof";
 
 const nodeTypes = { automation: AutomationNode };
 
@@ -18,12 +19,11 @@ export interface FlowEdge {
 export interface ConfirmedFlowLink {
   sourceId: string;
   targetId: string;
+  matchType?: string | null;
 }
 
 /**
- * Derives official flow edges. Accepted flow suggestions are stored in
- * automation_links, so prefer those inside the flow. Older/manual flows still
- * fall back to koppelingen, then to a simple sequential chain.
+ * Derives official flow edges from 100% webhook proof only.
  */
 export function buildFlowEdges(
   automationIds: string[],
@@ -36,6 +36,9 @@ export function buildFlowEdges(
   const seen = new Set<string>();
   for (const link of confirmedLinks) {
     if (!flowSet.has(link.sourceId) || !flowSet.has(link.targetId)) continue;
+    if (link.matchType && link.matchType !== "webhook") continue;
+    const proof = getExactWebhookProof(autoMap.get(link.sourceId), autoMap.get(link.targetId));
+    if (!proof) continue;
     const key = `${link.sourceId}â†’${link.targetId}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -43,14 +46,16 @@ export function buildFlowEdges(
       from: link.sourceId,
       to: link.targetId,
       label: "",
-      evidence: evaluateFlowEvidence({
-        from: autoMap.get(link.sourceId),
-        to: autoMap.get(link.targetId),
-        source: "confirmed",
-      }),
+      evidence: {
+        level: "confirmed",
+        label: "100% webhook-match",
+        score: 100,
+        reason: `Exacte webhook-route ${proof.normalizedPath} verbindt deze automations.`,
+      },
     });
   }
 
+  /*
   if (edges.length > 0) return edges;
 
   for (const id of automationIds) {
@@ -90,6 +95,7 @@ export function buildFlowEdges(
     }
   }
 
+  */
   return edges;
 }
 
