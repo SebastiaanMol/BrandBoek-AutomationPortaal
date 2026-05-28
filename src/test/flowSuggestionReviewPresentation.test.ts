@@ -64,6 +64,10 @@ describe("flowSuggestionReviewPresentation", () => {
     expect(presentation.title).toBe("AI titel");
     expect(presentation.summary).toBe("AI samenvatting voor procesowners.");
     expect(presentation.aiSuggestions).toHaveLength(2);
+    expect(presentation.aiSuggestions[0]).toMatchObject({
+      tag: "Niet bewezen",
+      description: "Controleer vervolg.",
+    });
     expect(presentation.aiSuggestions[1]).toMatchObject({
       tag: "Review nodig",
       description: "Wie keurt dit goed?",

@@ -255,7 +255,7 @@ function buildAiSuggestions(
     ...(aiResult?.aiSuggestions ?? []).map((suggestion) => ({
       label: suggestion.label,
       description: suggestion.description,
-      tag: suggestion.tag,
+      tag: suggestion.severity === "critical" ? "Review nodig" : "Niet bewezen",
       tone: suggestion.severity === "critical" ? "danger" as const : "warning" as const,
     })),
     ...(aiResult?.openQuestions ?? []).map((question) => ({
