@@ -23,10 +23,54 @@ describe("flowSuggestionReviewPresentation", () => {
     });
   });
 
+  it("keeps a multi-edge chain ready when each transition has a different exact webhook endpoint", () => {
+    const presentation = getFlowSuggestionReviewPresentation({
+      group: makeMultiEndpointGroup(),
+      automations: [
+        makeHubSpotAutomation(),
+        makeGitLabAutomation({
+          id: "middle",
+          naam: "Middle backend",
+          webhookPaths: ["/backend/finalize-deal"],
+        }),
+        makeGitLabAutomation({
+          id: "final",
+          naam: "Final backend",
+          gitlabEndpoint: {
+            method: "POST",
+            endpoint: "/backend/finalize-deal",
+            handler: "finalizeDeal",
+            calls: [{ depth: 1, kind: "hubspot_repository_call", from: "worker", to: "repo", file: "repo.py" }],
+          },
+        }),
+      ],
+      endpointEvidence: "/backend/process-deal",
+      aiResult: null,
+    });
+
+    expect(presentation.approvalState.status).toBe("ready");
+    expect(presentation.transitions).toHaveLength(2);
+    expect(presentation.transitions.map((transition) => transition.normalizedPath)).toEqual([
+      "/backend/process-deal",
+      "/backend/finalize-deal",
+    ]);
+    expect(presentation.metrics.find((metric) => metric.label === "Bewijsstatus")?.value).toBe("100%");
+  });
+
   it("does not become ready when exact webhook proof is missing", () => {
     const presentation = getFlowSuggestionReviewPresentation({
       group: makeGroup("Webhook-match: /other-route"),
-      automations: [makeHubSpotAutomation(), makeGitLabAutomation()],
+      automations: [
+        makeHubSpotAutomation(),
+        makeGitLabAutomation({
+          gitlabEndpoint: {
+            method: "POST",
+            endpoint: "/different-receiver",
+            handler: "processDeal",
+            calls: [{ depth: 1, kind: "hubspot_repository_call", from: "worker", to: "repo", file: "repo.py" }],
+          },
+        }),
+      ],
       endpointEvidence: "/other-route",
       aiResult: null,
     });
@@ -253,6 +297,53 @@ function makeUnknownSourceGroup(): FlowSuggestionGroup {
     aiCount: 0,
     confirmedCount: 0,
     totalCount: 1,
+    structureType: "lineair",
+    structureSummary: "Deze kandidaat lijkt een lineaire stapvolgorde.",
+  };
+}
+
+function makeMultiEndpointGroup(): FlowSuggestionGroup {
+  return {
+    id: "hs__middle__final",
+    nodes: [
+      { id: "hs", naam: "HubSpot workflow", categorie: "HubSpot Workflow", source: "hubspot" },
+      { id: "middle", naam: "Middle backend", categorie: "Backend Script", source: "gitlab" },
+      { id: "final", naam: "Final backend", categorie: "Backend Script", source: "gitlab" },
+    ],
+    suggestions: [
+      {
+        fromId: "hs",
+        toId: "middle",
+        fromNaam: "HubSpot workflow",
+        toNaam: "Middle backend",
+        fromCategorie: "HubSpot Workflow",
+        toCategorie: "Backend Script",
+        fromSource: "hubspot",
+        toSource: "gitlab",
+        zekerheid: "webhook",
+        redenering: "Webhook-match: /backend/process-deal",
+        confirmed: false,
+        rejected: false,
+      },
+      {
+        fromId: "middle",
+        toId: "final",
+        fromNaam: "Middle backend",
+        toNaam: "Final backend",
+        fromCategorie: "Backend Script",
+        toCategorie: "Backend Script",
+        fromSource: "gitlab",
+        toSource: "gitlab",
+        zekerheid: "webhook",
+        redenering: "Webhook-match: /backend/finalize-deal",
+        confirmed: false,
+        rejected: false,
+      },
+    ],
+    webhookCount: 2,
+    aiCount: 0,
+    confirmedCount: 0,
+    totalCount: 2,
     structureType: "lineair",
     structureSummary: "Deze kandidaat lijkt een lineaire stapvolgorde.",
   };

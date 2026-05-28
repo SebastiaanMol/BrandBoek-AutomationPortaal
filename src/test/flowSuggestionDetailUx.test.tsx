@@ -1,17 +1,23 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import FlowSuggestionDetail from "@/pages/FlowSuggestionDetail";
 import { StepLogicDetails } from "@/components/flows/StepLogicDetails";
 import { ProcessJourneyNarrative } from "@/components/flows/ProcessJourneyNarrative";
-import { nameFlow } from "@/lib/storage/flows";
 import type { Automatisering } from "@/lib/types";
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
 
+const mocks = vi.hoisted(() => ({
+  accepteerFlowKandidaat: vi.fn(),
+  createFlow: vi.fn(),
+  nameFlow: vi.fn(),
+  verwerpFlowSuggestie: vi.fn(),
+}));
+
 vi.mock("@/lib/queryHooks/automationLinks", () => ({
-  useAccepteerFlowKandidaat: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAccepteerFlowKandidaat: () => ({ mutateAsync: mocks.accepteerFlowKandidaat, isPending: false }),
   useFlowSuggesties: () => ({ data: suggestions, isLoading: false }),
-  useVerwerpFlowSuggestie: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useVerwerpFlowSuggestie: () => ({ mutateAsync: mocks.verwerpFlowSuggestie, isPending: false }),
 }));
 
 vi.mock("@/lib/queryHooks/automations", () => ({
@@ -23,11 +29,11 @@ vi.mock("@/lib/queryHooks/pipelines", () => ({
 }));
 
 vi.mock("@/lib/queryHooks/flows", () => ({
-  useCreateFlow: () => ({ mutateAsync: vi.fn() }),
+  useCreateFlow: () => ({ mutateAsync: mocks.createFlow }),
 }));
 
 vi.mock("@/lib/storage/flows", () => ({
-  nameFlow: vi.fn(),
+  nameFlow: mocks.nameFlow,
 }));
 
 vi.mock("sonner", () => ({
@@ -137,6 +143,11 @@ function renderSuggestionDetail(): void {
 describe("FlowSuggestionDetail UX", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.createFlow.mockResolvedValue({ id: "flow-123" });
+    mocks.nameFlow.mockResolvedValue({
+      naam: "AI fallback naam",
+      beschrijving: "AI fallback beschrijving",
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
@@ -235,7 +246,55 @@ describe("FlowSuggestionDetail UX", () => {
     expect(within(dialog).getByDisplayValue("AI titel voor goedkeuring")).toBeInTheDocument();
     expect(within(dialog).getByDisplayValue(/AI-samenvatting voor de opslagdialoog/i)).toBeInTheDocument();
     expect(within(dialog).getByDisplayValue(/AI-voorstellen, niet bewezen/i)).toBeInTheDocument();
-    expect(nameFlow).not.toHaveBeenCalled();
+    expect(mocks.nameFlow).not.toHaveBeenCalled();
+  });
+
+  it("calls flow naming AI when approving without manual AI output", async () => {
+    renderSuggestionDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: /goedkeuren/i }));
+
+    expect(mocks.nameFlow).toHaveBeenCalledWith(automations);
+    const dialog = await screen.findByRole("dialog", { name: /procesreis opslaan/i });
+    expect(within(dialog).getByLabelText("Naam")).toHaveValue("AI fallback naam");
+    expect(within(dialog).getByLabelText("Beschrijving")).toHaveValue("AI fallback beschrijving");
+  });
+
+  it("saves the approved flow from the confirmation dialog path", async () => {
+    renderSuggestionDetail();
+
+    fireEvent.change(screen.getByLabelText("AI-resultaat"), {
+      target: {
+        value: JSON.stringify({
+          title: "AI titel voor opslaan",
+          summary: "AI-beschrijving voor opslaan.",
+          businessObject: "",
+          processSteps: [],
+          changeSummary: [],
+          reviewNotes: [],
+          aiSuggestions: [],
+          openQuestions: [],
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /resultaat verwerken/i }));
+    fireEvent.click(screen.getByRole("button", { name: /goedkeuren/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /procesreis opslaan/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^procesreis opslaan$/i }));
+
+    await waitFor(() => {
+      expect(mocks.createFlow).toHaveBeenCalledWith({
+        naam: "AI titel voor opslaan",
+        beschrijving: "AI-beschrijving voor opslaan.",
+        automationIds: ["AUTO-HS-BTW", "AUTO-GL-BTW"],
+        systemen: ["HubSpot", "GitLab"],
+      });
+    });
+    expect(mocks.accepteerFlowKandidaat).toHaveBeenCalledWith({
+      nodeIds: ["AUTO-HS-BTW", "AUTO-GL-BTW"],
+      flowId: "flow-123",
+    });
   });
 
   it("uses a touch-friendly trigger for step logic details", () => {

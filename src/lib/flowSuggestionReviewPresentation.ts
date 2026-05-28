@@ -1,7 +1,7 @@
 import { getAutomationSourceQualityPresentation } from "./automationSourceQuality";
 import type { FlowSuggestionAiResult } from "./flowSuggestionAi";
 import type { FlowSuggestionGroup } from "./flowSuggestionGroups";
-import { getExactWebhookProof, normalizeWebhookRoute } from "./webhookProof";
+import { getExactWebhookProof } from "./webhookProof";
 import type { Automatisering } from "./types";
 
 export interface FlowSuggestionReviewMetric {
@@ -76,7 +76,6 @@ export function getFlowSuggestionReviewPresentation({
   const groupNodeIds = new Set(group.nodes.map((node) => node.id));
   const involvedAutomations = automations.filter((automation) => groupNodeIds.has(automation.id));
   const autoMap = new Map(involvedAutomations.map((automation) => [automation.id, automation]));
-  const normalizedEndpointEvidence = normalizeWebhookRoute(endpointEvidence);
   const transitions = group.suggestions
     .map((suggestion) => {
       const proof = getExactWebhookProof(
@@ -85,9 +84,6 @@ export function getFlowSuggestionReviewPresentation({
       );
 
       if (!proof) return null;
-      if (normalizedEndpointEvidence && proof.normalizedPath !== normalizedEndpointEvidence) {
-        return null;
-      }
 
       return {
         fromId: suggestion.fromId,

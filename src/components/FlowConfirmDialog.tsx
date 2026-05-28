@@ -75,8 +75,9 @@ export function FlowConfirmDialog({
 
           <div className="space-y-3 mb-4">
             <div>
-              <label className="text-xs font-medium mb-1 block">Naam</label>
+              <label htmlFor="flow-confirm-name" className="text-xs font-medium mb-1 block">Naam</label>
               <input
+                id="flow-confirm-name"
                 className="w-full border border-input rounded px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                 value={naam}
                 onChange={(e) => setNaam(e.target.value)}
@@ -84,8 +85,9 @@ export function FlowConfirmDialog({
               />
             </div>
             <div>
-              <label className="text-xs font-medium mb-1 block">Beschrijving</label>
+              <label htmlFor="flow-confirm-description-input" className="text-xs font-medium mb-1 block">Beschrijving</label>
               <textarea
+                id="flow-confirm-description-input"
                 className="w-full border border-input rounded px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                 rows={3}
                 value={beschrijving}
