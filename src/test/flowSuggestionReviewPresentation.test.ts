@@ -95,6 +95,71 @@ describe("flowSuggestionReviewPresentation", () => {
       tone: "danger",
     });
   });
+
+  it("ignores critical source findings on automations outside the suggestion group", () => {
+    const presentation = getFlowSuggestionReviewPresentation({
+      group: makeGroup("Webhook-match: /backend/process-deal"),
+      automations: [
+        makeHubSpotAutomation(),
+        makeGitLabAutomation(),
+        baseAutomation({
+          id: "unrelated",
+          naam: "Unrelated automation",
+          categorie: "HubSpot Workflow",
+          source: "hubspot",
+          sourceFindings: [
+            makeSourceFinding({
+              automationId: "unrelated",
+              severity: "critical",
+              message: "Unrelated bron ontbreekt.",
+            }),
+          ],
+        }),
+      ],
+      endpointEvidence: "/backend/process-deal",
+      aiResult: null,
+    });
+
+    expect(presentation.approvalState.status).toBe("ready");
+    expect(presentation.sourceQualityMessages).toEqual([]);
+  });
+
+  it("blocks approval when involved source quality has generated missing evidence", () => {
+    const presentation = getFlowSuggestionReviewPresentation({
+      group: makeGroup("Webhook-match: /backend/process-deal"),
+      automations: [
+        makeHubSpotAutomation({
+          hubspotWorkflow: {
+            name: "HubSpot workflow",
+            triggers: [],
+            actions: [
+              {
+                index: 1,
+                type: "WEBHOOK",
+                label: "Webhook",
+                webhookPath: "/backend/process-deal",
+              },
+            ],
+          },
+        }),
+        makeGitLabAutomation(),
+      ],
+      endpointEvidence: "/backend/process-deal",
+      aiResult: null,
+    });
+
+    expect(presentation.approvalState.status).toBe("blocked");
+    expect(presentation.metrics.find((metric) => metric.label === "Bronkwaliteit")).toMatchObject({
+      value: "Review",
+      tone: "warning",
+    });
+    expect(presentation.sourceQualityMessages).toContainEqual(
+      expect.objectContaining({
+        label: "HubSpot triggercriteria",
+        tone: "warning",
+      }),
+    );
+  });
 });
 
 function makeGroup(reason: string): FlowSuggestionGroup {

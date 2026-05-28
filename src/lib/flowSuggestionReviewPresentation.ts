@@ -73,7 +73,9 @@ export function getFlowSuggestionReviewPresentation({
   endpointEvidence,
   aiResult,
 }: BuildInput): FlowSuggestionReviewPresentation {
-  const autoMap = new Map(automations.map((automation) => [automation.id, automation]));
+  const groupNodeIds = new Set(group.nodes.map((node) => node.id));
+  const involvedAutomations = automations.filter((automation) => groupNodeIds.has(automation.id));
+  const autoMap = new Map(involvedAutomations.map((automation) => [automation.id, automation]));
   const normalizedEndpointEvidence = normalizeWebhookRoute(endpointEvidence);
   const transitions = group.suggestions
     .map((suggestion) => {
@@ -100,22 +102,31 @@ export function getFlowSuggestionReviewPresentation({
     })
     .filter((transition): transition is FlowSuggestionReviewTransition => Boolean(transition));
 
-  const sourceQualityMessages = automations.flatMap((automation) => {
-    const quality = getAutomationSourceQualityPresentation(automation);
-    return quality.blockingFindings.map((finding) => ({
+  const sourceQualityPresentations = involvedAutomations.map((automation) => ({
+    automation,
+    quality: getAutomationSourceQualityPresentation(automation),
+  }));
+  const sourceQualityMessages = sourceQualityPresentations.flatMap(({ automation, quality }) => [
+    ...quality.blockingFindings.map((finding) => ({
       automationId: automation.id,
       label: automation.naam,
       description: finding.message,
       tone: finding.severity === "critical" ? "danger" as const : "warning" as const,
-    }));
-  });
+    })),
+    ...quality.missingEvidence.map((missing) => ({
+      automationId: automation.id,
+      label: missing.label,
+      description: missing.description,
+      tone: "warning" as const,
+    })),
+  ]);
 
-  const hasCriticalSourceBlocker = sourceQualityMessages.some(
-    (message) => message.tone === "danger",
+  const hasSourceQualityBlocker = sourceQualityPresentations.some(
+    ({ quality }) => quality.qualityStatus !== "ready",
   );
   const allSuggestionsProven =
     group.suggestions.length > 0 && transitions.length === group.suggestions.length;
-  const ready = allSuggestionsProven && !hasCriticalSourceBlocker;
+  const ready = allSuggestionsProven && !hasSourceQualityBlocker;
   const aiSuggestions = buildAiSuggestions(aiResult);
 
   return {
@@ -130,8 +141,8 @@ export function getFlowSuggestionReviewPresentation({
       : {
           status: "blocked",
           label: "Niet goedkeuringsklaar",
-          detail: hasCriticalSourceBlocker
-            ? "Een kritieke bronkwaliteit-blocker moet eerst worden opgelost."
+          detail: hasSourceQualityBlocker
+            ? "Een bronkwaliteit-blocker moet eerst worden opgelost."
             : "Een of meer overgangen missen exacte webhook-bewijsvoering.",
         },
     badges: [
