@@ -78,6 +78,44 @@ describe("sourceQualityMatrixPresentation", () => {
     });
   });
 
+  it("does not treat disabled Typeform webhooks as matchable process proof", () => {
+    const presentation = build([typeformDisabledWebhook(), gitlabTypeformEndpoint()]);
+
+    expect(row(presentation, "tf-disabled-webhook")).toMatchObject({
+      classification: "incomplete",
+      reason: "Geen actieve Typeform webhook met route gevonden.",
+      routeEvidence: "",
+    });
+    expect(presentation.matches).toHaveLength(0);
+  });
+
+  it("blocks webhook proof when open source quality findings exist", () => {
+    const presentation = build([hubspotWebhookWithIncompleteFinding(), gitlabEndpoint()]);
+
+    expect(row(presentation, "hs-webhook-incomplete")).toMatchObject({
+      classification: "incomplete",
+      reason: "Bronkwaliteit blokkeert procesreisbewijs: HubSpot actions missen details.",
+      routeEvidence: "/properties/ib/finished_webhook",
+    });
+    expect(presentation.matches).toHaveLength(0);
+    expect(presentation.unmatchedEndpoints.map((item) => item.normalizedPath)).toContain(
+      "/properties/ib/finished_webhook",
+    );
+  });
+
+  it("does not mark duplicate receiver routes as a clean 100% webhook match", () => {
+    const presentation = build([hubspotWebhook(), gitlabEndpoint(), gitlabDuplicateEndpoint()]);
+
+    expect(presentation.matches).toHaveLength(0);
+    expect(presentation.ambiguousMatches).toHaveLength(1);
+    expect(presentation.ambiguousMatches[0]).toMatchObject({
+      sourceAutomationId: "hs-webhook",
+      normalizedPath: "/properties/ib/finished_webhook",
+      evidenceLabel: "Dubbele receiver-route",
+    });
+    expect(presentation.ambiguousMatches[0].targetOptions).toHaveLength(2);
+  });
+
   it("classifies GitLab endpoint as receiver and legacy GitLab file as legacy import", () => {
     const presentation = build([gitlabEndpoint(), gitlabLegacyFile()]);
 
@@ -198,6 +236,26 @@ function hubspotWithoutActions(): Automatisering {
   });
 }
 
+function hubspotWebhookWithIncompleteFinding(): Automatisering {
+  return {
+    ...hubspotWebhook(),
+    id: "hs-webhook-incomplete",
+    sourceFindings: [
+      {
+        id: "finding-1",
+        automationId: "hs-webhook-incomplete",
+        source: "hubspot",
+        type: "source_data_incomplete",
+        severity: "warning",
+        message: "HubSpot actions missen details.",
+        firstSeenAt: "2026-05-28T00:00:00.000Z",
+        lastSeenAt: "2026-05-28T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ],
+  };
+}
+
 function zapierWebhook(): Automatisering {
   return baseAutomation({
     id: "zap-webhook",
@@ -289,6 +347,24 @@ function typeformWithoutWebhook(): Automatisering {
   });
 }
 
+function typeformDisabledWebhook(): Automatisering {
+  return baseAutomation({
+    id: "tf-disabled-webhook",
+    naam: "Disabled Typeform",
+    categorie: "Typeform",
+    source: "typeform",
+    webhookPaths: ["/typeform/webhook"],
+    importProposal: {
+      typeform: {
+        form: { id: "form-3", title: "Disabled Typeform", fields: [], hidden_fields: [] },
+        webhooks: [
+          { tag: "api", enabled: false, eventTypes: ["form_response"], path: "/typeform/webhook" },
+        ],
+      },
+    },
+  });
+}
+
 function gitlabEndpoint(): Automatisering {
   return baseAutomation({
     id: "gl-endpoint",
@@ -299,6 +375,36 @@ function gitlabEndpoint(): Automatisering {
       method: "POST",
       endpoint: "/properties/ib/finished_webhook",
       handler: "ib_finished_webhook",
+      calls: [{ depth: 1, kind: "hubspot_repository_call", from: "handler", to: "repo", file: "repo.py" }],
+    },
+  });
+}
+
+function gitlabDuplicateEndpoint(): Automatisering {
+  return baseAutomation({
+    id: "gl-duplicate-endpoint",
+    naam: "IB finished duplicate",
+    categorie: "Backend Script",
+    source: "gitlab",
+    gitlabEndpoint: {
+      method: "POST",
+      endpoint: "/properties/ib/finished_webhook",
+      handler: "ib_finished_webhook_copy",
+      calls: [{ depth: 1, kind: "hubspot_repository_call", from: "handler", to: "repo", file: "repo.py" }],
+    },
+  });
+}
+
+function gitlabTypeformEndpoint(): Automatisering {
+  return baseAutomation({
+    id: "gl-typeform-endpoint",
+    naam: "Typeform webhook receiver",
+    categorie: "Backend Script",
+    source: "gitlab",
+    gitlabEndpoint: {
+      method: "POST",
+      endpoint: "/typeform/webhook",
+      handler: "typeform_webhook",
       calls: [{ depth: 1, kind: "hubspot_repository_call", from: "handler", to: "repo", file: "repo.py" }],
     },
   });

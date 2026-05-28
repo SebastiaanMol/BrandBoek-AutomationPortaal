@@ -11,6 +11,7 @@ describe("SourceQualityMatrixTab", () => {
     expect(screen.getByRole("heading", { name: "Bronkwaliteit voor procesreizen" })).toBeInTheDocument();
     expect(screen.getByText("Webhook-only bewijs")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Automations per bron" })).toBeInTheDocument();
+    expect(screen.getAllByText("Incompleet").length).toBeGreaterThan(0);
     expect(screen.getAllByText("HubSpot webhook").length).toBeGreaterThan(0);
     expect(screen.getAllByText("GitLab receiver").length).toBeGreaterThan(0);
     expect(screen.getByText("100% webhook-match")).toBeInTheDocument();
@@ -37,6 +38,18 @@ describe("SourceQualityMatrixTab", () => {
       "href",
       "/automations/hs-webhook",
     );
+  });
+
+  it("shows ambiguous receiver routes separately from clean matches", () => {
+    render(
+      <MemoryRouter>
+        <SourceQualityMatrixTab automations={[...automations, duplicateReceiver]} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText("100% webhook-match")).not.toBeInTheDocument();
+    expect(screen.getByText("Dubbele receiver-route")).toBeInTheDocument();
+    expect(screen.getAllByText("GitLab duplicate receiver").length).toBeGreaterThan(0);
   });
 });
 
@@ -113,6 +126,19 @@ const automations: Automatisering[] = [
     },
   }),
 ];
+
+const duplicateReceiver = baseAutomation({
+  id: "gl-duplicate",
+  naam: "GitLab duplicate receiver",
+  source: "gitlab",
+  categorie: "Backend Script",
+  gitlabEndpoint: {
+    method: "POST",
+    endpoint: "/properties/ib/finished_webhook",
+    handler: "ib_finished_webhook_copy",
+    calls: [{ depth: 1, kind: "hubspot_repository_call", from: "handler", to: "repo", file: "repo.py" }],
+  },
+});
 
 function baseAutomation(overrides: Partial<Automatisering>): Automatisering {
   return {

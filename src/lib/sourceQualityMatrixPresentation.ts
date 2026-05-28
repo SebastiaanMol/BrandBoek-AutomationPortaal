@@ -54,12 +54,29 @@ export interface SourceQualityWebhookMatch {
   evidenceLabel: "100% webhook-match";
 }
 
+export interface SourceQualityAmbiguousWebhookMatch {
+  id: string;
+  sourceAutomationId: string;
+  sourceAutomationName: string;
+  sourceLabel: string;
+  sourcePath: string;
+  normalizedPath: string;
+  targetOptions: Array<{
+    targetAutomationId: string;
+    targetAutomationName: string;
+    targetLabel: string;
+    targetPath: string;
+  }>;
+  evidenceLabel: "Dubbele receiver-route";
+}
+
 export interface SourceQualityMatrixPresentation {
   summaryCards: SourceQualitySummaryCard[];
   rows: SourceQualityAutomationRow[];
   senders: SourceQualityRoute[];
   receivers: SourceQualityRoute[];
   matches: SourceQualityWebhookMatch[];
+  ambiguousMatches: SourceQualityAmbiguousWebhookMatch[];
   unmatchedWebhooks: SourceQualityRoute[];
   unmatchedEndpoints: SourceQualityRoute[];
 }
@@ -71,15 +88,26 @@ export function getSourceQualityMatrixPresentation(
 ): SourceQualityMatrixPresentation {
   const sourceAutomations = automations.filter((automation) => getSource(automation) !== null);
   const rows = sourceAutomations.map(buildRow);
-  const senders = sourceAutomations.flatMap(buildSenderRoutes);
-  const receivers = sourceAutomations.flatMap(buildReceiverRoutes);
-  const matches = buildMatches(senders, receivers);
+  const proofReadyAutomations = sourceAutomations.filter(
+    (automation) => getBlockingSourceFindings(automation).length === 0,
+  );
+  const senders = proofReadyAutomations.flatMap(buildSenderRoutes);
+  const receivers = proofReadyAutomations.flatMap(buildReceiverRoutes);
+  const { matches, ambiguousMatches } = buildMatches(senders, receivers);
   const matchedSenderKeys = new Set(
     matches.map((match) => routeKey(match.sourceAutomationId, match.normalizedPath)),
   );
+  for (const match of ambiguousMatches) {
+    matchedSenderKeys.add(routeKey(match.sourceAutomationId, match.normalizedPath));
+  }
   const matchedReceiverKeys = new Set(
     matches.map((match) => routeKey(match.targetAutomationId, match.normalizedPath)),
   );
+  for (const match of ambiguousMatches) {
+    for (const option of match.targetOptions) {
+      matchedReceiverKeys.add(routeKey(option.targetAutomationId, match.normalizedPath));
+    }
+  }
 
   return {
     summaryCards: buildSummaryCards(rows),
@@ -87,6 +115,7 @@ export function getSourceQualityMatrixPresentation(
     senders,
     receivers,
     matches,
+    ambiguousMatches,
     unmatchedWebhooks: senders.filter(
       (route) => !matchedSenderKeys.has(routeKey(route.automationId, route.normalizedPath)),
     ),
@@ -119,7 +148,7 @@ function buildSenderRoutes(automation: Automatisering): SourceQualityRoute[] {
   const source = getSource(automation);
   if (!source || source === "gitlab") return [];
 
-  return collectWebhookHandoffPaths(automation)
+  return collectActiveWebhookHandoffPaths(automation, source)
     .map((path) => buildRoute(automation, source, path))
     .filter((route): route is SourceQualityRoute => Boolean(route));
 }
@@ -155,6 +184,7 @@ function classifyAutomation(
   automation: Automatisering,
   routes: SourceQualityRoute[],
 ): SourceQualityClassification {
+  if (getBlockingSourceFindings(automation).length > 0) return "incomplete";
   if (routes.length > 0) return "matchable";
 
   const source = getSource(automation);
@@ -180,6 +210,12 @@ function reasonFor(
   automation: Automatisering,
   classification: SourceQualityClassification,
 ): string {
+  const blockingFindings = getBlockingSourceFindings(automation);
+  if (blockingFindings.length > 0) {
+    return `Bronkwaliteit blokkeert procesreisbewijs: ${blockingFindings
+      .map((finding) => finding.message)
+      .join(" ")}`;
+  }
   if (classification === "matchable") return "Matchbare route gevonden.";
   if (classification === "legacy") {
     return "Oude GitLab bestandsimport zonder specifiek endpoint-record.";
@@ -213,11 +249,21 @@ function reasonFor(
 function buildMatches(
   senders: SourceQualityRoute[],
   receivers: SourceQualityRoute[],
-): SourceQualityWebhookMatch[] {
-  return senders.flatMap((sender) =>
-    receivers
-      .filter((receiver) => receiver.normalizedPath === sender.normalizedPath)
-      .map((receiver) => ({
+): {
+  matches: SourceQualityWebhookMatch[];
+  ambiguousMatches: SourceQualityAmbiguousWebhookMatch[];
+} {
+  const matches: SourceQualityWebhookMatch[] = [];
+  const ambiguousMatches: SourceQualityAmbiguousWebhookMatch[] = [];
+
+  for (const sender of senders) {
+    const targetOptions = receivers.filter(
+      (receiver) => receiver.normalizedPath === sender.normalizedPath,
+    );
+
+    if (targetOptions.length === 1) {
+      const receiver = targetOptions[0];
+      matches.push({
         id: `${sender.automationId}->${receiver.automationId}:${sender.normalizedPath}`,
         sourceAutomationId: sender.automationId,
         sourceAutomationName: sender.automationName,
@@ -229,8 +275,27 @@ function buildMatches(
         targetPath: receiver.path,
         normalizedPath: sender.normalizedPath,
         evidenceLabel: "100% webhook-match" as const,
-      })),
-  );
+      });
+    } else if (targetOptions.length > 1) {
+      ambiguousMatches.push({
+        id: `${sender.automationId}->ambiguous:${sender.normalizedPath}`,
+        sourceAutomationId: sender.automationId,
+        sourceAutomationName: sender.automationName,
+        sourceLabel: sender.sourceLabel,
+        sourcePath: sender.path,
+        normalizedPath: sender.normalizedPath,
+        targetOptions: targetOptions.map((receiver) => ({
+          targetAutomationId: receiver.automationId,
+          targetAutomationName: receiver.automationName,
+          targetLabel: receiver.sourceLabel,
+          targetPath: receiver.path,
+        })),
+        evidenceLabel: "Dubbele receiver-route",
+      });
+    }
+  }
+
+  return { matches, ambiguousMatches };
 }
 
 function buildSummaryCards(rows: SourceQualityAutomationRow[]): SourceQualitySummaryCard[] {
@@ -307,6 +372,46 @@ function getZapierSteps(automation: Automatisering): unknown[] {
   return [
     ...arrayValue(process?.steps),
     ...arrayValue(zap?.steps),
+  ];
+}
+
+function collectActiveWebhookHandoffPaths(
+  automation: Automatisering,
+  source: SourceQualitySource,
+): string[] {
+  if (source !== "typeform") return collectWebhookHandoffPaths(automation);
+
+  const typeform = automation.importProposal?.typeform;
+  if (Array.isArray(typeform?.webhooks)) {
+    return uniqueRoutes(
+      typeform.webhooks
+        .filter((webhook) => webhook.enabled)
+        .map((webhook) => webhook.path),
+    );
+  }
+
+  return uniqueRoutes([
+    ...(automation.webhookPaths ?? []),
+    ...((automation.importProposal?.webhookPaths ?? []) as string[]),
+    ...(typeform?.process?.webhookHandoffs ?? []).map((handoff) => handoff.path),
+    ...(typeform?.process?.steps ?? []).flatMap((step) => step.webhookPaths ?? []),
+  ]);
+}
+
+function getBlockingSourceFindings(automation: Automatisering) {
+  const blockingTypes = new Set(["source_missing", "source_data_incomplete", "webhook_changed"]);
+  return (automation.sourceFindings ?? []).filter(
+    (finding) => !finding.resolvedAt && blockingTypes.has(finding.type),
+  );
+}
+
+function uniqueRoutes(values: Array<string | null | undefined>): string[] {
+  return [
+    ...new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
   ];
 }
 

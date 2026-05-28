@@ -70,10 +70,11 @@ export function SourceQualityMatrixTab({ automations }: { automations: Automatis
                 <h3 className="font-semibold text-foreground">{card.label}</h3>
                 <Badge variant="outline">{card.matchable}/{card.total}</Badge>
               </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                 <Metric label="Totaal" value={card.total} />
                 <Metric label="Matchbaar" value={card.matchable} />
                 <Metric label="Zonder" value={card.missing} />
+                <Metric label="Incompleet" value={card.incomplete} />
               </div>
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {card.interpretation}
@@ -182,7 +183,7 @@ export function SourceQualityMatrixTab({ automations }: { automations: Automatis
         <div className="mt-4 space-y-3">
           {presentation.matches.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              Geen exacte webhook/endpoint matches gevonden.
+              Geen schone 1-op-1 webhook/endpoint matches gevonden.
             </div>
           ) : (
             presentation.matches.map((match) => (
@@ -213,6 +214,37 @@ export function SourceQualityMatrixTab({ automations }: { automations: Automatis
               </article>
             ))
           )}
+          {presentation.ambiguousMatches.map((match) => (
+            <article
+              key={match.id}
+              className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+            >
+              <div className="min-w-0">
+                <Badge variant="outline">{match.sourceLabel}</Badge>
+                <p className="mt-2 font-semibold text-foreground">{match.sourceAutomationName}</p>
+                <code className="mt-1 block truncate rounded bg-white px-2 py-1 text-xs text-muted-foreground">
+                  {match.sourcePath}
+                </code>
+              </div>
+              <div className="flex items-center justify-center">
+                <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                  {match.evidenceLabel}
+                  <CircleAlert className="h-3.5 w-3.5" />
+                </span>
+              </div>
+              <div className="min-w-0 space-y-2">
+                {match.targetOptions.map((option) => (
+                  <div key={option.targetAutomationId} className="rounded-lg bg-white px-3 py-2">
+                    <Badge variant="outline">{option.targetLabel}</Badge>
+                    <p className="mt-1 font-semibold text-foreground">{option.targetAutomationName}</p>
+                    <code className="mt-1 block truncate text-xs text-muted-foreground">
+                      {option.targetPath}
+                    </code>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 
