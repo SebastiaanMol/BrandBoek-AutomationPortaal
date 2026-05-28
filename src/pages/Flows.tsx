@@ -14,6 +14,7 @@ import { detectFlows } from "@/lib/detectFlows";
 import { buildConceptJourneys } from "@/lib/conceptJourneys";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FlowSuggestiesTab } from "@/components/FlowSuggestiesTab";
+import { SourceQualityMatrixTab } from "@/components/flows/SourceQualityMatrixTab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -158,6 +159,7 @@ export default function Flows() {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="bronkwaliteit">Bronkwaliteit</TabsTrigger>
           </TabsList>
 
           <TabsContent value="procesreizen" className="mt-4">
@@ -420,6 +422,10 @@ export default function Flows() {
                 <FlowSuggestiesTab />
               </div>
             </details>
+          </TabsContent>
+
+          <TabsContent value="bronkwaliteit" className="mt-4">
+            <SourceQualityMatrixTab automations={journeyAutomations} />
           </TabsContent>
         </Tabs>
       </div>
