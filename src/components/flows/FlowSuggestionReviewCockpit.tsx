@@ -82,7 +82,7 @@ export function FlowSuggestionReviewCockpit({
               <XCircle className="h-4 w-4" />
               Verwerp
             </Button>
-            <Button type="button" onClick={onAccept} disabled={!isReady}>
+            <Button type="button" onClick={onAccept} disabled={!isReady || rejectPending}>
               <ShieldCheck className="h-4 w-4" />
               Goedkeuren
             </Button>
