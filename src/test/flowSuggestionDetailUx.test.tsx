@@ -1,9 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import FlowSuggestionDetail from "@/pages/FlowSuggestionDetail";
 import { StepLogicDetails } from "@/components/flows/StepLogicDetails";
 import { ProcessJourneyNarrative } from "@/components/flows/ProcessJourneyNarrative";
+import { nameFlow } from "@/lib/storage/flows";
 import type { Automatisering } from "@/lib/types";
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
 
@@ -94,6 +95,7 @@ const automations: Automatisering[] = [
       method: "POST",
       endpoint: "/properties/btw/update_next_quarter_prev2m",
       handler: "update_next_quarter_prev2m",
+      calls: ["hubspot.properties.update"],
     },
   }),
 ];
@@ -133,57 +135,107 @@ function renderSuggestionDetail(): void {
 }
 
 describe("FlowSuggestionDetail UX", () => {
-  it("keeps the save action only in the review panel and allows long titles to wrap", () => {
-    renderSuggestionDetail();
-
-    expect(screen.getAllByRole("button", { name: /sla op als procesreis/i })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /sla op als procesreis/i })).toHaveClass("min-h-[44px]");
-    expect(screen.getByRole("button", { name: /verwerp concept/i })).toHaveClass("min-h-[44px]");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("line-clamp-2");
-    expect(screen.getByRole("heading", { level: 1 })).not.toHaveClass("truncate");
-  });
-
-  it("presents downstream as a visible but unproven follow-up check", () => {
-    renderSuggestionDetail();
-
-    const downstreamStep = screen.getByRole("region", { name: /^vervolgcontrole$/i });
-
-    expect(within(downstreamStep).getAllByText(/^vervolgcontrole$/i).length).toBeGreaterThan(0);
-    expect(within(downstreamStep).getByText(/geen vervolgproces bewezen/i)).toBeInTheDocument();
-    expect(downstreamStep).toHaveClass("border-dashed");
-    expect(downstreamStep).toHaveClass("bg-blue-50/40");
-    expect(downstreamStep).toHaveClass("text-blue-900");
-    expect(screen.queryByText(/gekoppelde volgende procesreis/i)).not.toBeInTheDocument();
-  });
-
-  it("keeps start signal and follow-up outside the step-by-step overview", () => {
-    renderSuggestionDetail();
-
-    const startBlock = screen.getByRole("region", { name: /^startsignaal$/i });
-    const stepOverview = screen.getByRole("region", { name: /^stap voor stap overzicht$/i });
-    const followUpBlock = screen.getByRole("region", { name: /^vervolgcontrole$/i });
-
-    expect(within(startBlock).getByText(/startsignaal/i)).toBeInTheDocument();
-    expect(within(followUpBlock).getAllByText(/vervolgcontrole/i).length).toBeGreaterThan(0);
-
-    expect(within(stepOverview).getAllByText(/1\./).length).toBeGreaterThan(0);
-    expect(within(stepOverview).queryByText(/^startsignaal$/i)).not.toBeInTheDocument();
-    expect(within(stepOverview).queryByText(/^vervolgcontrole$/i)).not.toBeInTheDocument();
-    expect(within(stepOverview).queryByText(/geen vervolgproces bewezen/i)).not.toBeInTheDocument();
-  });
-
-  it("uses a compact arrow transition instead of a separate transition block", () => {
-    renderSuggestionDetail();
-
-    const stepOverview = screen.getByRole("region", { name: /^stap voor stap overzicht$/i });
-    const transition = within(stepOverview).getByRole("separator", {
-      name: /overdracht naar backend/i,
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
     });
+  });
 
-    expect(transition).toBeInTheDocument();
-    expect(transition).toHaveClass("justify-center");
-    expect(within(stepOverview).queryByText(/^Van stap 1 naar stap 2$/i)).not.toBeInTheDocument();
-    expect(within(stepOverview).queryByText(/^Stap 1 naar stap 2$/i)).not.toBeInTheDocument();
+  it("shows the review cockpit with exact webhook proof and no probability language", () => {
+    renderSuggestionDetail();
+
+    expect(screen.getByText("Klaar voor review")).toBeInTheDocument();
+    expect(screen.getByText("Bewijsstatus")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.getAllByText("100% webhook-match").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /goedkeuren/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /verwerp/i })).toBeEnabled();
+    expect(screen.queryByText(/waarschijnlijk|kans|probability|likely/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the AI workbench with prompt copy, result input, and read-only guardrails", () => {
+    renderSuggestionDetail();
+
+    expect(screen.getByRole("heading", { name: /verrijk dit voorstel handmatig met ai/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /prompt kopi/i }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("Analyseer onderstaande procesreis-kandidaat"));
+    expect(screen.getByLabelText("AI-resultaat")).toBeInTheDocument();
+    expect(screen.getByText("Blijft read-only")).toBeInTheDocument();
+    expect(screen.getByText(/Webhook-bewijs, bewezen overgangen en goedkeuringsstatus/i)).toBeInTheDocument();
+  });
+
+  it("processes valid AI JSON as unproven review context in the cockpit", () => {
+    renderSuggestionDetail();
+
+    fireEvent.change(screen.getByLabelText("AI-resultaat"), {
+      target: {
+        value: JSON.stringify({
+          title: "BTW kwartaalproces controleren",
+          summary: "AI beschrijft het bewezen BTW-pad voor review.",
+          businessObject: "BTW-dossier",
+          processSteps: ["HubSpot verstuurt de bewezen webhook.", "GitLab werkt het kwartaal bij."],
+          changeSummary: ["Het volgende kwartaal wordt bijgewerkt."],
+          reviewNotes: ["Controleer of de businessnaam klopt."],
+          aiSuggestions: [
+            {
+              label: "Mogelijk vervolg",
+              description: "Controleer of een facturatieproces hierna start.",
+              severity: "warning",
+              tag: "AI-voorstel",
+            },
+          ],
+          openQuestions: ["Moet finance eigenaar zijn van deze procesreis?"],
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /resultaat verwerken/i }));
+
+    expect(screen.getByRole("heading", { name: "BTW kwartaalproces controleren" })).toBeInTheDocument();
+    expect(screen.getByText("AI beschrijft het bewezen BTW-pad voor review.")).toBeInTheDocument();
+    expect(screen.getByText("Mogelijk vervolg")).toBeInTheDocument();
+    expect(screen.getByText("Controleer of een facturatieproces hierna start.")).toBeInTheDocument();
+    expect(screen.getByText("Moet finance eigenaar zijn van deze procesreis?")).toBeInTheDocument();
+    expect(screen.getAllByText("Niet bewezen").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review nodig").length).toBeGreaterThan(0);
+  });
+
+  it("prefills the confirmation dialog from manual AI output when approving", () => {
+    renderSuggestionDetail();
+
+    fireEvent.change(screen.getByLabelText("AI-resultaat"), {
+      target: {
+        value: JSON.stringify({
+          title: "AI titel voor goedkeuring",
+          summary: "AI-samenvatting voor de opslagdialoog.",
+          businessObject: "BTW-dossier",
+          processSteps: ["Stap een", "Stap twee"],
+          changeSummary: ["Wijziging een"],
+          reviewNotes: ["Review dit later."],
+          aiSuggestions: [
+            {
+              label: "Niet opslaan als bewijs",
+              description: "Dit blijft reviewcontext.",
+              severity: "warning",
+              tag: "Niet bewezen",
+            },
+          ],
+          openQuestions: ["Open reviewvraag."],
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /resultaat verwerken/i }));
+    fireEvent.click(screen.getByRole("button", { name: /goedkeuren/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /procesreis opslaan/i });
+    expect(within(dialog).getByDisplayValue("AI titel voor goedkeuring")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue(/AI-samenvatting voor de opslagdialoog/i)).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue(/AI-voorstellen, niet bewezen/i)).toBeInTheDocument();
+    expect(nameFlow).not.toHaveBeenCalled();
   });
 
   it("uses a touch-friendly trigger for step logic details", () => {
@@ -192,12 +244,6 @@ describe("FlowSuggestionDetail UX", () => {
     const trigger = screen.getByRole("button", { name: /logica/i });
     expect(trigger).toHaveClass("min-h-[44px]");
     expect(trigger).toHaveClass("focus-visible:ring-2");
-  });
-
-  it("uses a touch-friendly trigger for the technical trace", () => {
-    renderSuggestionDetail();
-
-    expect(screen.getByRole("button", { name: /toon technische trace/i })).toHaveClass("min-h-[44px]");
   });
 
   it("shows the approved flow description as the confirmed process story", () => {

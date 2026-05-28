@@ -19,6 +19,8 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FlowConfirmDialog } from "@/components/FlowConfirmDialog";
+import { FlowSuggestionAiWorkbench } from "@/components/flows/FlowSuggestionAiWorkbench";
+import { FlowSuggestionReviewCockpit } from "@/components/flows/FlowSuggestionReviewCockpit";
 import { ProcessJourneyNarrative } from "@/components/flows/ProcessJourneyNarrative";
 import { StepLogicDetails } from "@/components/flows/StepLogicDetails";
 import { useAutomatiseringenIncludingLegacyGitlab } from "@/lib/queryHooks/automations";
@@ -47,6 +49,12 @@ import {
   resolveAutomationIdsForConceptJourney,
   summarizeAutomationForProcessJourney,
 } from "@/lib/processJourneyCopy";
+import {
+  buildAcceptedFlowDescriptionFromAiResult,
+  type FlowSuggestionAiResult,
+} from "@/lib/flowSuggestionAi";
+import { buildFlowSuggestionAiPrompt } from "@/lib/flowSuggestionPromptBuilder";
+import { getFlowSuggestionReviewPresentation } from "@/lib/flowSuggestionReviewPresentation";
 
 interface AcceptState {
   group: FlowSuggestionGroup;
@@ -127,22 +135,27 @@ export default function FlowSuggestionDetail(): React.ReactNode {
   const accepteerKandidaat = useAccepteerFlowKandidaat();
   const verwerp = useVerwerpFlowSuggestie();
   const [acceptState, setAcceptState] = useState<AcceptState | null>(null);
+  const [manualAiResult, setManualAiResult] = useState<FlowSuggestionAiResult | null>(null);
 
-  const groups = useMemo(() => groupFlowSuggesties(suggesties), [suggesties]);
+  const webhookSuggesties = useMemo(
+    () => suggesties.filter((suggestion) => suggestion.zekerheid === "webhook"),
+    [suggesties],
+  );
+  const groups = useMemo(() => groupFlowSuggesties(webhookSuggesties), [webhookSuggesties]);
   const groupId = resolveGroupId(id);
   const edgeSelection = useMemo(() => parseSuggestionEdgeDetailId(groupId), [groupId]);
   const edgeGroup = useMemo(() => {
     if (!edgeSelection) return undefined;
-    const suggestion = suggesties.find(
+    const suggestion = webhookSuggesties.find(
       (candidate) =>
         candidate.fromId === edgeSelection.fromId &&
         candidate.toId === edgeSelection.toId,
     );
     return suggestion ? groupFlowSuggesties([suggestion])[0] : undefined;
-  }, [edgeSelection, suggesties]);
+  }, [edgeSelection, webhookSuggesties]);
   const chainGroup = useMemo(
-    () => buildChainGroupFromId(groupId, suggesties),
-    [groupId, suggesties],
+    () => buildChainGroupFromId(groupId, webhookSuggesties),
+    [groupId, webhookSuggesties],
   );
   const group = edgeGroup ?? groups.find((candidate) => candidate.id === groupId) ?? chainGroup;
 
@@ -158,16 +171,35 @@ export default function FlowSuggestionDetail(): React.ReactNode {
     () => resolveAutomationIdsForConceptJourney(group?.nodes.map((node) => node.id) ?? [], autoMap, endpointEvidence),
     [autoMap, endpointEvidence, group],
   );
-  const runtimeSteps = useMemo(
-    () => buildFlowRuntimeChain(orderedAutomationIds, autoMap, { pipelines, autoMap }),
-    [orderedAutomationIds, autoMap, pipelines],
-  );
   const involvedAutomations = useMemo(
     () =>
       orderedAutomationIds
         .map((automationId) => autoMap.get(automationId))
         .filter((automation): automation is Automatisering => automation !== undefined),
     [orderedAutomationIds, autoMap],
+  );
+  const reviewPresentation = useMemo(
+    () =>
+      group
+        ? getFlowSuggestionReviewPresentation({
+            group,
+            automations: involvedAutomations,
+            endpointEvidence,
+            aiResult: manualAiResult,
+          })
+        : null,
+    [endpointEvidence, group, involvedAutomations, manualAiResult],
+  );
+  const aiPrompt = useMemo(
+    () =>
+      group
+        ? buildFlowSuggestionAiPrompt({
+            group,
+            automations: involvedAutomations,
+            endpointEvidence,
+          })
+        : "",
+    [endpointEvidence, group, involvedAutomations],
   );
   const actionPending = verwerp.isPending;
 
@@ -208,6 +240,22 @@ export default function FlowSuggestionDetail(): React.ReactNode {
       loading: true,
       saving: false,
     });
+
+    if (manualAiResult) {
+      const fallback = buildFallbackProcessJourneyCopy(groupToAccept, autos);
+      setAcceptState((prev) =>
+        prev
+          ? {
+              ...prev,
+              aiName: manualAiResult.title || fallback.naam,
+              aiBeschrijving: buildAcceptedFlowDescriptionFromAiResult(manualAiResult) || fallback.beschrijving,
+              aiError: false,
+              loading: false,
+            }
+          : null,
+      );
+      return;
+    }
 
     try {
       const result = await nameFlow(autos);
@@ -299,108 +347,36 @@ export default function FlowSuggestionDetail(): React.ReactNode {
     return <Navigate to="/flows" replace />;
   }
 
+  if (!reviewPresentation) {
+    return <Navigate to="/flows" replace />;
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-4 px-6 py-4 lg:px-10">
-          <div className="min-w-0">
+        <div className="mx-auto flex max-w-[1600px] items-center px-6 py-4 lg:px-10">
             <Link
               to="/flows"
-              className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Terug naar procesreizen
             </Link>
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Workflow className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
-                  Concept-procesreis
-                </p>
-                <h1 className="line-clamp-2 text-xl font-semibold leading-snug tracking-tight text-foreground">
-                  {getSuggestionGroupTitle(group, involvedAutomations)}
-                </h1>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge>{group.nodes.length} automations</StatusBadge>
-            <StatusBadge>{group.suggestions.length} overgangen</StatusBadge>
-            <StatusBadge>Concept</StatusBadge>
-          </div>
         </div>
       </header>
 
-      <main className="mx-auto grid min-h-0 min-w-0 w-full max-w-[1600px] flex-1 gap-6 overflow-x-hidden px-5 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-10">
-        <div className="min-w-0 space-y-5">
-          <section className="min-w-0 rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              Procesverhaal
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-              Klopt deze gereconstrueerde procesreis?
-            </h2>
-            <ProcessJourneyNarrative
-              automations={involvedAutomations}
-              pipelines={pipelines}
-              autoMap={autoMap}
-              endpoint={endpointEvidence}
-            />
-          </section>
-
-          <RuntimeJourney steps={runtimeSteps} />
-
-          <section className="min-w-0 rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Waarom denken we dat dit klopt?
-            </p>
-            <EvidenceList group={group} />
-          </section>
-
-
-        </div>
-
-        <aside className="min-w-0 space-y-4 lg:sticky lg:top-16 lg:self-start">
-          <section className="min-w-0 rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Review
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Sla deze procesreis op als de reconstructie klopt: startsignaal, endpoint/backend worker en vervolg-effect.
-            </p>
-            <div className="mt-4 grid gap-2">
-              <Button className="min-h-[44px]" onClick={() => handleAccepteer(group)}>
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                Sla op als procesreis
-              </Button>
-              <Button className="min-h-[44px]" variant="outline" disabled={actionPending} onClick={handleVerwerpProcesreis}>
-                <XCircle className="mr-2 h-4 w-4" />
-                Verwerp concept
-              </Button>
-            </div>
-          </section>
-
-          <section className="min-w-0 rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Impact
-            </p>
-            <ImpactSummary automations={involvedAutomations} />
-          </section>
-
-          <section className="min-w-0 rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Betrokken automations
-            </p>
-            <div className="mt-3 space-y-2">
-              {involvedAutomations.map((automation) => (
-                <AutomationSummary key={automation.id} automation={automation} pipelines={pipelines} />
-              ))}
-            </div>
-          </section>
-        </aside>
+      <main className="mx-auto min-h-0 min-w-0 w-full max-w-[1600px] flex-1 space-y-6 overflow-x-hidden px-5 py-6 sm:px-6 lg:px-10">
+        <FlowSuggestionReviewCockpit
+          presentation={reviewPresentation}
+          onAccept={() => handleAccepteer(group)}
+          onReject={handleVerwerpProcesreis}
+          rejectPending={actionPending}
+        />
+        <FlowSuggestionAiWorkbench
+          prompt={aiPrompt}
+          aiResult={manualAiResult}
+          onApply={setManualAiResult}
+        />
       </main>
 
       {acceptState && !acceptState.loading && (
@@ -756,13 +732,13 @@ function EvidenceList({ group }: { group: FlowSuggestionGroup }) {
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-green-600" />
             <p className="text-sm font-semibold text-foreground">
-              {suggestion.zekerheid === "webhook" ? "Hard bewijs" : "Afgeleid bewijs"}
+              {suggestion.zekerheid === "webhook" ? "100% webhook-match" : "Niet bewezen"}
             </p>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             {suggestion.zekerheid === "webhook"
               ? buildWebhookEvidenceText(suggestion)
-              : suggestion.redenering || "Deze relatie is afgeleid uit automation metadata."}
+              : "Deze relatie telt niet als procesreis-bewijs zonder exacte webhook-match."}
           </p>
         </div>
       ))}
