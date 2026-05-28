@@ -41,7 +41,7 @@ export function FlowSuggestionAiWorkbench({
   const [error, setError] = useState("");
 
   async function handleCopyPrompt(): Promise<void> {
-    if (!navigator.clipboard?.writeText) {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
       setError("Kopiëren wordt niet ondersteund in deze browser.");
       return;
     }
