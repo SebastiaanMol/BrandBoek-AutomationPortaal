@@ -31,7 +31,8 @@ const PROOF_SENSITIVE_FIELDS = [
   "targetAutomationId",
 ] as const;
 
-const SECRET_KEY_PATTERN = /(token|secret|password|authorization|api[_-]?key|private[_-]?app)/i;
+const SECRET_KEY_PATTERN =
+  /(token|secret|password|authorization|cookie|session|api[_-]?key|private[_-]?(app|key)|(^|[_-])auth($|[_-]))/i;
 
 export function parseFlowSuggestionAiResult(raw: string): FlowSuggestionAiParseResult {
   const trimmed = raw.trim();

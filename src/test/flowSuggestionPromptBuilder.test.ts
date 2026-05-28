@@ -23,7 +23,13 @@ describe("flowSuggestionPromptBuilder", () => {
     automation.importProposal = {
       zap: { id: "zap-1", title: "Zap" },
       token: "secret",
-      nested: { authorization: "Bearer x" },
+      accessToken: "access-secret",
+      clientSecret: "client-secret",
+      nested: {
+        authorization: "Bearer x",
+        cookie: "cookie-secret",
+        session: "session-secret",
+      },
     };
 
     const prompt = buildFlowSuggestionAiPrompt({
@@ -35,6 +41,26 @@ describe("flowSuggestionPromptBuilder", () => {
     expect(prompt).toContain("[REDACTED]");
     expect(prompt).not.toContain("Bearer x");
     expect(prompt).not.toContain("secret");
+  });
+
+  it("does not mutate the group or automations while building the prompt", () => {
+    const group = makeGroup();
+    const automation = makeAutomation("zap");
+    automation.importProposal = {
+      token: "secret",
+      nested: { authorization: "Bearer x" },
+    };
+    const originalGroup = JSON.parse(JSON.stringify(group));
+    const originalAutomations = JSON.parse(JSON.stringify([automation]));
+
+    buildFlowSuggestionAiPrompt({
+      group,
+      automations: [automation],
+      endpointEvidence: "/hook",
+    });
+
+    expect(group).toEqual(originalGroup);
+    expect([automation]).toEqual(originalAutomations);
   });
 });
 

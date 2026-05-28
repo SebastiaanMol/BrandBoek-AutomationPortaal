@@ -89,6 +89,38 @@ describe("flowSuggestionAi", () => {
     });
   });
 
+  it("redacts common auth and session keys before prompt generation", () => {
+    const sanitized = sanitizeForPrompt({
+      auth: "basic-secret",
+      cookie: "session-cookie",
+      session: "session-id",
+      privateKey: "private-key",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      clientSecret: "client-secret",
+      nested: {
+        headers: {
+          "x-auth-token": "header-token",
+        },
+      },
+    });
+
+    expect(sanitized).toEqual({
+      auth: "[REDACTED]",
+      cookie: "[REDACTED]",
+      session: "[REDACTED]",
+      privateKey: "[REDACTED]",
+      accessToken: "[REDACTED]",
+      refreshToken: "[REDACTED]",
+      clientSecret: "[REDACTED]",
+      nested: {
+        headers: {
+          "x-auth-token": "[REDACTED]",
+        },
+      },
+    });
+  });
+
   it("builds a flow description from accepted AI result without proof language", () => {
     const description = buildAcceptedFlowDescriptionFromAiResult({
       title: "Lead intake",
