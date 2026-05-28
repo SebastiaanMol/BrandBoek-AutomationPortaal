@@ -160,6 +160,38 @@ describe("flowSuggestionReviewPresentation", () => {
       }),
     );
   });
+
+  it("explains unknown source quality on involved automations", () => {
+    const presentation = getFlowSuggestionReviewPresentation({
+      group: makeUnknownSourceGroup(),
+      automations: [
+        makeHubSpotAutomation(),
+        baseAutomation({
+          id: "unknown",
+          naam: "Unknown receiver",
+          categorie: "Anders",
+          systemen: ["API"],
+          endpoints: ["/backend/process-deal"],
+        }),
+      ],
+      endpointEvidence: "/backend/process-deal",
+      aiResult: null,
+    });
+
+    expect(presentation.approvalState.status).toBe("blocked");
+    expect(presentation.metrics.find((metric) => metric.label === "Bronkwaliteit")).toMatchObject({
+      value: "Review",
+      tone: "warning",
+    });
+    expect(presentation.sourceQualityMessages).toContainEqual(
+      expect.objectContaining({
+        automationId: "unknown",
+        label: "Unknown receiver",
+        description: "Deze automation heeft geen bron waarmee procesreis-bewijs betrouwbaar kan worden opgebouwd.",
+        tone: "warning",
+      }),
+    );
+  });
 });
 
 function makeGroup(reason: string): FlowSuggestionGroup {
@@ -181,6 +213,38 @@ function makeGroup(reason: string): FlowSuggestionGroup {
         toSource: "gitlab",
         zekerheid: "webhook",
         redenering: reason,
+        confirmed: false,
+        rejected: false,
+      },
+    ],
+    webhookCount: 1,
+    aiCount: 0,
+    confirmedCount: 0,
+    totalCount: 1,
+    structureType: "lineair",
+    structureSummary: "Deze kandidaat lijkt een lineaire stapvolgorde.",
+  };
+}
+
+function makeUnknownSourceGroup(): FlowSuggestionGroup {
+  return {
+    id: "hs__unknown",
+    nodes: [
+      { id: "hs", naam: "HubSpot workflow", categorie: "HubSpot Workflow", source: "hubspot" },
+      { id: "unknown", naam: "Unknown receiver", categorie: "Anders", source: null },
+    ],
+    suggestions: [
+      {
+        fromId: "hs",
+        toId: "unknown",
+        fromNaam: "HubSpot workflow",
+        toNaam: "Unknown receiver",
+        fromCategorie: "HubSpot Workflow",
+        toCategorie: "Anders",
+        fromSource: "hubspot",
+        toSource: null,
+        zekerheid: "webhook",
+        redenering: "Webhook-match: /backend/process-deal",
         confirmed: false,
         rejected: false,
       },

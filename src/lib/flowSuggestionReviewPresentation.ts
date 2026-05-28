@@ -107,6 +107,14 @@ export function getFlowSuggestionReviewPresentation({
     quality: getAutomationSourceQualityPresentation(automation),
   }));
   const sourceQualityMessages = sourceQualityPresentations.flatMap(({ automation, quality }) => [
+    ...(quality.qualityStatus === "unknown"
+      ? [{
+          automationId: automation.id,
+          label: automation.naam,
+          description: quality.summary || "Bronkwaliteit onbekend voor procesreisvorming.",
+          tone: "warning" as const,
+        }]
+      : []),
     ...quality.blockingFindings.map((finding) => ({
       automationId: automation.id,
       label: automation.naam,
