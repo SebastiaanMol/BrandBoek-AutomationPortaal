@@ -1,6 +1,7 @@
 export const SOURCE_SYNC_RUNS_TABLE = "source_sync_runs";
 export const AUTOMATION_SOURCE_FINDINGS_TABLE = "automation_source_findings";
 export const AUTOMATION_IMPORT_PROPOSALS_TABLE = "automation_import_proposals";
+export const SOURCE_SYNC_CHANGE_ITEMS_TABLE = "source_sync_change_items";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -51,6 +52,64 @@ export type PortalOwnedSyncResult = {
   missing: number;
   changed: number;
   syncRunId: string;
+};
+
+export type SourceSyncChangeType =
+  | "new_automation"
+  | "metadata_changed"
+  | "route_changed"
+  | "source_data_incomplete"
+  | "source_missing";
+
+export type SourceSyncChangeItem = {
+  id: string;
+  syncRunId: string;
+  source: PortalOwnedSyncSource;
+  externalId: string | null;
+  automationId: string | null;
+  changeType: SourceSyncChangeType;
+  status: "pending" | "applied" | "skipped" | "failed";
+  title: string;
+  summary: string;
+  impact: string;
+  oldValue: unknown;
+  newValue: unknown;
+  payload: unknown;
+  selectedByDefault: boolean;
+};
+
+export type PortalOwnedSyncPreviewResult = PortalOwnedSyncResult & {
+  mode: "preview";
+  changeItems: SourceSyncChangeItem[];
+};
+
+export type PortalOwnedSyncApplyResult = PortalOwnedSyncResult & {
+  mode: "apply";
+  applied: number;
+  skipped: number;
+  failed: number;
+};
+
+type SourceSyncChangeDraft = Omit<SourceSyncChangeItem, "id" | "status" | "syncRunId" | "selectedByDefault"> & {
+  syncRunId: string;
+  selectedByDefault?: boolean;
+};
+
+type SourceSyncChangeRow = {
+  id: string;
+  sync_run_id: string;
+  source: PortalOwnedSyncSource;
+  external_id: string | null;
+  automation_id: string | null;
+  change_type: SourceSyncChangeType;
+  status: "pending" | "applied" | "skipped" | "failed";
+  title: string;
+  summary: string;
+  impact: string;
+  old_value_sanitized: unknown;
+  new_value_sanitized: unknown;
+  payload_sanitized: unknown;
+  selected_by_default: boolean;
 };
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|authorization|password|cookie|response|responses|answer|answers|submission|payload)/i;
@@ -122,6 +181,97 @@ export async function recordSourceSyncFailure(
     errorMessage: input.errorMessage,
   });
   return { syncRunId };
+}
+
+export async function previewPortalOwnedSync(
+  db: SupabaseClientLike,
+  input: {
+    source: PortalOwnedSyncSource;
+    payloads: PortalOwnedAutomationPayload[];
+    syncRunId: string;
+    now: string;
+  },
+): Promise<PortalOwnedSyncPreviewResult> {
+  const drafts = await buildSyncChangeItems(db, input);
+  const changeItems: SourceSyncChangeItem[] = [];
+  for (const draft of drafts) {
+    changeItems.push(await insertSyncChangeItem(db, draft));
+  }
+
+  await finishSourceSyncRun(db, input.syncRunId, {
+    status: "success",
+    finishedAt: input.now,
+    itemsSeen: input.payloads.length,
+  });
+
+  return {
+    inserted: 0,
+    updated: 0,
+    deactivated: 0,
+    total: input.payloads.length,
+    proposed: changeItems.filter((item) => item.changeType === "new_automation").length,
+    findings: changeItems.filter((item) => item.changeType === "source_data_incomplete" || item.changeType === "source_missing").length,
+    missing: changeItems.filter((item) => item.changeType === "source_missing").length,
+    changed: changeItems.filter((item) => item.changeType === "metadata_changed" || item.changeType === "route_changed").length,
+    syncRunId: input.syncRunId,
+    mode: "preview",
+    changeItems,
+  };
+}
+
+export async function applyPortalOwnedSyncChanges(
+  db: SupabaseClientLike,
+  input: {
+    source: PortalOwnedSyncSource;
+    syncRunId: string;
+    selectedChangeItemIds: string[];
+    now: string;
+  },
+): Promise<PortalOwnedSyncApplyResult> {
+  const rows = await fetchPendingReviewItems(db, input.source, input.syncRunId);
+  const selected = new Set(input.selectedChangeItemIds);
+  await markUnselectedReviewItemsSkipped(db, rows, selected, input.now);
+
+  let applied = 0;
+  let failed = 0;
+  let proposed = 0;
+  let updated = 0;
+  let findings = 0;
+  let missing = 0;
+  let changed = 0;
+
+  for (const row of rows) {
+    if (!selected.has(row.id)) continue;
+    try {
+      const appliedKind = await applyReviewItem(db, row, input.now);
+      await markReviewItemApplied(db, row.id, input.now);
+      applied++;
+      if (appliedKind === "proposal") proposed++;
+      if (appliedKind === "update") updated++;
+      if (appliedKind === "finding") findings++;
+      if (row.change_type === "source_missing") missing++;
+      if (row.change_type === "metadata_changed" || row.change_type === "route_changed") changed++;
+    } catch (error) {
+      failed++;
+      await markReviewItemFailed(db, row.id, error, input.now);
+    }
+  }
+
+  return {
+    inserted: 0,
+    updated,
+    deactivated: 0,
+    total: rows.length,
+    proposed,
+    findings,
+    missing,
+    changed,
+    syncRunId: input.syncRunId,
+    mode: "apply",
+    applied,
+    skipped: rows.filter((row) => !selected.has(row.id)).length,
+    failed,
+  };
 }
 
 export async function recordPortalOwnedSync(
@@ -299,6 +449,464 @@ export async function recordPortalOwnedSync(
     missing,
     changed,
     syncRunId,
+  };
+}
+
+async function buildSyncChangeItems(
+  db: SupabaseClientLike,
+  input: {
+    source: PortalOwnedSyncSource;
+    payloads: PortalOwnedAutomationPayload[];
+    syncRunId: string;
+    now: string;
+  },
+): Promise<SourceSyncChangeDraft[]> {
+  const { source, payloads, syncRunId } = input;
+  const existing = await fetchExistingAutomationsForSource(db, source);
+  const existingByExternalId = new Map(existing.map((row) => [row.external_id!, row]));
+  const seenExternalIds = new Set<string>();
+  const items: SourceSyncChangeDraft[] = [];
+
+  for (const payload of payloads) {
+    const externalId = String(payload.external_id ?? "").trim();
+    if (!externalId) continue;
+    seenExternalIds.add(externalId);
+
+    const existingAutomation = existingByExternalId.get(externalId);
+    if (!existingAutomation) {
+      items.push({
+        syncRunId,
+        source,
+        externalId,
+        automationId: null,
+        changeType: "new_automation",
+        title: String(payload.naam ?? "").trim() || `${sourceLabel(source)} automation`,
+        summary: `Nieuwe automation gevonden bij ${sourceLabel(source)}.`,
+        impact: "Komt als importvoorstel in de catalogus.",
+        oldValue: null,
+        newValue: buildComparableSnapshot(payload),
+        payload,
+      });
+      continue;
+    }
+
+    const webhookDiffs = diffArrayField(existingAutomation.webhook_paths, payload.webhook_paths);
+    const endpointDiffs = diffArrayField(existingAutomation.endpoints, payload.endpoints);
+    const metadataDiffs = diffMetadata(existingAutomation, payload);
+    const sourceQualityMissingEvidence = buildSourceQualityMissingEvidence(
+      buildSourceQualitySnapshot(existingAutomation, payload, source),
+    );
+
+    if (webhookDiffs.changed || endpointDiffs.changed || metadataDiffs.length > 0) {
+      const routeChanged = webhookDiffs.changed || endpointDiffs.changed;
+      items.push({
+        syncRunId,
+        source,
+        externalId,
+        automationId: existingAutomation.id,
+        changeType: routeChanged ? "route_changed" : "metadata_changed",
+        title: existingAutomation.naam || String(payload.naam ?? "").trim() || `${sourceLabel(source)} automation`,
+        summary: routeChanged
+          ? "Webhook- of endpointinformatie wijzigt."
+          : "Broninformatie wijzigt.",
+        impact: routeChanged
+          ? "Kan procesreis-bewijs en detailinformatie verbeteren."
+          : "Werkt de bron-snapshot van deze automation bij.",
+        oldValue: {
+          webhook_paths: existingAutomation.webhook_paths ?? [],
+          endpoints: existingAutomation.endpoints ?? [],
+          metadata: metadataDiffs.map((diff) => ({ field: diff.field, value: diff.portal })),
+        },
+        newValue: {
+          webhook_paths: payload.webhook_paths ?? [],
+          endpoints: payload.endpoints ?? [],
+          metadata: metadataDiffs.map((diff) => ({ field: diff.field, value: diff.source })),
+        },
+        payload,
+      });
+    }
+
+    for (const missingEvidence of sourceQualityMissingEvidence) {
+      items.push({
+        syncRunId,
+        source,
+        externalId,
+        automationId: existingAutomation.id,
+        changeType: "source_data_incomplete",
+        title: existingAutomation.naam || String(payload.naam ?? "").trim() || `${sourceLabel(source)} automation`,
+        summary: missingEvidence.message,
+        impact: "Wordt als bronwaarschuwing geregistreerd als je deze regel toepast.",
+        oldValue: null,
+        newValue: {
+          source,
+          missing_evidence_key: missingEvidence.key,
+          label: missingEvidence.label,
+          description: missingEvidence.description,
+        },
+        payload: {
+          automation: existingAutomation,
+          missingEvidence,
+        },
+      });
+    }
+  }
+
+  for (const row of existing) {
+    if (!row.external_id || seenExternalIds.has(row.external_id)) continue;
+    items.push({
+      syncRunId,
+      source,
+      externalId: row.external_id,
+      automationId: row.id,
+      changeType: "source_missing",
+      title: row.naam || `${sourceLabel(source)} automation`,
+      summary: `Deze automation kan niet meer worden teruggevonden bij ${sourceLabel(source)}.`,
+      impact: "Wordt als kritieke bronwaarschuwing geregistreerd als je deze regel toepast.",
+      oldValue: {
+        external_id: row.external_id,
+        portal_name: row.naam ?? "",
+      },
+      newValue: null,
+      payload: {
+        automation: row,
+      },
+    });
+  }
+
+  return items;
+}
+
+async function fetchExistingAutomationsForSource(
+  db: SupabaseClientLike,
+  source: PortalOwnedSyncSource,
+): Promise<ExistingAutomation[]> {
+  const { data: existingRows, error: existingError } = await db
+    .from("automatiseringen")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal")
+    .eq("source", source);
+  throwIfSupabaseError("Bestaande automations ophalen", existingError);
+
+  return ((existingRows ?? []) as ExistingAutomation[])
+    .filter((row) => typeof row.external_id === "string" && row.external_id.trim());
+}
+
+async function insertSyncChangeItem(
+  db: SupabaseClientLike,
+  draft: SourceSyncChangeDraft,
+): Promise<SourceSyncChangeItem> {
+  const data = {
+    sync_run_id: draft.syncRunId,
+    source: draft.source,
+    external_id: draft.externalId,
+    automation_id: draft.automationId,
+    change_type: draft.changeType,
+    status: "pending",
+    title: draft.title,
+    summary: draft.summary,
+    impact: draft.impact,
+    old_value_sanitized: sanitizeValue(draft.oldValue),
+    new_value_sanitized: sanitizeValue(draft.newValue),
+    payload_sanitized: sanitizeValue(draft.payload),
+    selected_by_default: true,
+  };
+
+  const { data: row, error } = await db
+    .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
+    .insert(data)
+    .select("*")
+    .single();
+  throwIfSupabaseError("Sync-reviewregel aanmaken", error);
+  return mapSyncChangeRow(row as SourceSyncChangeRow);
+}
+
+async function fetchPendingReviewItems(
+  db: SupabaseClientLike,
+  source: PortalOwnedSyncSource,
+  syncRunId: string,
+): Promise<SourceSyncChangeRow[]> {
+  const { data, error } = await db
+    .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
+    .select("*")
+    .eq("sync_run_id", syncRunId)
+    .eq("source", source)
+    .eq("status", "pending");
+  throwIfSupabaseError("Sync-reviewregels ophalen", error);
+  return (data ?? []) as SourceSyncChangeRow[];
+}
+
+async function markUnselectedReviewItemsSkipped(
+  db: SupabaseClientLike,
+  rows: SourceSyncChangeRow[],
+  selectedChangeItemIds: Set<string>,
+  now: string,
+): Promise<void> {
+  const unselected = rows.filter((row) => !selectedChangeItemIds.has(row.id));
+  for (const row of unselected) {
+    const { error } = await db
+      .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
+      .update({
+        status: "skipped",
+        skipped_at: now,
+        updated_at: now,
+      })
+      .eq("id", row.id);
+    throwIfSupabaseError("Sync-reviewregel overslaan", error);
+  }
+}
+
+async function applyReviewItem(
+  db: SupabaseClientLike,
+  row: SourceSyncChangeRow,
+  now: string,
+): Promise<"proposal" | "update" | "finding"> {
+  if (row.change_type === "new_automation") {
+    await upsertImportProposal(db, row.source, row.payload_sanitized as PortalOwnedAutomationPayload, now);
+    return "proposal";
+  }
+
+  if (row.change_type === "metadata_changed" || row.change_type === "route_changed") {
+    const payload = row.payload_sanitized as PortalOwnedAutomationPayload;
+    const automation = await fetchExistingAutomationForReviewItem(db, row, payload);
+    await applyExistingSourcePayload(db, automation, payload, row.source, row.sync_run_id, now);
+    return "update";
+  }
+
+  if (row.change_type === "source_data_incomplete") {
+    await applySourceDataIncompleteFinding(db, row, now);
+    return "finding";
+  }
+
+  if (row.change_type === "source_missing") {
+    await applySourceMissingFinding(db, row, now);
+    return "finding";
+  }
+
+  return "finding";
+}
+
+async function fetchExistingAutomationForReviewItem(
+  db: SupabaseClientLike,
+  row: SourceSyncChangeRow,
+  payload: PortalOwnedAutomationPayload,
+): Promise<ExistingAutomation> {
+  let query = db
+    .from("automatiseringen")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal");
+
+  if (row.automation_id) {
+    query = query.eq("id", row.automation_id);
+  } else {
+    query = query.eq("source", row.source).eq("external_id", String(payload.external_id ?? row.external_id ?? ""));
+  }
+
+  const { data, error } = await query.maybeSingle();
+  throwIfSupabaseError("Automation voor sync-review ophalen", error);
+  if (!data) throw new Error("Automation voor sync-review niet gevonden.");
+  return data as ExistingAutomation;
+}
+
+async function applyExistingSourcePayload(
+  db: SupabaseClientLike,
+  existingAutomation: ExistingAutomation,
+  payload: PortalOwnedAutomationPayload,
+  source: PortalOwnedSyncSource,
+  syncRunId: string,
+  now: string,
+): Promise<void> {
+  await resolveFinding(db, {
+    dedupeKey: findingKey(existingAutomation, "source_missing"),
+    resolvedReason: "Bronrecord is opnieuw gevonden.",
+    syncRunId,
+    now,
+  });
+  await updateExistingSourceSnapshot(db, existingAutomation, payload, now);
+
+  const webhookDiffs = diffArrayField(existingAutomation.webhook_paths, payload.webhook_paths);
+  const endpointDiffs = diffArrayField(existingAutomation.endpoints, payload.endpoints);
+  const metadataDiffs = diffMetadata(existingAutomation, payload);
+
+  if (webhookDiffs.changed || endpointDiffs.changed) {
+    await upsertFinding(db, {
+      automation: existingAutomation,
+      type: "webhook_changed",
+      severity: "warning",
+      message: `Webhook- of endpointinformatie wijkt af bij ${sourceLabel(source)}.`,
+      details: {
+        changed_fields: [
+          ...(webhookDiffs.changed ? ["webhook_paths"] : []),
+          ...(endpointDiffs.changed ? ["endpoints"] : []),
+        ],
+        portal: {
+          webhook_paths: existingAutomation.webhook_paths ?? [],
+          endpoints: existingAutomation.endpoints ?? [],
+        },
+        source: {
+          webhook_paths: payload.webhook_paths ?? [],
+          endpoints: payload.endpoints ?? [],
+        },
+      },
+      syncRunId,
+      now,
+    });
+  } else {
+    await resolveFinding(db, {
+      dedupeKey: findingKey(existingAutomation, "webhook_changed"),
+      resolvedReason: "Webhook- of endpointinformatie komt weer overeen.",
+      syncRunId,
+      now,
+    });
+  }
+
+  if (metadataDiffs.length > 0) {
+    await upsertFinding(db, {
+      automation: existingAutomation,
+      type: "metadata_changed",
+      severity: "info",
+      message: `Broninformatie wijkt af bij ${sourceLabel(source)}. De automation is na review bijgewerkt.`,
+      details: {
+        changed_fields: metadataDiffs.map((diff) => diff.field),
+        diffs: metadataDiffs,
+      },
+      syncRunId,
+      now,
+    });
+  } else {
+    await resolveFinding(db, {
+      dedupeKey: findingKey(existingAutomation, "metadata_changed"),
+      resolvedReason: "Broninformatie komt weer overeen.",
+      syncRunId,
+      now,
+    });
+  }
+
+  const sourceQualityMissingEvidence = buildSourceQualityMissingEvidence(
+    buildSourceQualitySnapshot(existingAutomation, payload, source),
+  );
+  for (const missingEvidence of sourceQualityMissingEvidence) {
+    await upsertFinding(db, {
+      automation: existingAutomation,
+      type: "source_data_incomplete",
+      severity: "warning",
+      message: missingEvidence.message,
+      details: {
+        source,
+        missing_evidence_key: missingEvidence.key,
+        label: missingEvidence.label,
+        description: missingEvidence.description,
+      },
+      dedupeKeySuffix: missingEvidence.key,
+      syncRunId,
+      now,
+    });
+  }
+  await resolveSourceQualityFindings(db, {
+    automation: existingAutomation,
+    activeMissingEvidenceKeys: sourceQualityMissingEvidence.map((item) => item.key),
+    syncRunId,
+    now,
+  });
+}
+
+async function applySourceDataIncompleteFinding(
+  db: SupabaseClientLike,
+  row: SourceSyncChangeRow,
+  now: string,
+): Promise<void> {
+  const payload = isRecord(row.payload_sanitized) ? row.payload_sanitized : {};
+  const automation = isRecord(payload.automation) ? payload.automation as ExistingAutomation : null;
+  const missingEvidence = isRecord(payload.missingEvidence) ? payload.missingEvidence : {};
+  if (!automation) throw new Error("Bronkwaliteit-reviewregel mist automation.");
+
+  await upsertFinding(db, {
+    automation,
+    type: "source_data_incomplete",
+    severity: "warning",
+    message: String(missingEvidence.message ?? row.summary),
+    details: {
+      source: row.source,
+      missing_evidence_key: String(missingEvidence.key ?? ""),
+      label: String(missingEvidence.label ?? row.title),
+      description: String(missingEvidence.description ?? row.summary),
+    },
+    dedupeKeySuffix: String(missingEvidence.key ?? row.id),
+    syncRunId: row.sync_run_id,
+    now,
+  });
+}
+
+async function applySourceMissingFinding(
+  db: SupabaseClientLike,
+  row: SourceSyncChangeRow,
+  now: string,
+): Promise<void> {
+  const payload = isRecord(row.payload_sanitized) ? row.payload_sanitized : {};
+  const automation = isRecord(payload.automation) ? payload.automation as ExistingAutomation : null;
+  if (!automation) throw new Error("Bron-mist-reviewregel mist automation.");
+
+  await upsertFinding(db, {
+    automation,
+    type: "source_missing",
+    severity: "critical",
+    message: row.summary,
+    details: {
+      source: row.source,
+      external_id: row.external_id,
+      portal_name: row.title,
+    },
+    syncRunId: row.sync_run_id,
+    now,
+  });
+}
+
+async function markReviewItemApplied(
+  db: SupabaseClientLike,
+  id: string,
+  now: string,
+): Promise<void> {
+  const { error } = await db
+    .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
+    .update({
+      status: "applied",
+      applied_at: now,
+      updated_at: now,
+    })
+    .eq("id", id);
+  throwIfSupabaseError("Sync-reviewregel toegepast markeren", error);
+}
+
+async function markReviewItemFailed(
+  db: SupabaseClientLike,
+  id: string,
+  error: unknown,
+  now: string,
+): Promise<void> {
+  const { error: updateError } = await db
+    .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
+    .update({
+      status: "failed",
+      error_message_sanitized: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
+      updated_at: now,
+    })
+    .eq("id", id);
+  throwIfSupabaseError("Sync-reviewregel foutstatus opslaan", updateError);
+}
+
+function mapSyncChangeRow(row: SourceSyncChangeRow): SourceSyncChangeItem {
+  return {
+    id: row.id,
+    syncRunId: row.sync_run_id,
+    source: row.source,
+    externalId: row.external_id,
+    automationId: row.automation_id,
+    changeType: row.change_type,
+    status: row.status,
+    title: row.title,
+    summary: row.summary,
+    impact: row.impact,
+    oldValue: row.old_value_sanitized,
+    newValue: row.new_value_sanitized,
+    payload: row.payload_sanitized,
+    selectedByDefault: row.selected_by_default,
   };
 }
 
