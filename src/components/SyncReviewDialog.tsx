@@ -45,6 +45,24 @@ const SOURCE_LABELS: Record<string, string> = {
   gitlab: "GitLab",
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  naam: "Naam",
+  doel: "Beschrijving",
+  trigger_beschrijving: "Trigger",
+  categorie: "Categorie",
+  status: "Status",
+  systemen: "Systemen",
+  stappen: "Stappen",
+  webhook_paths: "Webhookpaden",
+  endpoints: "Endpoints",
+};
+
+type DiffRow = {
+  label: string;
+  before: string;
+  after: string;
+};
+
 export function SyncReviewDialog({
   open,
   source,
@@ -152,50 +170,54 @@ export function SyncReviewDialog({
               <div className="px-6 py-10 text-center text-sm text-muted-foreground">
                 Geen wijzigingen binnen dit filter.
               </div>
-            ) : filteredItems.map((item) => (
-              <div
-                key={item.id}
-                data-sync-review-row
-                className={cn(
-                  "grid grid-cols-[44px_1.15fr_.72fr_1.5fr_.9fr] gap-4 border-b border-border/70 px-6 py-4 text-sm",
-                  !selectedIds.has(item.id) && "bg-muted/20 opacity-70",
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(item.id)}
-                  onChange={() => toggleItem(item.id)}
-                  className="mt-1 h-4 w-4 rounded border-border"
-                />
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-foreground">{item.title}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{item.externalId ?? item.automationId ?? sourceLabel}</p>
-                </div>
-                <div>
-                  <span className={cn(
-                    "inline-flex rounded-full border px-2 py-1 text-[11px] font-bold",
-                    CHANGE_CLASSES[item.changeType] ?? "border-border bg-muted text-muted-foreground",
-                  )}>
-                    {CHANGE_LABELS[item.changeType] ?? item.changeType}
-                  </span>
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm leading-5 text-foreground">{item.summary}</p>
-                  {item.changeType === "source_missing" || item.changeType === "source_data_incomplete" ? (
-                    <p className="inline-flex items-center gap-1 text-xs font-medium text-amber-700">
-                      <AlertTriangle className="h-3 w-3" />
-                      Bronwaarschuwing
-                    </p>
-                  ) : (
-                    <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Kan toegepast worden
-                    </p>
+            ) : filteredItems.map((item) => {
+              const diffRows = buildDiffRows(item);
+              return (
+                <div
+                  key={item.id}
+                  data-sync-review-row
+                  className={cn(
+                    "grid grid-cols-[44px_1.15fr_.72fr_1.5fr_.9fr] gap-4 border-b border-border/70 px-6 py-4 text-sm",
+                    !selectedIds.has(item.id) && "bg-muted/20 opacity-70",
                   )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(item.id)}
+                    onChange={() => toggleItem(item.id)}
+                    className="mt-1 h-4 w-4 rounded border-border"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-foreground">{item.title}</p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{item.externalId ?? item.automationId ?? sourceLabel}</p>
+                  </div>
+                  <div>
+                    <span className={cn(
+                      "inline-flex rounded-full border px-2 py-1 text-[11px] font-bold",
+                      CHANGE_CLASSES[item.changeType] ?? "border-border bg-muted text-muted-foreground",
+                    )}>
+                      {CHANGE_LABELS[item.changeType] ?? item.changeType}
+                    </span>
+                  </div>
+                  <div className="min-w-0 space-y-2">
+                    <p className="text-sm leading-5 text-foreground">{item.summary}</p>
+                    {diffRows.length > 0 && <DiffTable rows={diffRows} />}
+                    {item.changeType === "source_missing" || item.changeType === "source_data_incomplete" ? (
+                      <p className="inline-flex items-center gap-1 text-xs font-medium text-amber-700">
+                        <AlertTriangle className="h-3 w-3" />
+                        Bronwaarschuwing
+                      </p>
+                    ) : (
+                      <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Kan toegepast worden
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-xs leading-5 text-muted-foreground">{item.impact}</p>
                 </div>
-                <p className="text-xs leading-5 text-muted-foreground">{item.impact}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </ScrollArea>
 
@@ -229,6 +251,25 @@ export function SyncReviewDialog({
   );
 }
 
+function DiffTable({ rows }: { rows: DiffRow[] }): React.ReactNode {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card text-xs">
+      <div className="grid grid-cols-[.72fr_1fr_1fr] border-b border-border bg-muted/45 px-2 py-1.5 font-bold uppercase tracking-wide text-muted-foreground">
+        <span>Veld</span>
+        <span>Was</span>
+        <span>Wordt</span>
+      </div>
+      {rows.map((row) => (
+        <div key={`${row.label}:${row.before}:${row.after}`} className="grid grid-cols-[.72fr_1fr_1fr] border-b border-border/60 px-2 py-1.5 last:border-b-0">
+          <span className="pr-2 font-semibold text-foreground">{row.label}</span>
+          <span className="min-w-0 break-words pr-2 text-muted-foreground">{row.before}</span>
+          <span className="min-w-0 break-words font-medium text-foreground">{row.after}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MetricCard({ label, value, className }: { label: string; value: number; className?: string }): React.ReactNode {
   return (
     <div className={cn("rounded-xl border border-border px-3 py-2", className)}>
@@ -259,4 +300,89 @@ function FilterButton({
       {children}
     </button>
   );
+}
+
+function buildDiffRows(item: SyncReviewChangeItem): DiffRow[] {
+  const oldValue = asRecord(item.oldValue);
+  const newValue = asRecord(item.newValue);
+  const rows: DiffRow[] = [];
+
+  for (const field of ["webhook_paths", "endpoints"]) {
+    addDiffRow(rows, fieldLabel(field), oldValue?.[field], newValue?.[field]);
+  }
+
+  for (const row of buildMetadataDiffRows(oldValue, newValue)) {
+    rows.push(row);
+  }
+
+  if (rows.length === 0) {
+    for (const field of ["naam", "status", "categorie", "trigger_beschrijving", "doel", "systemen", "stappen"]) {
+      addDiffRow(rows, fieldLabel(field), oldValue?.[field], newValue?.[field]);
+      if (rows.length >= 4) break;
+    }
+  }
+
+  return rows.slice(0, 6);
+}
+
+function buildMetadataDiffRows(
+  oldValue: Record<string, unknown> | null,
+  newValue: Record<string, unknown> | null,
+): DiffRow[] {
+  const oldMetadata = metadataMap(oldValue?.metadata);
+  const newMetadata = metadataMap(newValue?.metadata);
+  const fields = new Set([...oldMetadata.keys(), ...newMetadata.keys()]);
+
+  return [...fields].flatMap((field) => {
+    const before = oldMetadata.get(field);
+    const after = newMetadata.get(field);
+    if (formatDiffValue(before) === formatDiffValue(after)) return [];
+    return [{
+      label: fieldLabel(field),
+      before: formatDiffValue(before),
+      after: formatDiffValue(after),
+    }];
+  });
+}
+
+function metadataMap(value: unknown): Map<string, unknown> {
+  const result = new Map<string, unknown>();
+  if (!Array.isArray(value)) return result;
+
+  for (const item of value) {
+    const record = asRecord(item);
+    const field = typeof record?.field === "string" ? record.field : "";
+    if (!field) continue;
+    result.set(field, record?.value);
+  }
+
+  return result;
+}
+
+function addDiffRow(rows: DiffRow[], label: string, beforeValue: unknown, afterValue: unknown): void {
+  const before = formatDiffValue(beforeValue);
+  const after = formatDiffValue(afterValue);
+  if (before === after) return;
+  rows.push({ label, before, after });
+}
+
+function formatDiffValue(value: unknown): string {
+  if (value == null) return "Niet aanwezig";
+  if (Array.isArray(value)) {
+    const values = value.map((item) => formatDiffValue(item)).filter((item) => item !== "Niet aanwezig");
+    return values.length > 0 ? values.join(", ") : "Niet aanwezig";
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  const text = String(value).trim();
+  return text || "Niet aanwezig";
+}
+
+function fieldLabel(field: string): string {
+  return FIELD_LABELS[field] ?? field.replaceAll("_", " ");
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }

@@ -10,6 +10,16 @@ const items = [
     source: "hubspot",
     summary: "Webhookpad gewijzigd",
     impact: "Procesreis-bewijs wordt sterker",
+    oldValue: {
+      webhook_paths: ["/old/path"],
+      endpoints: [],
+      metadata: [{ field: "naam", value: "Create deal oud" }],
+    },
+    newValue: {
+      webhook_paths: ["/new/path"],
+      endpoints: [],
+      metadata: [{ field: "naam", value: "Create deal nieuw" }],
+    },
     selectedByDefault: true,
   },
   {
@@ -40,6 +50,12 @@ describe("SyncReviewDialog", () => {
 
     expect(screen.getByText("Bronwijzigingen controleren")).toBeInTheDocument();
     expect(screen.getByText("Create new deal")).toBeInTheDocument();
+    expect(screen.getByText("Was")).toBeInTheDocument();
+    expect(screen.getByText("Wordt")).toBeInTheDocument();
+    expect(screen.getByText("Create deal oud")).toBeInTheDocument();
+    expect(screen.getByText("Create deal nieuw")).toBeInTheDocument();
+    expect(screen.getByText("/old/path")).toBeInTheDocument();
+    expect(screen.getByText("/new/path")).toBeInTheDocument();
     expect(screen.getByText("Trustoo Leads - Utrecht")).toBeInTheDocument();
 
     const trustooRow = screen.getByText("Trustoo Leads - Utrecht").closest("[data-sync-review-row]");
