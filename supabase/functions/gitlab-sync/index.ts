@@ -4,7 +4,9 @@ import { buildBrandContextPrompt } from "../_shared/brand-context.ts";
 import { runGitLabAutomationBackfill } from "../_shared/gitlab-backfill.ts";
 import { mapGitLabEndpointToAutomationPayload } from "../_shared/gitlab-readonly.ts";
 import {
+  applyPortalOwnedSyncChanges,
   finishSourceSyncRun,
+  previewPortalOwnedSync,
   recordPortalOwnedSync,
   recordSourceSyncFailure,
   startSourceSyncRun,
@@ -507,13 +509,36 @@ serve(async (req) => {
     const requestBody = req.method === "POST"
       ? await req.json().catch(() => ({}))
       : {};
-    const mode = requestBody?.mode === "backfill" ? "backfill" : "sync";
+    const mode = requestBody?.mode === "apply"
+      ? "apply"
+      : requestBody?.mode === "backfill"
+        ? "backfill"
+        : "preview";
     const dryRun = mode === "backfill" ? requestBody?.dryRun !== false : false;
 
     const db = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    if (mode === "apply") {
+      const result = await applyPortalOwnedSyncChanges(db, {
+        source: "gitlab",
+        syncRunId: String(requestBody?.syncRunId ?? ""),
+        selectedChangeItemIds: Array.isArray(requestBody?.selectedChangeItemIds)
+          ? requestBody.selectedChangeItemIds.map(String)
+          : [],
+        now: new Date().toISOString(),
+      });
+      return new Response(
+        JSON.stringify({ success: true, ...result }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (mode === "preview") {
+      // Preview mode fetches GitLab read-only data and stores review items.
+    }
 
     // Read GitLab integration
     const { data: integration, error: intError } = await db
@@ -679,7 +704,7 @@ serve(async (req) => {
       );
     }
 
-    const result = await recordPortalOwnedSync(db, {
+    const result = await previewPortalOwnedSync(db, {
       source: "gitlab",
       payloads,
       syncRunId,

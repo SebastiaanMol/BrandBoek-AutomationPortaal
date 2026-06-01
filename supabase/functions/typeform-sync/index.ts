@@ -6,7 +6,8 @@ import {
   typeformReadOnlyHeaders,
 } from "../_shared/typeform-readonly.ts";
 import {
-  recordPortalOwnedSync,
+  applyPortalOwnedSyncChanges,
+  previewPortalOwnedSync,
   recordSourceSyncFailure,
   startSourceSyncRun,
 } from "../_shared/portal-owned-sync.ts";
@@ -28,6 +29,10 @@ class TypeformApiError extends Error {
   }
 }
 
+type TypeformSyncRequest =
+  | { mode: "preview" }
+  | { mode: "apply"; syncRunId: string; selectedChangeItemIds: string[] };
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -35,6 +40,21 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const syncRequest = await parseTypeformSyncRequest(req);
+
+    if (syncRequest.mode === "apply") {
+      const result = await applyPortalOwnedSyncChanges(db, {
+        source: "typeform",
+        syncRunId: syncRequest.syncRunId,
+        selectedChangeItemIds: syncRequest.selectedChangeItemIds,
+        now: new Date().toISOString(),
+      });
+      return jsonResponse({ success: true, ...result });
+    }
+
+    if (syncRequest.mode === "preview") {
+      // Preview mode fetches Typeform read-only data and stores review items.
+    }
 
     const { data: integration, error: intError } = await db
       .from("integrations")
@@ -81,7 +101,7 @@ serve(async (req) => {
     let result: { inserted: number; updated: number; deactivated: number; total: number };
     try {
       const syncRunId = await startSourceSyncRun(db, "typeform", now);
-      result = await recordPortalOwnedSync(db, {
+      result = await previewPortalOwnedSync(db, {
         source: "typeform",
         payloads,
         syncRunId,
@@ -103,6 +123,21 @@ serve(async (req) => {
     return jsonResponse({ error: stringifyError(error) }, 500);
   }
 });
+
+async function parseTypeformSyncRequest(req: Request): Promise<TypeformSyncRequest> {
+  if (req.method !== "POST") return { mode: "preview" };
+  const body = await req.json().catch(() => ({}));
+  if (body?.mode === "apply") {
+    return {
+      mode: "apply",
+      syncRunId: String(body.syncRunId ?? ""),
+      selectedChangeItemIds: Array.isArray(body.selectedChangeItemIds)
+        ? body.selectedChangeItemIds.map(String)
+        : [],
+    };
+  }
+  return { mode: "preview" };
+}
 
 async function fetchTypeformAutomationPayloads(token: string, now: string): Promise<TypeformAutomationPayload[]> {
   const headers = typeformReadOnlyHeaders(token);

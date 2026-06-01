@@ -21,10 +21,17 @@ describe("typeform-sync edge function", () => {
   });
 
   it("stores Typeform discoveries as import proposals instead of updating automations", () => {
-    expect(source).toContain("recordPortalOwnedSync");
+    expect(source).toContain("previewPortalOwnedSync");
     expect(helperSource).toContain("automation_import_proposals");
     expect(helperSource).toContain("webhook_paths");
     expect(source).not.toContain('import_status: "approved"');
     expect(source).not.toMatch(/\.from\(["']automatiseringen["']\)\s*\.\s*update/s);
+  });
+
+  it("supports preview and apply modes for sync review", () => {
+    expect(source).toContain("previewPortalOwnedSync");
+    expect(source).toContain("applyPortalOwnedSyncChanges");
+    expect(source).toContain('mode === "preview"');
+    expect(source).toContain('mode === "apply"');
   });
 });

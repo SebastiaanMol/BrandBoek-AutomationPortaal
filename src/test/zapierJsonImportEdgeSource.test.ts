@@ -9,7 +9,7 @@ describe("zapier-sync JSON export mode", () => {
   it("supports importing uploaded Zapier export JSON without Zapier OAuth", () => {
     expect(source).toContain('mode === "json_export"');
     expect(source).toContain("mapZapierExportToAutomationPayloads");
-    expect(source).toContain("recordPortalOwnedSync");
+    expect(source).toContain("previewPortalOwnedSync");
   });
 
   it("keeps API mode and JSON export mode separated", () => {
@@ -48,8 +48,15 @@ describe("zapier-sync JSON export mode", () => {
   });
 
   it("stores imported Zapier automations as import proposals before they enter the portal list", () => {
-    expect(source).toContain("recordPortalOwnedSync");
+    expect(source).toContain("previewPortalOwnedSync");
     expect(helperSource).toContain("automation_import_proposals");
     expect(source).not.toContain('import_status: "approved"');
+  });
+
+  it("supports preview and apply modes for sync review", () => {
+    expect(source).toContain("previewPortalOwnedSync");
+    expect(source).toContain("applyPortalOwnedSyncChanges");
+    expect(source).toContain('mode === "preview"');
+    expect(source).toContain('mode === "apply"');
   });
 });

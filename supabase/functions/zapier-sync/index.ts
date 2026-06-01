@@ -10,7 +10,8 @@ import {
   zapierReadOnlyHeaders,
 } from "../_shared/zapier-readonly.ts";
 import {
-  recordPortalOwnedSync,
+  applyPortalOwnedSyncChanges,
+  previewPortalOwnedSync,
   recordSourceSyncFailure,
   startSourceSyncRun,
 } from "../_shared/portal-owned-sync.ts";
@@ -34,6 +35,8 @@ class ZapierApiError extends Error {
 }
 
 type ZapierSyncRequest =
+  | { mode: "preview"; body: Record<string, unknown> | null }
+  | { mode: "apply"; syncRunId: string; selectedChangeItemIds: string[] }
   | { mode: "api"; body: Record<string, unknown> | null }
   | { mode: "json_export"; body: Record<string, unknown> }
   | { error: string; status: number };
@@ -48,6 +51,16 @@ serve(async (req) => {
     const syncRequest = await parseZapierSyncRequestBody(req);
     if ("error" in syncRequest) return jsonResponse({ error: syncRequest.error }, syncRequest.status);
 
+    if (syncRequest.mode === "apply") {
+      const result = await applyPortalOwnedSyncChanges(db, {
+        source: "zapier",
+        syncRunId: syncRequest.syncRunId,
+        selectedChangeItemIds: syncRequest.selectedChangeItemIds,
+        now: new Date().toISOString(),
+      });
+      return jsonResponse({ success: true, ...result });
+    }
+
     if (syncRequest.mode === "json_export") {
       const now = new Date().toISOString();
       const payloads = mapZapierExportToAutomationPayloads(syncRequest.body.export, now);
@@ -60,7 +73,7 @@ serve(async (req) => {
       }
 
       const syncRunId = await startSourceSyncRun(db, "zapier", now);
-      const result = await recordPortalOwnedSync(db, {
+      const result = await previewPortalOwnedSync(db, {
         source: "zapier",
         payloads,
         syncRunId,
@@ -68,6 +81,10 @@ serve(async (req) => {
       });
 
       return jsonResponse({ success: true, ...result });
+    }
+
+    if (syncRequest.mode === "preview" || syncRequest.mode === "api") {
+      // Both modes fetch Zapier read-only data and return a review preview.
     }
 
     const { data: integration, error: intError } = await db
@@ -124,7 +141,7 @@ serve(async (req) => {
     }
 
     const syncRunId = await startSourceSyncRun(db, "zapier", now);
-    const result = await recordPortalOwnedSync(db, {
+    const result = await previewPortalOwnedSync(db, {
       source: "zapier",
       payloads,
       syncRunId,
@@ -184,7 +201,7 @@ async function parseZapierSyncRequestBody(req: Request): Promise<ZapierSyncReque
     return { error: "Ongeldige JSON-body voor Zapier sync.", status: 400 };
   }
 
-  if (!text.trim()) return { mode: "api", body: null };
+  if (!text.trim()) return { mode: "preview", body: null };
 
   let body: unknown;
   try {
@@ -198,6 +215,16 @@ async function parseZapierSyncRequestBody(req: Request): Promise<ZapierSyncReque
   }
 
   const record = body as Record<string, unknown>;
+  if (record.mode === "preview") return { mode: "preview", body: record };
+  if (record.mode === "apply") {
+    return {
+      mode: "apply",
+      syncRunId: String(record.syncRunId ?? ""),
+      selectedChangeItemIds: Array.isArray(record.selectedChangeItemIds)
+        ? record.selectedChangeItemIds.map(String)
+        : [],
+    };
+  }
   if (record.mode === "api") return { mode: "api", body: record };
   if (record.mode === "json_export") return { mode: "json_export", body: record };
 

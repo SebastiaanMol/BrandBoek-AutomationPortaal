@@ -19,8 +19,12 @@ describe("portal-owned sync safety", () => {
     const source = readSyncSource(name);
     const combinedSource = `${source}\n${helperSource}`;
 
-    expect(source).toContain("recordPortalOwnedSync");
+    expect(source).toContain("previewPortalOwnedSync");
+    expect(source).toContain("applyPortalOwnedSyncChanges");
+    expect(source).toContain('mode === "apply"');
+    expect(source).toContain('mode === "preview"');
     expect(combinedSource).toContain("source_sync_runs");
+    expect(combinedSource).toContain("source_sync_change_items");
     expect(combinedSource).toContain("automation_source_findings");
     expect(combinedSource).toContain("automation_import_proposals");
     expect(source).not.toMatch(/\.from\(["']automatiseringen["']\)\s*\.\s*update/s);

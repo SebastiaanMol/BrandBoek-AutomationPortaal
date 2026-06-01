@@ -1,10 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  recordPortalOwnedSync,
+  applyPortalOwnedSyncChanges,
+  previewPortalOwnedSync,
   recordSourceSyncFailure,
   startSourceSyncRun,
 } from "../_shared/portal-owned-sync.ts";
+import {
+  extractHubSpotWebhookInfo,
+  extractHubSpotWebhookPaths as extractHubSpotWebhookPathsFromActions,
+  extractHubSpotWebhookUrl,
+} from "../_shared/hubspot-webhook-url.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -158,7 +164,7 @@ function extractStappen(actions: any[]): string[] {
     const t = a.type ?? a.actionType ?? "";
     const assignment = extractActionPropertyAssignment(a);
     if (t === "WEBHOOK") {
-      const rawUrl = a.url ?? a.webhookUrl ?? "";
+      const rawUrl = extractHubSpotWebhookUrl(a) ?? "";
       const known = describeKnownWebhook(rawUrl);
       return known?.step ?? `Webhook -> ${rawUrl || "?"}`;
     }
@@ -233,7 +239,7 @@ function extractStappen(actions: any[]): string[] {
       const id = a.contentId ?? a.emailId ?? a.body?.contentId ?? "?";
       return `Stuur e-mail (ID: ${id})`;
     }
-    if (t === "WEBHOOK") return `Webhook → ${a.url ?? a.webhookUrl ?? "?"}`;
+    if (t === "WEBHOOK") return `Webhook → ${extractHubSpotWebhookUrl(a) ?? "?"}`;
     if (t === "CREATE_TASK") return `Maak taak aan: '${a.taskTitle ?? a.taskName ?? a.body?.taskTitle ?? "Zonder titel"}'`;
     if (t === "SLACK_NOTIFICATION") return `Slack bericht naar #${a.channel ?? "?"}`;
     if (t === "BRANCH" || t === "IF_THEN") {
@@ -908,29 +914,21 @@ function extractAuditActions(actions: any[]) {
   return actions.slice(0, 40).map((a, index) => {
     const type = a.type ?? a.actionType ?? "";
     const fields = a.fields ?? {};
-    const url = type === "WEBHOOK" ? a.url ?? a.webhookUrl ?? null : null;
+    const webhook = extractHubSpotWebhookInfo(a);
     const assignment = extractActionPropertyAssignment(a);
 
     return {
       index: index + 1,
       type,
       label: extractStappen([a])[0] ?? ACTION_LABEL_MAP[type] ?? (type || "Onbekende actie"),
-      webhookUrl: url,
-      webhookMethod: url ? (a.method ?? "POST").toUpperCase() : null,
-      webhookPath: url ? extractPathFromUrl(url) : null,
+      webhookUrl: webhook.url,
+      webhookMethod: webhook.method,
+      webhookPath: webhook.path,
       enrollWorkflowId: fields.flow_id ?? null,
       propertyName: assignment.propertyName,
       propertyValue: assignment.propertyValue,
     };
   });
-}
-
-function extractPathFromUrl(rawUrl: string): string | null {
-  try {
-    return new URL(rawUrl).pathname;
-  } catch {
-    return rawUrl.startsWith("/") ? rawUrl : null;
-  }
 }
 
 /** Short label for categorie/display */
@@ -1066,7 +1064,9 @@ function actionToZin(t: string, a: any, step: number): string | null {
     return `Stap ${step}: Er wordt automatisch een taak aangemaakt: ${parts.join(" ") || "zonder titel"}.`;
   }
   if (t === "WEBHOOK") {
-    const url = a.url ?? a.webhookUrl ?? ""; const method = (a.method ?? "POST").toUpperCase();
+    const webhook = extractHubSpotWebhookInfo(a);
+    const url = webhook.url ?? "";
+    const method = webhook.method ?? "POST";
     const known = describeKnownWebhook(url);
     if (known) return `Stap ${step}: ${known.story}`;
     return url ? `Stap ${step}: Er wordt een ${method}-verzoek gestuurd naar '${url}' om een extern systeem te informeren.` : `Stap ${step}: Er wordt een automatisch signaal (webhook) gestuurd naar een extern systeem.`;
@@ -1159,15 +1159,7 @@ function generateSimpeleTaal(wf: any, actions: any[], trigger: string, enrollmen
 }
 
 function extractWebhookPaths(actions: any[]): string[] {
-  return actions
-    .filter((a) => (a.type ?? a.actionType) === "WEBHOOK")
-    .flatMap((a) => {
-      const raw: string = a.url ?? a.webhookUrl ?? "";
-      try {
-        const path = new URL(raw).pathname;
-        return path && path !== "/" ? [path] : [];
-      } catch { return []; }
-    });
+  return extractHubSpotWebhookPathsFromActions(actions);
 }
 
 function getWorkflowId(wf: any): string | null {
@@ -1340,6 +1332,24 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    const syncRequest = await parseHubSpotSyncRequest(req);
+
+    if (syncRequest.mode === "apply") {
+      const result = await applyPortalOwnedSyncChanges(db, {
+        source: "hubspot",
+        syncRunId: syncRequest.syncRunId,
+        selectedChangeItemIds: syncRequest.selectedChangeItemIds,
+        now: new Date().toISOString(),
+      });
+      return new Response(
+        JSON.stringify({ success: true, ...result }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (syncRequest.mode === "preview") {
+      // Preview mode fetches HubSpot read-only data and stores review items.
+    }
 
     // Get HubSpot integration token
     const { data: integration, error: intError } = await db
@@ -1869,7 +1879,7 @@ serve(async (req) => {
       }).filter(Boolean);
 
       const syncRunId = await startSourceSyncRun(db, "hubspot", now);
-      const result = await recordPortalOwnedSync(db, {
+      const result = await previewPortalOwnedSync(db, {
         source: "hubspot",
         payloads,
         syncRunId,
@@ -1889,3 +1899,22 @@ serve(async (req) => {
     );
   }
 });
+
+type HubSpotSyncRequest =
+  | { mode: "preview" }
+  | { mode: "apply"; syncRunId: string; selectedChangeItemIds: string[] };
+
+async function parseHubSpotSyncRequest(req: Request): Promise<HubSpotSyncRequest> {
+  if (req.method !== "POST") return { mode: "preview" };
+  const body = await req.json().catch(() => ({}));
+  if (body?.mode === "apply") {
+    return {
+      mode: "apply",
+      syncRunId: String(body.syncRunId ?? ""),
+      selectedChangeItemIds: Array.isArray(body.selectedChangeItemIds)
+        ? body.selectedChangeItemIds.map(String)
+        : [],
+    };
+  }
+  return { mode: "preview" };
+}
