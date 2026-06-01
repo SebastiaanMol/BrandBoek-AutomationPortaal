@@ -14,9 +14,11 @@ import {
   RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight, Upload, Clock, GitBranch,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useHubSpotSync, useGitlabSync } from "@/lib/hooks";
+import { useHubSpotSync, useGitlabSync, useApplySourceSyncReview } from "@/lib/hooks";
 import { KLANT_FASEN } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { SyncReviewDialog } from "@/components/SyncReviewDialog";
+import type { SyncPreviewResult, SyncReviewChangeItem } from "@/lib/storage/edgeFunctions";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,21 @@ interface PendingAutomation {
   rejected_at: string | null;
   fasen: string[];
   owner: string;
+}
+
+type ImportSyncReviewSource = "hubspot" | "gitlab";
+
+type ImportSyncReviewState = {
+  source: ImportSyncReviewSource;
+  syncRunId: string;
+  items: SyncReviewChangeItem[];
+};
+
+function hasImportSyncReviewItems(result: SyncPreviewResult): result is SyncPreviewResult & {
+  syncRunId: string;
+  changeItems: SyncReviewChangeItem[];
+} {
+  return typeof result.syncRunId === "string" && Array.isArray(result.changeItems) && result.changeItems.length > 0;
 }
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
@@ -753,6 +770,8 @@ export default function Imports(): React.ReactNode {
   const qc = useQueryClient();
   const hubspotSync = useHubSpotSync();
   const gitlabSync = useGitlabSync();
+  const applySyncReview = useApplySourceSyncReview();
+  const [syncReview, setSyncReview] = useState<ImportSyncReviewState | null>(null);
 
   const { data: pending = [], isLoading } = useQuery({
     queryKey: ["pending"],
@@ -766,8 +785,13 @@ export default function Imports(): React.ReactNode {
   async function handleSync(): Promise<void> {
     try {
       const result = await hubspotSync.mutateAsync();
-      toast.success(`Sync klaar — ${result.inserted} nieuw, ${result.updated} bijgewerkt`);
-      qc.invalidateQueries({ queryKey: ["pending"] });
+      if (hasImportSyncReviewItems(result)) {
+        setSyncReview({ source: "hubspot", syncRunId: result.syncRunId, items: result.changeItems });
+        toast.info(`HubSpot sync-preview klaar - ${result.changeItems.length} wijziging${result.changeItems.length === 1 ? "" : "en"} controleren`);
+        return;
+      }
+
+      toast.success(`Geen HubSpot wijzigingen om toe te passen - ${result.proposed ?? result.inserted ?? 0} nieuw voorstel`);
     } catch {
       toast.error("Synchronisatie mislukt. Controleer je HubSpot token via Instellingen.");
     }
@@ -776,15 +800,50 @@ export default function Imports(): React.ReactNode {
   async function handleGitlabSync(): Promise<void> {
     try {
       const result = await gitlabSync.mutateAsync();
-      toast.success(`GitLab sync klaar — ${result.inserted} nieuw ter goedkeuring`);
-      qc.invalidateQueries({ queryKey: ["pending"] });
+      if (hasImportSyncReviewItems(result)) {
+        setSyncReview({ source: "gitlab", syncRunId: result.syncRunId, items: result.changeItems });
+        toast.info(`GitLab sync-preview klaar - ${result.changeItems.length} wijziging${result.changeItems.length === 1 ? "" : "en"} controleren`);
+        return;
+      }
+
+      toast.success(`Geen GitLab wijzigingen om toe te passen - ${result.proposed ?? result.inserted ?? 0} nieuw voorstel`);
     } catch {
       toast.error("GitLab synchronisatie mislukt. Controleer je token via Instellingen.");
     }
   }
 
+  async function handleApplySyncReview(selectedChangeItemIds: string[]): Promise<void> {
+    if (!syncReview) return;
+
+    try {
+      const result = await applySyncReview.mutateAsync({
+        source: syncReview.source,
+        syncRunId: syncReview.syncRunId,
+        selectedChangeItemIds,
+      });
+      toast.success(`Sync toegepast - ${result.applied ?? selectedChangeItemIds.length} toegepast, ${result.skipped ?? 0} overgeslagen`);
+      setSyncReview(null);
+      qc.invalidateQueries({ queryKey: ["pending"] });
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Sync toepassen mislukt");
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
+      <SyncReviewDialog
+        open={!!syncReview}
+        source={syncReview?.source ?? "hubspot"}
+        syncRunId={syncReview?.syncRunId}
+        items={syncReview?.items ?? []}
+        isApplying={applySyncReview.isPending}
+        onOpenChange={(open) => {
+          if (!open) setSyncReview(null);
+        }}
+        onApply={(selectedChangeItemIds) => {
+          void handleApplySyncReview(selectedChangeItemIds);
+        }}
+      />
       <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
         <Tabs defaultValue="hubspot">
           <div className="rounded-2xl border border-border overflow-hidden mb-8">

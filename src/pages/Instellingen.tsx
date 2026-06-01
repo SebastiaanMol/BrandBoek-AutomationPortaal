@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
-import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useZapierJsonImport, useTypeformSync, useGitlabSync } from "@/lib/queryHooks/integrations";
+import { useIntegration, useSaveIntegration, useDeleteIntegration, useHubSpotSync, useZapierSync, useZapierJsonImport, useTypeformSync, useGitlabSync, useApplySourceSyncReview } from "@/lib/queryHooks/integrations";
 import { usePortalSettings, useSavePortalSettings } from "@/lib/queryHooks/portalSettings";
 import { useHubSpotPipelinesSync } from "@/lib/queryHooks/pipelines";
 import type { Integration, PortalSettings } from "@/lib/types";
 import { DEFAULT_PORTAL_SETTINGS, STATUSSEN, CATEGORIEEN, VERPLICHTE_VELDEN } from "@/lib/types";
 import type { VerplichtVeld } from "@/lib/types";
+import { SyncReviewDialog } from "@/components/SyncReviewDialog";
+import type { SyncPreviewResult, SyncReviewChangeItem } from "@/lib/storage/edgeFunctions";
 import type { UseMutationResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw, Link2, Link2Off, AlertCircle, CheckCircle2, Loader2, Save } from "lucide-react";
@@ -23,6 +25,31 @@ function toggleInArray<T>(arr: T[], item: T): T[] {
 const LABEL_CLASS = "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-3";
 const ROW_CLASS = "flex items-start gap-3 mb-3";
 const FIELD_LABEL_CLASS = "w-40 shrink-0 text-sm text-foreground pt-0.5";
+
+type ReviewableSyncSource = "hubspot" | "zapier" | "typeform" | "gitlab";
+
+type SyncReviewState = {
+  source: ReviewableSyncSource;
+  syncRunId: string;
+  items: SyncReviewChangeItem[];
+};
+
+function isReviewableSyncSource(source: string): source is ReviewableSyncSource {
+  return source === "hubspot" || source === "zapier" || source === "typeform" || source === "gitlab";
+}
+
+function hasReviewItems(result: SyncPreviewResult): result is SyncPreviewResult & {
+  syncRunId: string;
+  changeItems: SyncReviewChangeItem[];
+} {
+  return typeof result.syncRunId === "string" && Array.isArray(result.changeItems) && result.changeItems.length > 0;
+}
+
+function formatPreviewToast(result: SyncPreviewResult): string {
+  const proposed = result.proposed ?? result.inserted ?? 0;
+  const findings = result.findings ?? 0;
+  return `Geen wijzigingen om toe te passen - ${proposed} nieuw voorstel, ${findings} bronwaarschuwingen`;
+}
 
 // ── Portal settings ────────────────────────────────────────────────────────────
 
@@ -277,7 +304,7 @@ interface IntegrationCardProps {
   tokenPlaceholder: string;
   /** Raw HTML is intentional here — content is hardcoded in the caller, never user-supplied. */
   tokenHint: string;
-  syncMutation: UseMutationResult<{ inserted: number; updated: number; deactivated: number; total: number; proposed?: number; findings?: number; missing?: number; changed?: number }, Error, void>;
+  syncMutation: UseMutationResult<SyncPreviewResult, Error, void>;
   /** When provided, replaces the default single-token form with a custom connect UI. */
   renderConnectForm?: (props: { onConnect: (token: string) => Promise<void>; isPending: boolean }) => React.ReactNode;
   renderExtraActions?: () => React.ReactNode;
@@ -291,8 +318,10 @@ function IntegrationCard({
   const { data: integration, isLoading } = useIntegration(type);
   const saveIntegration = useSaveIntegration();
   const deleteIntegration = useDeleteIntegration();
+  const applySyncReview = useApplySourceSyncReview();
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
+  const [syncReview, setSyncReview] = useState<SyncReviewState | null>(null);
   const isConnected = !!integration;
 
   async function handleConnect(rawToken: string): Promise<void> {
@@ -308,9 +337,31 @@ function IntegrationCard({
   async function handleSync(): Promise<void> {
     try {
       const result = await syncMutation.mutateAsync();
-      toast.success(`Sync gecontroleerd - ${result.proposed ?? result.inserted} nieuw voorstel, ${result.findings ?? 0} bronwaarschuwingen`);
+      if (isReviewableSyncSource(type) && hasReviewItems(result)) {
+        setSyncReview({ source: type, syncRunId: result.syncRunId, items: result.changeItems });
+        toast.info(`Sync-preview klaar - ${result.changeItems.length} wijziging${result.changeItems.length === 1 ? "" : "en"} controleren`);
+        return;
+      }
+
+      toast.success(formatPreviewToast(result));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Sync mislukt");
+    }
+  }
+
+  async function handleApplySyncReview(selectedChangeItemIds: string[]): Promise<void> {
+    if (!syncReview) return;
+
+    try {
+      const result = await applySyncReview.mutateAsync({
+        source: syncReview.source,
+        syncRunId: syncReview.syncRunId,
+        selectedChangeItemIds,
+      });
+      toast.success(`Sync toegepast - ${result.applied ?? selectedChangeItemIds.length} toegepast, ${result.skipped ?? 0} overgeslagen`);
+      setSyncReview(null);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Sync toepassen mislukt");
     }
   }
 
@@ -324,6 +375,7 @@ function IntegrationCard({
   }
 
   return (
+    <>
     <div className="rounded-lg border border-border bg-card p-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -413,6 +465,20 @@ function IntegrationCard({
         </div>
       )}
     </div>
+    <SyncReviewDialog
+      open={!!syncReview}
+      source={syncReview?.source ?? type}
+      syncRunId={syncReview?.syncRunId}
+      items={syncReview?.items ?? []}
+      isApplying={applySyncReview.isPending}
+      onOpenChange={(open) => {
+        if (!open) setSyncReview(null);
+      }}
+      onApply={(selectedChangeItemIds) => {
+        void handleApplySyncReview(selectedChangeItemIds);
+      }}
+    />
+    </>
   );
 }
 
@@ -420,6 +486,8 @@ function IntegrationCard({
 
 function ZapierJsonImportForm(): React.ReactNode {
   const importMutation = useZapierJsonImport();
+  const applySyncReview = useApplySourceSyncReview();
+  const [syncReview, setSyncReview] = useState<SyncReviewState | null>(null);
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     const input = event.currentTarget;
@@ -429,11 +497,33 @@ function ZapierJsonImportForm(): React.ReactNode {
     try {
       const parsed = JSON.parse(await file.text()) as unknown;
       const result = await importMutation.mutateAsync(parsed);
-      toast.success(`Zapier import gecontroleerd - ${result.proposed ?? result.inserted} nieuw voorstel, ${result.findings ?? 0} bronwaarschuwingen`);
+      if (hasReviewItems(result)) {
+        setSyncReview({ source: "zapier", syncRunId: result.syncRunId, items: result.changeItems });
+        toast.info(`Zapier import-preview klaar - ${result.changeItems.length} wijziging${result.changeItems.length === 1 ? "" : "en"} controleren`);
+        return;
+      }
+
+      toast.success(formatPreviewToast(result));
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Zapier JSON import mislukt");
     } finally {
       input.value = "";
+    }
+  }
+
+  async function handleApplySyncReview(selectedChangeItemIds: string[]): Promise<void> {
+    if (!syncReview) return;
+
+    try {
+      const result = await applySyncReview.mutateAsync({
+        source: "zapier",
+        syncRunId: syncReview.syncRunId,
+        selectedChangeItemIds,
+      });
+      toast.success(`Zapier import toegepast - ${result.applied ?? selectedChangeItemIds.length} toegepast, ${result.skipped ?? 0} overgeslagen`);
+      setSyncReview(null);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Zapier import toepassen mislukt");
     }
   }
 
@@ -454,6 +544,19 @@ function ZapierJsonImportForm(): React.ReactNode {
           onChange={handleFileChange}
         />
       </label>
+      <SyncReviewDialog
+        open={!!syncReview}
+        source="zapier"
+        syncRunId={syncReview?.syncRunId}
+        items={syncReview?.items ?? []}
+        isApplying={applySyncReview.isPending}
+        onOpenChange={(open) => {
+          if (!open) setSyncReview(null);
+        }}
+        onApply={(selectedChangeItemIds) => {
+          void handleApplySyncReview(selectedChangeItemIds);
+        }}
+      />
     </div>
   );
 }
