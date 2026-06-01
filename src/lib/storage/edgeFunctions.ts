@@ -13,6 +13,31 @@ type SyncResult = {
   syncRunId?: string;
 };
 
+export type SyncReviewChangeItem = {
+  id: string;
+  syncRunId?: string;
+  source: "hubspot" | "zapier" | "typeform" | "gitlab" | string;
+  externalId?: string | null;
+  automationId?: string | null;
+  changeType: "new_automation" | "metadata_changed" | "route_changed" | "source_data_incomplete" | "source_missing" | string;
+  status?: "pending" | "applied" | "skipped" | "failed" | string;
+  title: string;
+  summary: string;
+  impact: string;
+  oldValue?: unknown;
+  newValue?: unknown;
+  payload?: unknown;
+  selectedByDefault: boolean;
+};
+
+export type SyncPreviewResult = SyncResult & {
+  mode?: "preview" | "apply";
+  changeItems?: SyncReviewChangeItem[];
+  applied?: number;
+  skipped?: number;
+  failed?: number;
+};
+
 export type GitLabBackfillResult = SyncResult & {
   mode: "backfill";
   dryRun: boolean;
@@ -65,27 +90,39 @@ export async function invokeEdgeFunction<T = SyncResult>(
   return data as T;
 }
 
-export async function triggerHubSpotSync(): Promise<SyncResult> {
-  return invokeEdgeFunction("hubspot-sync");
+export async function triggerHubSpotSync(): Promise<SyncPreviewResult> {
+  return invokeEdgeFunction("hubspot-sync", { mode: "preview" });
 }
 
-export async function triggerZapierSync(): Promise<SyncResult> {
-  return invokeEdgeFunction("zapier-sync");
+export async function triggerZapierSync(): Promise<SyncPreviewResult> {
+  return invokeEdgeFunction("zapier-sync", { mode: "preview" });
 }
 
-export async function triggerZapierJsonImport(exportBody: unknown): Promise<SyncResult> {
+export async function triggerZapierJsonImport(exportBody: unknown): Promise<SyncPreviewResult> {
   return invokeEdgeFunction("zapier-sync", {
     mode: "json_export",
     export: exportBody as Record<string, unknown>,
   });
 }
 
-export async function triggerTypeformSync(): Promise<SyncResult> {
-  return invokeEdgeFunction("typeform-sync");
+export async function triggerTypeformSync(): Promise<SyncPreviewResult> {
+  return invokeEdgeFunction("typeform-sync", { mode: "preview" });
 }
 
-export async function triggerGitlabSync(): Promise<SyncResult> {
-  return invokeEdgeFunction("gitlab-sync");
+export async function triggerGitlabSync(): Promise<SyncPreviewResult> {
+  return invokeEdgeFunction("gitlab-sync", { mode: "preview" });
+}
+
+export async function applySourceSyncReview(
+  source: "hubspot" | "zapier" | "typeform" | "gitlab",
+  syncRunId: string,
+  selectedChangeItemIds: string[],
+): Promise<SyncPreviewResult> {
+  return invokeEdgeFunction(`${source}-sync`, {
+    mode: "apply",
+    syncRunId,
+    selectedChangeItemIds,
+  });
 }
 
 export async function triggerGitlabBackfillDryRun(): Promise<GitLabBackfillResult> {

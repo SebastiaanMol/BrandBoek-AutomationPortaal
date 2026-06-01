@@ -1,28 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult } from "@tanstack/react-query";
 import {
+  applySourceSyncReview,
   deleteIntegration,
   fetchIntegration,
   saveIntegration,
+  type SyncPreviewResult,
   triggerGitlabSync,
   triggerHubSpotSync,
   triggerTypeformSync,
   triggerZapierJsonImport,
   triggerZapierSync,
 } from "../supabaseStorage";
-
-type SyncResult = {
-  inserted: number;
-  updated: number;
-  deactivated: number;
-  deletedRejected?: number;
-  total: number;
-  proposed?: number;
-  findings?: number;
-  missing?: number;
-  changed?: number;
-  syncRunId?: string;
-};
 
 export function useIntegration(type: string) {
   return useQuery({
@@ -52,9 +41,9 @@ export function useDeleteIntegration() {
 }
 
 function useIntegrationSync(
-  mutationFn: () => Promise<SyncResult>,
+  mutationFn: () => Promise<SyncPreviewResult>,
   integrationKey: string,
-): UseMutationResult<SyncResult, Error, void> {
+): UseMutationResult<SyncPreviewResult, Error, void> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
@@ -67,15 +56,15 @@ function useIntegrationSync(
   });
 }
 
-export function useHubSpotSync(): UseMutationResult<SyncResult, Error, void> {
+export function useHubSpotSync(): UseMutationResult<SyncPreviewResult, Error, void> {
   return useIntegrationSync(triggerHubSpotSync, "hubspot");
 }
 
-export function useZapierSync(): UseMutationResult<SyncResult, Error, void> {
+export function useZapierSync(): UseMutationResult<SyncPreviewResult, Error, void> {
   return useIntegrationSync(triggerZapierSync, "zapier");
 }
 
-export function useZapierJsonImport(): UseMutationResult<SyncResult, Error, unknown> {
+export function useZapierJsonImport(): UseMutationResult<SyncPreviewResult, Error, unknown> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: triggerZapierJsonImport,
@@ -87,10 +76,27 @@ export function useZapierJsonImport(): UseMutationResult<SyncResult, Error, unkn
   });
 }
 
-export function useTypeformSync(): UseMutationResult<SyncResult, Error, void> {
+export function useTypeformSync(): UseMutationResult<SyncPreviewResult, Error, void> {
   return useIntegrationSync(triggerTypeformSync, "typeform");
 }
 
-export function useGitlabSync(): UseMutationResult<SyncResult, Error, void> {
+export function useGitlabSync(): UseMutationResult<SyncPreviewResult, Error, void> {
   return useIntegrationSync(triggerGitlabSync, "gitlab");
+}
+
+export function useApplySourceSyncReview() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ source, syncRunId, selectedChangeItemIds }: {
+      source: "hubspot" | "zapier" | "typeform" | "gitlab";
+      syncRunId: string;
+      selectedChangeItemIds: string[];
+    }) => applySourceSyncReview(source, syncRunId, selectedChangeItemIds),
+    onSuccess: (_data, { source }) => {
+      queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
+      queryClient.invalidateQueries({ queryKey: ["pending"] });
+      queryClient.invalidateQueries({ queryKey: ["rejected-hubspot-automations"] });
+      queryClient.invalidateQueries({ queryKey: ["integration", source] });
+    },
+  });
 }
