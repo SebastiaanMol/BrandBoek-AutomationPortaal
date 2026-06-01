@@ -28,4 +28,9 @@ describe("portal-owned sync review helpers", () => {
     expect(source).toContain("status: \"applied\"");
     expect(source).toContain("status: \"skipped\"");
   });
+
+  it("defines the record guard used by source-quality checks", () => {
+    expect(source).toContain("function getRecord(value: unknown): Record<string, unknown> | null");
+    expect(source).toContain("return value && typeof value === \"object\" && !Array.isArray(value)");
+  });
 });

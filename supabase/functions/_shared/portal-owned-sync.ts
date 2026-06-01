@@ -1291,6 +1291,12 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
 function diffMetadata(existing: ExistingAutomation, payload: PortalOwnedAutomationPayload) {
   const checks: Array<{ field: string; portal: unknown; source: unknown }> = [
     { field: "naam", portal: existing.naam ?? "", source: payload.naam ?? "" },
