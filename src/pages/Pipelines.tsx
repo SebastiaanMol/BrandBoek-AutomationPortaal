@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { Layers2, Plus, RefreshCw, Search } from "lucide-react";
@@ -9,14 +9,35 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import type { CustomPipelineInput } from "@/lib/storage/pipelines";
 import { filterPipelinesForOverview, type PipelineFilter } from "@/lib/pipelineOverview";
+import {
+  readNavigationMemory,
+  readNavigationMemoryData,
+  rememberCurrentRoute,
+  restoreNavigationScroll,
+} from "@/lib/navigationMemory";
+
+interface PipelineNavigationMemory {
+  filter?: PipelineFilter;
+  search?: string;
+  focusPipelineId?: string;
+}
 
 export default function Pipelines(): ReactNode {
   const { data: pipelines = [], isLoading } = usePipelines();
   const syncMutation = useHubSpotPipelinesSync();
   const createCustomMutation = useCreateCustomPipeline();
+  const rememberedPipelineNavigation = useMemo(
+    () => readNavigationMemoryData<PipelineNavigationMemory>("pipelines"),
+    [],
+  );
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
-  const [filter, setFilter] = useState<PipelineFilter>("all");
-  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<PipelineFilter>(
+    isPipelineFilter(rememberedPipelineNavigation?.filter) ? rememberedPipelineNavigation.filter : "all",
+  );
+  const [search, setSearch] = useState(
+    typeof rememberedPipelineNavigation?.search === "string" ? rememberedPipelineNavigation.search : "",
+  );
+  const restoredScrollRef = useRef(false);
 
   const totalStages = pipelines.reduce((sum, p) => sum + p.stages.length, 0);
   const hubspotPipelines = pipelines.filter(p => p.source === "hubspot");
@@ -45,6 +66,22 @@ export default function Pipelines(): ReactNode {
       toast.error(e instanceof Error ? e.message : "Kon intern proces niet opslaan");
     }
   }
+
+  const rememberPipelineNavigation = useCallback((focusPipelineId?: string) => {
+    rememberCurrentRoute("pipelines", {
+      filter,
+      search,
+      focusPipelineId,
+    } satisfies PipelineNavigationMemory);
+  }, [filter, search]);
+
+  useEffect(() => {
+    if (restoredScrollRef.current || isLoading) return;
+    const memory = readNavigationMemory("pipelines");
+    if (!memory || memory.scrollY <= 0) return;
+    restoredScrollRef.current = true;
+    restoreNavigationScroll("pipelines");
+  }, [isLoading]);
 
   if (isLoading) {
     return (
@@ -170,7 +207,12 @@ export default function Pipelines(): ReactNode {
           </div>
         )}
 
-        {filteredPipelines.length > 0 && <PipelineMatrix pipelines={filteredPipelines} />}
+        {filteredPipelines.length > 0 && (
+          <PipelineMatrix
+            pipelines={filteredPipelines}
+            onOpenPipeline={rememberPipelineNavigation}
+          />
+        )}
         </Tabs>
       </div>
 
@@ -182,6 +224,10 @@ export default function Pipelines(): ReactNode {
       />
     </div>
   );
+}
+
+function isPipelineFilter(value: unknown): value is PipelineFilter {
+  return value === "all" || value === "hubspot" || value === "custom" || value === "inactive";
 }
 
 const StatBadge = ({ label, value }: { label: string; value: number }) => (

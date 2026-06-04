@@ -48,7 +48,13 @@ export async function updateFlow(
   id: string,
   updates: Partial<Pick<Flow, "naam" | "beschrijving" | "systemen" | "automationIds">>,
 ): Promise<void> {
-  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const payload: {
+    updated_at: string;
+    naam?: string;
+    beschrijving?: string;
+    systemen?: Systeem[];
+    automation_ids?: string[];
+  } = { updated_at: new Date().toISOString() };
   if (updates.naam !== undefined) payload.naam = updates.naam;
   if (updates.beschrijving !== undefined) payload.beschrijving = updates.beschrijving;
   if (updates.systemen !== undefined) payload.systemen = updates.systemen;

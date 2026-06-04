@@ -37,12 +37,69 @@ type Automation = {
   external_id: string | null;
   gitlab_file_path: string | null;
   import_proposal: {
+    webhookPaths?: string[];
+    hubspot_workflow?: {
+      actions?: Array<{
+        label?: string;
+        type?: string;
+        webhookMethod?: string | null;
+        webhookPath?: string | null;
+        webhookUrl?: string | null;
+      }>;
+      branches?: Array<{
+        actions?: Array<{
+          label?: string;
+          type?: string;
+          webhookMethod?: string | null;
+          webhookPath?: string | null;
+          webhookUrl?: string | null;
+        }>;
+      }>;
+    };
+    zap?: {
+      process?: {
+        webhookHandoffs?: Array<{ method?: string; path?: string; host?: string }>;
+        steps?: Array<{
+          appName?: string;
+          title?: string;
+          webhookPaths?: string[];
+        }>;
+      };
+      steps?: Array<{
+        appName?: string;
+        title?: string;
+        webhookPaths?: string[];
+      }>;
+    };
+    typeform?: {
+      webhooks?: Array<{
+        enabled?: boolean;
+        path?: string;
+        tag?: string;
+        host?: string;
+      }>;
+      process?: {
+        webhookHandoffs?: Array<{ method?: string; path?: string; host?: string }>;
+        steps?: Array<{
+          title?: string;
+          webhookPaths?: string[];
+        }>;
+      };
+    };
     gitlab_endpoint?: {
       method?: string;
       endpoint?: string;
       api_file?: string;
       handler?: string;
       calls?: Array<{ depth: number; kind: string; from: string; to: string; file: string | null }>;
+    };
+    gitlab?: {
+      endpoint?: {
+        method?: string;
+        path?: string;
+        api_file?: string;
+        handler?: string;
+      };
     };
   } | null;
 };
@@ -52,6 +109,21 @@ type Suggestie = {
   to_id: string;
   confidence: number;
   reasoning: string;
+};
+
+type RouteDirection = "outgoing" | "incoming";
+
+type AutomationRoute = {
+  automationId: string;
+  automationName: string;
+  automationSource: string | null;
+  automationStatus: string;
+  direction: RouteDirection;
+  path: string;
+  normalizedPath: string;
+  method: string;
+  sourceField: string;
+  priority: number;
 };
 
 type AiDetectionResult = {
@@ -101,6 +173,169 @@ function buildWebhookMatchReason(source: Automation, endpoint: string): string {
   }
 
   return `Webhook-match: automation roept endpoint ${normalizedEndpoint} aan.`;
+}
+
+function collectOutgoingRoutes(auto: Automation): AutomationRoute[] {
+  const routes: AutomationRoute[] = [];
+  const proposal = auto.import_proposal ?? {};
+  const hasAuthoritativeTypeformWebhooks = auto.source === "typeform" && Array.isArray(proposal.typeform?.webhooks);
+
+  if (!hasAuthoritativeTypeformWebhooks) {
+    for (const path of auto.webhook_paths ?? []) {
+      addRoute(routes, auto, "outgoing", path, "", "webhook_paths", 40);
+    }
+    for (const path of proposal.webhookPaths ?? []) {
+      addRoute(routes, auto, "outgoing", path, "", "import_proposal.webhookPaths", 45);
+    }
+  }
+
+  const hubspotActions = [
+    ...(proposal.hubspot_workflow?.actions ?? []),
+    ...((proposal.hubspot_workflow?.branches ?? []).flatMap((branch) => branch.actions ?? [])),
+  ];
+  for (const action of hubspotActions) {
+    addRoute(
+      routes,
+      auto,
+      "outgoing",
+      action.webhookPath || action.webhookUrl || "",
+      action.webhookMethod ?? "",
+      "hubspot_workflow.actions",
+      100,
+    );
+  }
+
+  for (const handoff of proposal.zap?.process?.webhookHandoffs ?? []) {
+    addRoute(routes, auto, "outgoing", handoff.path ?? "", handoff.method ?? "", "zap.process.webhookHandoffs", 100);
+  }
+  const zapSteps = [
+    ...(proposal.zap?.process?.steps ?? []),
+    ...(proposal.zap?.steps ?? []),
+  ];
+  for (const step of zapSteps) {
+    for (const path of step.webhookPaths ?? []) {
+      addRoute(routes, auto, "outgoing", path, "", "zap.process.steps.webhookPaths", 80);
+    }
+  }
+
+  for (const webhook of proposal.typeform?.webhooks ?? []) {
+    if (webhook.enabled !== true) continue;
+    addRoute(routes, auto, "outgoing", webhook.path ?? "", "POST", "typeform.webhooks", 100);
+  }
+  for (const handoff of proposal.typeform?.process?.webhookHandoffs ?? []) {
+    addRoute(
+      routes,
+      auto,
+      "outgoing",
+      handoff.path ?? "",
+      handoff.method ?? "",
+      "typeform.process.webhookHandoffs",
+      hasAuthoritativeTypeformWebhooks ? 60 : 90,
+    );
+  }
+  for (const step of proposal.typeform?.process?.steps ?? []) {
+    for (const path of step.webhookPaths ?? []) {
+      addRoute(
+        routes,
+        auto,
+        "outgoing",
+        path,
+        "",
+        "typeform.process.steps.webhookPaths",
+        hasAuthoritativeTypeformWebhooks ? 50 : 80,
+      );
+    }
+  }
+
+  return dedupeRoutes(routes);
+}
+
+function collectIncomingRoutes(auto: Automation): AutomationRoute[] {
+  const routes: AutomationRoute[] = [];
+  const proposal = auto.import_proposal ?? {};
+
+  addRoute(
+    routes,
+    auto,
+    "incoming",
+    proposal.gitlab_endpoint?.endpoint ?? "",
+    proposal.gitlab_endpoint?.method ?? "",
+    "gitlab_endpoint",
+    100,
+  );
+  addRoute(
+    routes,
+    auto,
+    "incoming",
+    proposal.gitlab?.endpoint?.path ?? "",
+    proposal.gitlab?.endpoint?.method ?? "",
+    "import_proposal.gitlab.endpoint",
+    95,
+  );
+  for (const endpoint of auto.endpoints ?? []) {
+    addRoute(routes, auto, "incoming", endpoint, "", "endpoints", 35);
+  }
+
+  return dedupeRoutes(routes);
+}
+
+function addRoute(
+  routes: AutomationRoute[],
+  auto: Automation,
+  direction: RouteDirection,
+  path: string,
+  method: string,
+  sourceField: string,
+  priority: number,
+) {
+  const normalizedPath = normalizeEndpointPath(path);
+  if (!path?.trim() || !normalizedPath) return;
+  routes.push({
+    automationId: auto.id,
+    automationName: auto.naam,
+    automationSource: auto.source,
+    automationStatus: auto.status,
+    direction,
+    path: path.trim(),
+    normalizedPath,
+    method: method.trim().toUpperCase(),
+    sourceField,
+    priority,
+  });
+}
+
+function dedupeRoutes(routes: AutomationRoute[]): AutomationRoute[] {
+  const best = new Map<string, AutomationRoute>();
+  for (const route of routes) {
+    const key = `${route.automationId}|${route.normalizedPath}|${route.direction}|${route.method}`;
+    const existing = best.get(key);
+    if (!existing || route.priority > existing.priority) best.set(key, route);
+  }
+  return [...best.values()];
+}
+
+function selectPreferredIncomingRoutes(routes: AutomationRoute[]): AutomationRoute[] {
+  const grouped = new Map<string, AutomationRoute[]>();
+  for (const route of routes) {
+    const items = grouped.get(route.normalizedPath) ?? [];
+    items.push(route);
+    grouped.set(route.normalizedPath, items);
+  }
+
+  return [...grouped.values()].flatMap((items) => {
+    const maxScore = Math.max(...items.map(receiverScore));
+    return items.filter((item) => receiverScore(item) === maxScore);
+  });
+}
+
+function receiverScore(route: AutomationRoute): number {
+  return activeRank(route.automationStatus) * 1000 + route.priority;
+}
+
+function activeRank(status: string | undefined): number {
+  if (status === "Actief" || status?.toLowerCase() === "active") return 2;
+  if (status === "Uitgeschakeld" || status?.toLowerCase() === "disabled") return 0;
+  return 1;
 }
 
 function shouldAutoConfirmSuggestion(suggestion: Suggestie): boolean {
@@ -172,27 +407,36 @@ function addSuggestion(map: Map<string, Suggestie>, suggestion: Suggestie) {
 
 function detectWebhookSuggestions(autos: Automation[]): Suggestie[] {
   const suggestions = new Map<string, Suggestie>();
+  const outgoingRoutes = autos.flatMap(collectOutgoingRoutes);
+  const incomingRoutes = selectPreferredIncomingRoutes(autos.flatMap(collectIncomingRoutes));
+  const incomingByPath = new Map<string, AutomationRoute[]>();
 
-  for (const source of autos) {
-    if (!source.webhook_paths?.length) continue;
-    for (const target of autos) {
-      if (target.id === source.id || !target.endpoints?.length) continue;
-      for (const webhookPath of source.webhook_paths) {
-        for (const endpoint of target.endpoints) {
-          if (endpointMatches(webhookPath, endpoint)) {
-            addSuggestion(suggestions, {
-              from_id: source.id,
-              to_id: target.id,
-              confidence: 1.0,
-              reasoning: buildWebhookMatchReason(source, endpoint),
-            });
-          }
-        }
-      }
+  for (const route of incomingRoutes) {
+    const items = incomingByPath.get(route.normalizedPath) ?? [];
+    items.push(route);
+    incomingByPath.set(route.normalizedPath, items);
+  }
+
+  for (const sourceRoute of outgoingRoutes) {
+    const source = autos.find((auto) => auto.id === sourceRoute.automationId);
+    if (!source) continue;
+    for (const targetRoute of incomingByPath.get(sourceRoute.normalizedPath) ?? []) {
+      if (targetRoute.automationId === sourceRoute.automationId) continue;
+      if (!routesMatchExactly(sourceRoute.path, targetRoute.path)) continue;
+      addSuggestion(suggestions, {
+        from_id: sourceRoute.automationId,
+        to_id: targetRoute.automationId,
+        confidence: 1.0,
+        reasoning: buildWebhookMatchReason(source, targetRoute.path),
+      });
     }
   }
 
   return [...suggestions.values()];
+}
+
+function routesMatchExactly(webhookPath: string, endpoint: string): boolean {
+  return endpointMatches(webhookPath, endpoint);
 }
 
 function detectGitLabBackendSuggestions(autos: Automation[]): Suggestie[] {

@@ -1,11 +1,12 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync(
-  resolve(process.cwd(), "supabase/migrations/20260601093000_source_sync_change_items.sql"),
-  "utf8",
-);
+const migrationsDir = resolve(process.cwd(), "supabase/migrations");
+const migration = readdirSync(migrationsDir)
+  .filter((name) => name.includes("source_sync_change_items") || name.includes("source_sync_review") || name.includes("legacy_gitlab_sync_review"))
+  .map((name) => readFileSync(resolve(migrationsDir, name), "utf8"))
+  .join("\n");
 
 describe("source sync change items migration", () => {
   it("creates persistent review items linked to source sync runs", () => {
@@ -22,6 +23,7 @@ describe("source sync change items migration", () => {
     expect(migration).toContain("'route_changed'");
     expect(migration).toContain("'source_data_incomplete'");
     expect(migration).toContain("'source_missing'");
+    expect(migration).toContain("'legacy_gitlab_record'");
     expect(migration).toContain("'pending'");
     expect(migration).toContain("'applied'");
     expect(migration).toContain("'skipped'");

@@ -55,6 +55,7 @@ import {
 } from "@/lib/flowSuggestionAi";
 import { buildFlowSuggestionAiPrompt } from "@/lib/flowSuggestionPromptBuilder";
 import { getFlowSuggestionReviewPresentation } from "@/lib/flowSuggestionReviewPresentation";
+import { getNavigationReturnHref } from "@/lib/navigationMemory";
 
 interface AcceptState {
   group: FlowSuggestionGroup;
@@ -118,11 +119,31 @@ function buildChainGroupFromId(groupId: string, suggesties: FlowSuggestie[]): Fl
     const suggestion = suggesties.find(
       (candidate) => candidate.fromId === ids[index] && candidate.toId === ids[index + 1],
     );
-    if (!suggestion) return undefined;
+    if (!suggestion) {
+      const groupByIncludedIds = buildGroupByIncludedIds(ids, suggesties);
+      return groupByIncludedIds;
+    }
     chainSuggestions.push(suggestion);
   }
 
   return groupFlowSuggesties(chainSuggestions)[0];
+}
+
+function buildGroupByIncludedIds(ids: string[], suggesties: FlowSuggestie[]): FlowSuggestionGroup | undefined {
+  const idSet = new Set(ids);
+  const groupSuggestions = suggesties.filter((suggestion) =>
+    idSet.has(suggestion.fromId) && idSet.has(suggestion.toId),
+  );
+  if (groupSuggestions.length === 0) return undefined;
+
+  const coveredIds = new Set<string>();
+  for (const suggestion of groupSuggestions) {
+    coveredIds.add(suggestion.fromId);
+    coveredIds.add(suggestion.toId);
+  }
+
+  if (!ids.every((id) => coveredIds.has(id))) return undefined;
+  return groupFlowSuggesties(groupSuggestions)[0];
 }
 
 export default function FlowSuggestionDetail(): React.ReactNode {
@@ -168,7 +189,7 @@ export default function FlowSuggestionDetail(): React.ReactNode {
     [group],
   );
   const orderedAutomationIds = useMemo(
-    () => resolveAutomationIdsForConceptJourney(group?.nodes.map((node) => node.id) ?? [], autoMap, endpointEvidence),
+    () => uniqueAutomationIds(resolveAutomationIdsForConceptJourney(group?.nodes.map((node) => node.id) ?? [], autoMap, endpointEvidence)),
     [autoMap, endpointEvidence, group],
   );
   const involvedAutomations = useMemo(
@@ -212,7 +233,7 @@ export default function FlowSuggestionDetail(): React.ReactNode {
         ),
       );
       toast.success("Procesreis verworpen");
-      navigate("/flows");
+      navigate(getNavigationReturnHref("flows", "/flows"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Verwerpen mislukt");
     }
@@ -222,11 +243,11 @@ export default function FlowSuggestionDetail(): React.ReactNode {
     const acceptEndpoint = extractEndpointFromSuggestionReason(
       groupToAccept.suggestions.find((suggestion) => suggestion.zekerheid === "webhook")?.redenering ?? "",
     );
-    const orderedIds = resolveAutomationIdsForConceptJourney(
+    const orderedIds = uniqueAutomationIds(resolveAutomationIdsForConceptJourney(
       groupToAccept.nodes.map((node) => node.id),
       autoMap,
       acceptEndpoint,
-    );
+    ));
     const autos = orderedIds
       .map((automationId) => autoMap.get(automationId))
       .filter((automation): automation is Automatisering => automation !== undefined);
@@ -356,7 +377,7 @@ export default function FlowSuggestionDetail(): React.ReactNode {
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-[1600px] items-center px-6 py-4 lg:px-10">
             <Link
-              to="/flows"
+              to={getNavigationReturnHref("flows", "/flows")}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -549,7 +570,7 @@ function RuntimeJourney({ steps }: { steps: ReturnType<typeof buildFlowRuntimeCh
                 {step.workers && step.workers.length > 0 && (
                   <div className="mt-4 space-y-3">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-purple-800/75">
-                      GitLab automations in dit backendblok
+                      GitLab analyse van deze automation
                     </p>
                     {step.workers.map((worker, workerIndex) => (
                       <div key={worker.id} className="min-w-0 rounded-lg border border-purple-200 bg-white/75 p-3">
@@ -839,6 +860,10 @@ function buildPlainLanguageFallbackName(first: string, last: string): string {
   if (text.includes("dossier")) return "Dossier bijwerken";
 
   return "Procesreis bijwerken";
+}
+
+function uniqueAutomationIds(ids: string[]): string[] {
+  return [...new Set(ids)];
 }
 
 function buildPlainLanguageFallbackDescription(first: string, last: string): string {

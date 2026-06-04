@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import AutomationDetailPage from "@/pages/AutomationDetailPage";
 import type { Automatisering } from "@/lib/types";
 
@@ -108,9 +108,9 @@ const gitlabAutomation = makeAutomation({
   },
 });
 
-function renderDetail(automation: Automatisering): void {
-  vi.mocked(useAutomationsMock).mockReturnValue({ data: [automation], isLoading: false });
-  vi.mocked(useJourneyAutomationsMock).mockReturnValue({ data: [automation] });
+function renderDetail(automation: Automatisering, allAutomations: Automatisering[] = [automation]): void {
+  vi.mocked(useAutomationsMock).mockReturnValue({ data: allAutomations, isLoading: false });
+  vi.mocked(useJourneyAutomationsMock).mockReturnValue({ data: allAutomations });
 
   render(
     <MemoryRouter initialEntries={[`/automations/${automation.id}`]}>
@@ -143,6 +143,10 @@ vi.mock("sonner", () => ({
 }));
 
 describe("Automation detail presentation", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
   it("keeps HubSpot webhook URLs and POST language out of the main detail copy", () => {
     renderDetail(hubspotAutomation);
 
@@ -179,10 +183,28 @@ describe("Automation detail presentation", () => {
     expect(screen.queryByLabelText("Brondetails")).not.toBeInTheDocument();
   });
 
+  it("links back to the remembered automation catalog context", () => {
+    sessionStorage.setItem("automationNavigator.navigation.automations", JSON.stringify({
+      pathname: "/alle",
+      search: "?source=hubspot",
+      hash: "#catalog",
+      scrollY: 360,
+      updatedAt: Date.now(),
+      data: { query: "Whatsapp" },
+    }));
+
+    renderDetail(hubspotAutomation);
+
+    expect(screen.getByRole("link", { name: "Terug naar automations" })).toHaveAttribute(
+      "href",
+      "/alle?source=hubspot#catalog",
+    );
+  });
+
   it("uses a clean display name for GitLab endpoint automations on the detail header", () => {
     renderDetail(gitlabAutomation);
 
-    screen.getByRole("heading", { name: "Contact change endpoint" });
+    screen.getByRole("heading", { level: 1, name: "Contact change endpoint" });
     expect(screen.queryByRole("heading", { name: /POST \/operations/ })).not.toBeInTheDocument();
 
     const gitlabTemplate = screen.getByLabelText("GitLab automation detail");
@@ -192,6 +214,59 @@ describe("Automation detail presentation", () => {
     expect(within(gitlabTemplate).getByRole("heading", { name: "Call graph" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Standaard automation uitleg")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Brondetails")).not.toBeInTheDocument();
+  });
+
+  it("shows the chain reaction card with webhook proof and a stop gap", () => {
+    const createNewDeal = makeAutomation({
+      id: "AUTO-HS-CREATE",
+      naam: "Create new deal",
+      categorie: "HubSpot Workflow",
+      source: "hubspot",
+      systemen: ["HubSpot"],
+      hubspotWorkflow: {
+        name: "Create new deal",
+        objectType: "deal",
+        enrollmentType: "LIST_BASED",
+        shouldReEnroll: true,
+        triggers: [{ label: "Sales deal stage is Actief", source: "HubSpot" }],
+        actions: [
+          {
+            index: 1,
+            type: "WEBHOOK",
+            label: "Send a webhook",
+            webhookMethod: "POST",
+            webhookPath: "/operations/hubspot/create_new_deal",
+            webhookUrl: "https://composed-month-production.up.railway.app/operations/hubspot/create_new_deal",
+          },
+        ],
+      },
+      webhookPaths: ["/operations/hubspot/create_new_deal"],
+    });
+    const backend = makeAutomation({
+      id: "AUTO-GL-CREATE",
+      naam: "New create deal",
+      categorie: "Backend Script",
+      source: "gitlab",
+      systemen: ["GitLab", "HubSpot"],
+      externalId: "gitlab::POST /operations/hubspot/create_new_deal",
+      endpoints: ["/operations/hubspot/create_new_deal"],
+      gitlabEndpoint: {
+        method: "POST",
+        endpoint: "/operations/hubspot/create_new_deal",
+        api_file: "gitlabtest/app/API/operations.py",
+        handler: "new_create_deal",
+      },
+    });
+
+    renderDetail(createNewDeal, [createNewDeal, backend]);
+
+    const chainCard = screen.getByLabelText("Kettingreactie vanaf deze automation");
+    expect(within(chainCard).getByRole("heading", { name: "Kettingreactie vanaf deze automation" })).toBeInTheDocument();
+    expect(within(chainCard).getByText("https://composed-month-production.up.railway.app/operations/hubspot/create_new_deal")).toBeInTheDocument();
+    expect(within(chainCard).getByText("New create deal")).toBeInTheDocument();
+    expect(within(chainCard).getByText("HubSpot vervolgdeals")).toBeInTheDocument();
+    expect(within(chainCard).getByText("Hier stopt het bewijs")).toBeInTheDocument();
+    expect(chainCard.textContent).not.toMatch(/waarschijnlijk|mogelijk|88%|95%|30%/i);
   });
 });
 

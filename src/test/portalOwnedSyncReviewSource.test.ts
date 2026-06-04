@@ -29,6 +29,13 @@ describe("portal-owned sync review helpers", () => {
     expect(source).toContain("status: \"skipped\"");
   });
 
+  it("adds GitLab legacy cleanup review items when endpoint nodes cover an old file record", () => {
+    expect(source).toContain("legacy_gitlab_record");
+    expect(source).toContain("buildGitLabLegacyCleanupItems");
+    expect(source).toContain("applyLegacyGitLabCleanup");
+    expect(source).toContain("cleanup_delete_candidate");
+  });
+
   it("defines the record guard used by source-quality checks", () => {
     expect(source).toContain("function getRecord(value: unknown): Record<string, unknown> | null");
     expect(source).toContain("return value && typeof value === \"object\" && !Array.isArray(value)");

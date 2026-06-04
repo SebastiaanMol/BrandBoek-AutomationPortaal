@@ -226,11 +226,14 @@ export function resolveAutomationIdsForConceptJourney(
   endpoint: string,
 ): string[] {
   if (!endpoint) return ids;
+  const idSet = new Set(ids);
 
   return ids.map((id) => {
     const automation = autoMap.get(id);
     if (!automation || !isLegacyGitLabFileAutomation(automation)) return id;
-    return findSpecificGitLabAutomationForEndpoint(autoMap, endpoint)?.id ?? id;
+    const specificAutomation = findSpecificGitLabAutomationForEndpoint(autoMap, endpoint);
+    if (!specificAutomation) return id;
+    return idSet.has(specificAutomation.id) ? id : specificAutomation.id;
   });
 }
 

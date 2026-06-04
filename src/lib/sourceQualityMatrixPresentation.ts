@@ -1,8 +1,9 @@
 import {
-  collectWebhookHandoffPaths,
-  collectWebhookReceiverPaths,
-  normalizeWebhookRoute,
-} from "./webhookProof";
+  collectIncomingRoutes,
+  collectOutgoingRoutes,
+  selectPreferredIncomingRoutes,
+  type AutomationRoute,
+} from "./automationRouteGraph";
 import type { Automatisering } from "./types";
 
 export type SourceQualitySource = "hubspot" | "zapier" | "gitlab" | "typeform";
@@ -92,7 +93,9 @@ export function getSourceQualityMatrixPresentation(
     (automation) => getBlockingSourceFindings(automation).length === 0,
   );
   const senders = proofReadyAutomations.flatMap(buildSenderRoutes);
-  const receivers = proofReadyAutomations.flatMap(buildReceiverRoutes);
+  const receivers = selectPreferredIncomingRoutes(
+    proofReadyAutomations.flatMap(collectIncomingRoutes),
+  ).map(toSourceQualityRoute);
   const { matches, ambiguousMatches } = buildMatches(senders, receivers);
   const matchedSenderKeys = new Set(
     matches.map((match) => routeKey(match.sourceAutomationId, match.normalizedPath)),
@@ -148,36 +151,32 @@ function buildSenderRoutes(automation: Automatisering): SourceQualityRoute[] {
   const source = getSource(automation);
   if (!source || source === "gitlab") return [];
 
-  return collectActiveWebhookHandoffPaths(automation, source)
-    .map((path) => buildRoute(automation, source, path))
-    .filter((route): route is SourceQualityRoute => Boolean(route));
+  return collectOutgoingRoutes(automation).map(toSourceQualityRoute);
 }
 
 function buildReceiverRoutes(automation: Automatisering): SourceQualityRoute[] {
   const source = getSource(automation);
   if (source !== "gitlab") return [];
 
-  return collectWebhookReceiverPaths(automation)
-    .map((path) => buildRoute(automation, source, path))
-    .filter((route): route is SourceQualityRoute => Boolean(route));
+  return collectIncomingRoutes(automation).map(toSourceQualityRoute);
 }
 
-function buildRoute(
-  automation: Automatisering,
-  source: SourceQualitySource,
-  path: string,
-): SourceQualityRoute | null {
-  const normalizedPath = normalizeWebhookRoute(path);
-  if (!normalizedPath) return null;
-
+function toSourceQualityRoute(route: AutomationRoute): SourceQualityRoute {
   return {
-    automationId: automation.id,
-    automationName: automation.naam,
-    source,
-    sourceLabel: sourceLabel(source),
-    path,
-    normalizedPath,
+    automationId: route.automationId,
+    automationName: route.automationName,
+    source: getRouteSource(route),
+    sourceLabel: sourceLabel(getRouteSource(route)),
+    path: route.path,
+    normalizedPath: route.normalizedPath,
   };
+}
+
+function getRouteSource(route: AutomationRoute): SourceQualitySource {
+  if (route.automationSource === "hubspot") return "hubspot";
+  if (route.automationSource === "zapier") return "zapier";
+  if (route.automationSource === "typeform") return "typeform";
+  return "gitlab";
 }
 
 function classifyAutomation(
@@ -375,44 +374,11 @@ function getZapierSteps(automation: Automatisering): unknown[] {
   ];
 }
 
-function collectActiveWebhookHandoffPaths(
-  automation: Automatisering,
-  source: SourceQualitySource,
-): string[] {
-  if (source !== "typeform") return collectWebhookHandoffPaths(automation);
-
-  const typeform = automation.importProposal?.typeform;
-  if (Array.isArray(typeform?.webhooks)) {
-    return uniqueRoutes(
-      typeform.webhooks
-        .filter((webhook) => webhook.enabled)
-        .map((webhook) => webhook.path),
-    );
-  }
-
-  return uniqueRoutes([
-    ...(automation.webhookPaths ?? []),
-    ...((automation.importProposal?.webhookPaths ?? []) as string[]),
-    ...(typeform?.process?.webhookHandoffs ?? []).map((handoff) => handoff.path),
-    ...(typeform?.process?.steps ?? []).flatMap((step) => step.webhookPaths ?? []),
-  ]);
-}
-
 function getBlockingSourceFindings(automation: Automatisering) {
   const blockingTypes = new Set(["source_missing", "source_data_incomplete", "webhook_changed"]);
   return (automation.sourceFindings ?? []).filter(
     (finding) => !finding.resolvedAt && blockingTypes.has(finding.type),
   );
-}
-
-function uniqueRoutes(values: Array<string | null | undefined>): string[] {
-  return [
-    ...new Set(
-      values
-        .map((value) => value?.trim())
-        .filter((value): value is string => Boolean(value)),
-    ),
-  ];
 }
 
 function isLegacyGitLabFile(automation: Automatisering): boolean {

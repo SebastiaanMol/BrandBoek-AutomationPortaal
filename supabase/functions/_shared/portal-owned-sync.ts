@@ -40,6 +40,9 @@ type ExistingAutomation = {
   endpoints?: string[] | null;
   webhook_paths?: string[] | null;
   import_proposal?: Record<string, unknown> | null;
+  gitlab_file_path?: string | null;
+  cleanup_delete_candidate?: boolean | null;
+  cleanup_delete_candidate_at?: string | null;
 };
 
 export type PortalOwnedSyncResult = {
@@ -59,7 +62,8 @@ export type SourceSyncChangeType =
   | "metadata_changed"
   | "route_changed"
   | "source_data_incomplete"
-  | "source_missing";
+  | "source_missing"
+  | "legacy_gitlab_record";
 
 export type SourceSyncChangeItem = {
   id: string;
@@ -287,7 +291,7 @@ export async function recordPortalOwnedSync(
 
   const { data: existingRows, error: existingError } = await db
     .from("automatiseringen")
-    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, cleanup_delete_candidate, cleanup_delete_candidate_at")
     .eq("source", source);
   throwIfSupabaseError("Bestaande automations ophalen", existingError);
 
@@ -551,8 +555,17 @@ async function buildSyncChangeItems(
     }
   }
 
+  const legacyCleanupItems = source === "gitlab"
+    ? buildGitLabLegacyCleanupItems({ existing, payloads, syncRunId, source })
+    : [];
+  items.push(...legacyCleanupItems);
+  const legacyCleanupAutomationIds = new Set(
+    legacyCleanupItems.map((item) => item.automationId).filter(Boolean),
+  );
+
   for (const row of existing) {
     if (!row.external_id || seenExternalIds.has(row.external_id)) continue;
+    if (legacyCleanupAutomationIds.has(row.id) || isLegacyGitLabRecord(row)) continue;
     items.push({
       syncRunId,
       source,
@@ -576,13 +589,69 @@ async function buildSyncChangeItems(
   return items;
 }
 
+function buildGitLabLegacyCleanupItems(input: {
+  existing: ExistingAutomation[];
+  payloads: PortalOwnedAutomationPayload[];
+  syncRunId: string;
+  source: PortalOwnedSyncSource;
+}): SourceSyncChangeDraft[] {
+  const payloadsByFile = new Map<string, PortalOwnedAutomationPayload[]>();
+  for (const payload of input.payloads) {
+    const filePath = normalizeGitLabFilePath(String(payload.gitlab_file_path ?? ""));
+    if (!filePath) continue;
+    payloadsByFile.set(filePath, [...(payloadsByFile.get(filePath) ?? []), payload]);
+  }
+
+  return input.existing.flatMap((automation) => {
+    if (!isLegacyGitLabRecord(automation)) return [];
+    if (automation.cleanup_delete_candidate) return [];
+
+    const filePath = legacyGitLabFilePath(automation);
+    const coveredBy = payloadsByFile.get(normalizeGitLabFilePath(filePath)) ?? [];
+    const coveredLabel = coveredBy.length === 1
+      ? "1 specifieke endpoint automation"
+      : `${coveredBy.length} specifieke endpoint automations`;
+
+    return [{
+      syncRunId: input.syncRunId,
+      source: input.source,
+      externalId: automation.external_id,
+      automationId: automation.id,
+      changeType: "legacy_gitlab_record",
+      title: automation.naam || "Legacy GitLab bestandsrecord",
+      summary: coveredBy.length > 0
+        ? `Oud GitLab bestandsrecord wordt gedekt door ${coveredLabel} uit hetzelfde bestand.`
+        : "Oud GitLab bestandsrecord heeft geen specifieke endpoint-node en telt niet als procesreis-automation.",
+      impact: "Markeert dit oude bestandsrecord als opruimkandidaat. Procesreizen blijven de specifieke endpoint automations gebruiken.",
+      oldValue: {
+        external_id: automation.external_id,
+        gitlab_file_path: filePath,
+        cleanup_delete_candidate: automation.cleanup_delete_candidate ?? false,
+      },
+      newValue: {
+        cleanup_delete_candidate: true,
+        covered_by: coveredBy.map((payload) => ({
+          external_id: payload.external_id,
+          naam: payload.naam,
+          endpoint: normalizeStringArray(payload.endpoints)[0] ?? "",
+          method: endpointMethodFromPayload(payload),
+        })),
+      },
+      payload: {
+        automation,
+        coveredBy,
+      },
+    }];
+  });
+}
+
 async function fetchExistingAutomationsForSource(
   db: SupabaseClientLike,
   source: PortalOwnedSyncSource,
 ): Promise<ExistingAutomation[]> {
   const { data: existingRows, error: existingError } = await db
     .from("automatiseringen")
-    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, cleanup_delete_candidate, cleanup_delete_candidate_at")
     .eq("source", source);
   throwIfSupabaseError("Bestaande automations ophalen", existingError);
 
@@ -676,6 +745,11 @@ async function applyReviewItem(
     return "finding";
   }
 
+  if (row.change_type === "legacy_gitlab_record") {
+    await applyLegacyGitLabCleanup(db, row, now);
+    return "update";
+  }
+
   if (row.change_type === "source_missing") {
     await applySourceMissingFinding(db, row, now);
     return "finding";
@@ -691,7 +765,7 @@ async function fetchExistingAutomationForReviewItem(
 ): Promise<ExistingAutomation> {
   let query = db
     .from("automatiseringen")
-    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal");
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, cleanup_delete_candidate, cleanup_delete_candidate_at");
 
   if (row.automation_id) {
     query = query.eq("id", row.automation_id);
@@ -856,6 +930,26 @@ async function applySourceMissingFinding(
     syncRunId: row.sync_run_id,
     now,
   });
+}
+
+async function applyLegacyGitLabCleanup(
+  db: SupabaseClientLike,
+  row: SourceSyncChangeRow,
+  now: string,
+): Promise<void> {
+  const payload = isRecord(row.payload_sanitized) ? row.payload_sanitized : {};
+  const automation = isRecord(payload.automation) ? payload.automation as ExistingAutomation : null;
+  const automationId = row.automation_id ?? automation?.id;
+  if (!automationId) throw new Error("Legacy GitLab cleanup mist automation-id.");
+
+  const { error } = await db
+    .from("automatiseringen")
+    .update({
+      cleanup_delete_candidate: true,
+      cleanup_delete_candidate_at: now,
+    })
+    .eq("id", automationId);
+  throwIfSupabaseError("Legacy GitLab record als opruimkandidaat markeren", error);
 }
 
 async function markReviewItemApplied(
@@ -1344,6 +1438,37 @@ function buildComparableSnapshot(payload: PortalOwnedAutomationPayload): Record<
     endpoints: normalizeStringArray(payload.endpoints),
     webhook_paths: normalizeStringArray(payload.webhook_paths),
   };
+}
+
+function isLegacyGitLabRecord(automation: ExistingAutomation): boolean {
+  if (automation.source !== "gitlab") return false;
+  if (hasGitLabEndpointSnapshot(automation.import_proposal)) return false;
+  const externalId = String(automation.external_id ?? "");
+  if (externalId.includes("::")) return false;
+  return Boolean(legacyGitLabFilePath(automation));
+}
+
+function hasGitLabEndpointSnapshot(importProposal: Record<string, unknown> | null | undefined): boolean {
+  if (!isRecord(importProposal)) return false;
+  if (isRecord(importProposal.gitlab_endpoint)) return true;
+  const gitlab = isRecord(importProposal.gitlab) ? importProposal.gitlab : null;
+  return isRecord(gitlab?.endpoint);
+}
+
+function legacyGitLabFilePath(automation: ExistingAutomation): string {
+  return String(automation.gitlab_file_path ?? automation.external_id ?? "").trim();
+}
+
+function normalizeGitLabFilePath(value: string): string {
+  return value.trim().replace(/\\/g, "/").toLowerCase();
+}
+
+function endpointMethodFromPayload(payload: PortalOwnedAutomationPayload): string {
+  const proposal = isRecord(payload.import_proposal) ? payload.import_proposal : null;
+  const endpoint = isRecord(proposal?.gitlab_endpoint) ? proposal.gitlab_endpoint : null;
+  const gitlab = isRecord(proposal?.gitlab) ? proposal.gitlab : null;
+  const legacyEndpoint = isRecord(gitlab?.endpoint) ? gitlab.endpoint : null;
+  return String(endpoint?.method ?? legacyEndpoint?.method ?? "").trim().toUpperCase();
 }
 
 function sanitizeValue(value: unknown, key = ""): unknown {

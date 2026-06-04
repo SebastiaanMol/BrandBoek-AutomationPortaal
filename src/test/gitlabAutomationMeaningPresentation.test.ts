@@ -40,6 +40,40 @@ describe("GitLab automation meaning presentation", () => {
     expect(presentation.summary).not.toMatch(/\n|batch-update|scheduled response|achtergrondtaak|endpoint|property|contact_change_endpoint|POST|API|function|handler/i);
   });
 
+  it("explains create_new_deal beyond the endpoint handler with reads, decisions and HubSpot writes", () => {
+    const presentation = getGitLabAutomationMeaningPresentation(makeCreateNewDealAutomation());
+
+    expect(presentation.confidence).toBe("hoog");
+    expect(presentation.summary).toContain("deal-ID");
+    expect(presentation.summary).toContain("line items");
+    expect(presentation.summary).toContain("klanttype");
+    expect(presentation.summary).toContain("vervolgdeals");
+    expect(presentation.summary).toContain("HubSpot");
+    expect(presentation.summary).not.toMatch(/\n|endpoint|handler|servicefunctie|batch-create|batch update|API|create_new_deal|new_create_deal|POST/i);
+
+    expect(presentation.ontvangt).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "deal_id" }),
+    ]));
+    expect(presentation.haaltOp).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Line items" }),
+      expect.objectContaining({ label: "Contact, bedrijf en owner" }),
+      expect.objectContaining({ label: "Bestaande HubSpot deals" }),
+    ]));
+    expect(presentation.berekent).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Klanttype en pipelinekeuze" }),
+      expect.objectContaining({ label: "Producten naar vervolgdeals" }),
+      expect.objectContaining({ label: "Dealstage en dealnaam" }),
+    ]));
+    expect(presentation.pastAan).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Bestaande HubSpot dealbedragen" }),
+      expect.objectContaining({ label: "Nieuwe HubSpot vervolgdeals" }),
+    ]));
+    expect(presentation.stuurtTerug).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Succesmelding" }),
+    ]));
+    expect(presentation.backgroundWork).toHaveLength(0);
+  });
+
   it("detects a direct HubSpot write without inventing extra reads", () => {
     const presentation = getGitLabAutomationMeaningPresentation(makeAutomation({
       id: "AUTO-GL-WRITE",
@@ -165,6 +199,61 @@ function makeContactChangeAutomation(): Automatisering {
           kind: "hubspot_repository_call",
           from: "app.service.operations.deal_updates::_update_deal_names",
           to: "app.repository.hubspot::batch_update_deals",
+          file: "app/repository/hubspot.py",
+        },
+      ],
+    },
+  });
+}
+
+function makeCreateNewDealAutomation(): Automatisering {
+  return makeAutomation({
+    id: "AUTO-GL-88cf40e9-9423-4911-858c-24070ea6299c",
+    naam: "New create deal (POST /operations/hubspot/create_new_deal)",
+    doel: "Maakt vervolgdeals in HubSpot op basis van een salesdeal.",
+    trigger: "POST /operations/hubspot/create_new_deal",
+    externalId: "app/API/operations.py::POST /operations/hubspot/create_new_deal",
+    gitlabFilePath: "app/API/operations.py",
+    endpoints: ["/operations/hubspot/create_new_deal"],
+    gitlabEndpoint: {
+      method: "POST",
+      endpoint: "/operations/hubspot/create_new_deal",
+      api_file: "app/API/operations.py",
+      handler: "new_create_deal",
+      calls: [
+        {
+          depth: 0,
+          kind: "await_call",
+          from: "app.API.operations::new_create_deal",
+          to: "app.service.operations.deal_creation::create_new_deal",
+          file: "app/service/operations/deal_creation.py",
+        },
+        {
+          depth: 1,
+          kind: "hubspot_repository_call",
+          from: "app.service.operations.deal_creation::create_new_deal",
+          to: "app.repository.hubspot::get_contact_id",
+          file: "app/repository/hubspot.py",
+        },
+        {
+          depth: 1,
+          kind: "hubspot_repository_call",
+          from: "app.service.operations.deal_creation::create_new_deal",
+          to: "app.repository.hubspot::get_company_id",
+          file: "app/repository/hubspot.py",
+        },
+        {
+          depth: 2,
+          kind: "hubspot_repository_call",
+          from: "app.service.operations.deal_creation::handle_pipelines",
+          to: "app.repository.hubspot::batch_create_deals_sync",
+          file: "app/repository/hubspot.py",
+        },
+        {
+          depth: 2,
+          kind: "hubspot_repository_call",
+          from: "app.service.operations.deal_creation::update_deal_amount_in_new_pipeline",
+          to: "app.repository.hubspot::update_deal_properties",
           file: "app/repository/hubspot.py",
         },
       ],

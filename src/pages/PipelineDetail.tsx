@@ -25,6 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getNavigationReturnHref } from "@/lib/navigationMemory";
 
 export default function PipelineDetail(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -65,7 +66,7 @@ export default function PipelineDetail(): ReactNode {
     try {
       await deleteCustomMutation.mutateAsync(pipeline.pipelineId);
       toast.success("Intern proces verwijderd");
-      navigate("/pipelines");
+      navigate(getNavigationReturnHref("pipelines", "/pipelines"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Kon intern proces niet verwijderen");
     }
@@ -91,7 +92,7 @@ export default function PipelineDetail(): ReactNode {
       <div className="min-h-screen bg-background p-8">
         <button
           type="button"
-          onClick={() => navigate("/pipelines")}
+          onClick={() => navigate(getNavigationReturnHref("pipelines", "/pipelines"))}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 focus-ring rounded"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -117,7 +118,7 @@ export default function PipelineDetail(): ReactNode {
       <div className="mx-auto max-w-[900px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
         <button
           type="button"
-          onClick={() => navigate("/pipelines")}
+          onClick={() => navigate(getNavigationReturnHref("pipelines", "/pipelines"))}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 focus-ring rounded"
         >
           <ArrowLeft className="w-4 h-4" />

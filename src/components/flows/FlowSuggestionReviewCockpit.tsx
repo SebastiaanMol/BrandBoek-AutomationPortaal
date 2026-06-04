@@ -183,60 +183,68 @@ function WebhookChain({ presentation }: { presentation: FlowSuggestionReviewPres
     );
   }
 
-  const transitionsByPair = new Map(
-    presentation.transitions.map((transition) => [`${transition.fromId}->${transition.toId}`, transition]),
-  );
+  const nodesById = new Map(presentation.nodes.map((node) => [node.id, node]));
+  const transitionRows = presentation.transitions
+    .map((transition) => ({
+      transition,
+      from: nodesById.get(transition.fromId),
+      to: nodesById.get(transition.toId),
+    }))
+    .filter((row): row is {
+      transition: FlowSuggestionReviewPresentation["transitions"][number];
+      from: FlowSuggestionReviewPresentation["nodes"][number];
+      to: FlowSuggestionReviewPresentation["nodes"][number];
+    } => Boolean(row.from && row.to));
 
   return (
     <div className="mt-5 max-w-full overflow-x-auto pb-2">
-      <ol className="flex min-w-max items-stretch gap-3 pr-2">
-        {presentation.nodes.map((node, index) => {
-          const nextNode = presentation.nodes[index + 1];
-          const transition = nextNode ? transitionsByPair.get(`${node.id}->${nextNode.id}`) : undefined;
-
-          return (
-            <li key={node.id} className="flex shrink-0 items-center gap-3">
-              <div className="w-56 min-w-0 rounded-xl border border-border bg-background p-3">
-                <p className="truncate text-sm font-semibold text-foreground">{node.label}</p>
-                <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                    {node.sourceLabel}
-                  </span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                    {node.status}
-                  </span>
+      {transitionRows.length > 0 ? (
+        <ol className="grid min-w-max gap-3 pr-2">
+          {transitionRows.map(({ transition, from, to }) => (
+            <li key={`${transition.fromId}-${transition.toId}`} className="flex shrink-0 items-center gap-3">
+              <ChainNode node={from} />
+              <div className="flex w-48 shrink-0 flex-col items-center justify-center text-center text-emerald-700">
+                <div className="flex w-full items-center gap-2">
+                  <span className="h-px min-w-0 flex-1 bg-current/30" />
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                  <span className="h-px min-w-0 flex-1 bg-current/30" />
                 </div>
+                <span className={cn("mt-2 max-w-full rounded-full border px-2 py-0.5 text-[10px] font-semibold", toneClasses.success)}>
+                  {transition.label}
+                </span>
+                <span className="mt-1 max-w-full truncate text-[10px] text-muted-foreground">
+                  {transition.normalizedPath}
+                </span>
               </div>
-
-              {nextNode && (
-                <div className="flex w-48 shrink-0 flex-col items-center justify-center text-center">
-                  <div
-                    className={cn(
-                      "flex w-full items-center gap-2",
-                      transition ? "text-emerald-700" : "text-muted-foreground",
-                    )}
-                  >
-                    <span className="h-px min-w-0 flex-1 bg-current/30" />
-                    <ArrowRight className="h-4 w-4 shrink-0" />
-                    <span className="h-px min-w-0 flex-1 bg-current/30" />
-                  </div>
-                  <span
-                    className={cn(
-                      "mt-2 max-w-full rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                      transition ? toneClasses.success : toneClasses.warning,
-                    )}
-                  >
-                    {transition?.label ?? "Geen bewijs"}
-                  </span>
-                  <span className="mt-1 max-w-full truncate text-[10px] text-muted-foreground">
-                    {transition?.normalizedPath ?? "Geen bewijs"}
-                  </span>
-                </div>
-              )}
+              <ChainNode node={to} />
             </li>
-          );
-        })}
-      </ol>
+          ))}
+        </ol>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">
+          Geen bewezen webhook-overgangen in dit voorstel.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChainNode({
+  node,
+}: {
+  node: FlowSuggestionReviewPresentation["nodes"][number];
+}): ReactNode {
+  return (
+    <div className="w-56 min-w-0 rounded-xl border border-border bg-background p-3">
+      <p className="truncate text-sm font-semibold text-foreground">{node.label}</p>
+      <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          {node.sourceLabel}
+        </span>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          {node.status}
+        </span>
+      </div>
     </div>
   );
 }

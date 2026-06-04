@@ -2,7 +2,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useAutomatiseringen, useSetCleanupDeleteCandidate } from "@/lib/hooks";
+import {
+  useAutomatiseringen,
+  useAutomatiseringenIncludingLegacyGitlab,
+  useFlows,
+  useSetCleanupDeleteCandidate,
+} from "@/lib/hooks";
 import {
   Automatisering,
   KLANT_FASEN,
@@ -16,11 +21,20 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
-import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2, Filter, Info, BarChart3, Archive, Clock, ShieldCheck, Trash2, RotateCcw } from "lucide-react";
+import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2, Filter, Info, BarChart3, Archive, Clock, ShieldCheck, Trash2, RotateCcw, CheckCircle2, GitBranch, Network, ServerCog } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  getAnalyticsHealthPresentation,
+  type AnalyticsHealthMetric,
+  type AnalyticsHealthMetricTone,
+  type AnalyticsHealthPresentation,
+  type GitLabEndpointGapClassification,
+  type GitLabEndpointGapRow,
+  type WebhookCoverageRow,
+} from "@/lib/analyticsHealthPresentation";
 
 const FASE_COLORS: Record<KlantFase, string> = {
   Marketing: "#8b5cf6",
@@ -232,6 +246,112 @@ function findCascadeFailures(
 }
 
 export default function Analyse() {
+  const { data: automations = [], isLoading } = useAutomatiseringenIncludingLegacyGitlab();
+  const { data: flows = [] } = useFlows();
+  const [expandedGapId, setExpandedGapId] = useState<string | null>(null);
+
+  const presentation = useMemo(
+    () => getAnalyticsHealthPresentation({ automations, flows }),
+    [automations, flows],
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <p className="label-uppercase">Automation analytics</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+            Procesgezondheid
+          </h1>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            Developer-cockpit voor bronkwaliteit, webhook-bewijs en procesreis-dekking. V1 gebruikt harde brondata:
+            automations, endpoints, webhooks, procesreizen en sync/verificatie.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <a href="/flows">
+              <GitBranch className="h-4 w-4" />
+              Procesreizen
+            </a>
+          </Button>
+          <Button asChild variant="outline">
+            <a href="/gitlab-endpoint-check">
+              <ServerCog className="h-4 w-4" />
+              GitLab endpoint check
+            </a>
+          </Button>
+          <Button asChild className="bg-slate-950 text-white hover:bg-slate-800">
+            <a href="/flows?tab=bronkwaliteit">
+              <ShieldCheck className="h-4 w-4" />
+              Open bronkwaliteit
+            </a>
+          </Button>
+        </div>
+      </header>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Procesgezondheid metrics">
+        {presentation.metrics.map((metric) => (
+          <HealthMetricCard key={metric.id} metric={metric} />
+        ))}
+      </section>
+
+      <Tabs defaultValue="overview" className="space-y-5">
+        <TabsList className="h-auto flex-wrap justify-start rounded-none border-b border-border bg-transparent p-0">
+          <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+            Overzicht
+          </TabsTrigger>
+          <TabsTrigger value="gitlab-gaps" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+            GitLab endpoint gaps
+          </TabsTrigger>
+          <TabsTrigger value="webhook-coverage" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+            Webhook dekking
+          </TabsTrigger>
+          <TabsTrigger value="source-quality" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+            Bronkwaliteit
+          </TabsTrigger>
+          <TabsTrigger value="legacy" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
+            Legacy analyse
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-5">
+          <OverviewTab presentation={presentation} />
+        </TabsContent>
+
+        <TabsContent value="gitlab-gaps" className="space-y-5">
+          <GitLabEndpointGapsTab
+            rows={presentation.gitlabEndpointGaps}
+            expandedGapId={expandedGapId}
+            onToggleGap={(id) => setExpandedGapId((current) => current === id ? null : id)}
+          />
+        </TabsContent>
+
+        <TabsContent value="webhook-coverage" className="space-y-5">
+          <WebhookCoverageTab rows={presentation.webhookCoverageRows} />
+        </TabsContent>
+
+        <TabsContent value="source-quality" className="space-y-5">
+          <SourceQualityTab presentation={presentation} />
+        </TabsContent>
+
+        <TabsContent value="legacy" className="space-y-5">
+          <LegacyAnalyseContent />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function LegacyAnalyseContent() {
   const navigate = useNavigate();
   const { data: fetchedData, isLoading } = useAutomatiseringen();
   const { data: rejectedHubSpotAutomations = [], isLoading: isLoadingRejectedHubSpot } = useQuery({
@@ -959,6 +1079,468 @@ export default function Analyse() {
       </Tabs>
     </div>
   );
+}
+
+function OverviewTab({ presentation }: { presentation: AnalyticsHealthPresentation }) {
+  return (
+    <>
+      <section className="grid gap-4 xl:grid-cols-[1.35fr_0.9fr]">
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="label-uppercase">Procesgezondheid</p>
+              <h2 className="text-lg font-semibold text-foreground">Wat vraagt nu aandacht?</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                Prioriteitenlijst opgebouwd uit harde route-data: geen aannames, alleen endpoints, webhooks en bronkwaliteit.
+              </p>
+            </div>
+            <span className={cnHealthPill(presentation.healthScore.value)}>
+              {presentation.healthScore.label}
+            </span>
+          </div>
+          <div className="grid gap-3">
+            {presentation.priorities.map((priority) => (
+              <PriorityCard key={priority.id} item={priority} />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4">
+          <HealthScoreBreakdownCard presentation={presentation} />
+          <SourceCoverageCard presentation={presentation} />
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <InsightCard
+          icon={ServerCog}
+          title="GitLab endpointroutes"
+          value={String(presentation.gitlabEndpointGaps.length)}
+          description="Ontvangende backendroutes met harde endpointdiagnose."
+        />
+        <InsightCard
+          icon={Network}
+          title="Webhook routes"
+          value={String(presentation.webhookCoverageRows.length)}
+          description="Outgoing routes uit HubSpot, Zapier en Typeform."
+        />
+        <InsightCard
+          icon={AlertTriangle}
+          title="Uitgeschakeld in reizen"
+          value={String(presentation.disabledJourneyAutomations.length)}
+          description="Automations die procesreis-integriteit raken."
+        />
+      </section>
+    </>
+  );
+}
+
+function HealthMetricCard({ metric }: { metric: AnalyticsHealthMetric }) {
+  return (
+    <div className={`rounded-2xl border bg-card p-4 shadow-sm ${metricToneBorder(metric.tone)}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="label-uppercase truncate">{metric.label}</p>
+        <MetricToneIcon tone={metric.tone} />
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-3xl font-bold tabular-nums text-foreground">{metric.value}</span>
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{metric.detail}</p>
+    </div>
+  );
+}
+
+function MetricToneIcon({ tone }: { tone: AnalyticsHealthMetricTone }) {
+  if (tone === "good") return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
+  if (tone === "critical") return <AlertTriangle className="h-4 w-4 text-red-600" />;
+  if (tone === "warning") return <AlertTriangle className="h-4 w-4 text-amber-600" />;
+  if (tone === "info") return <Info className="h-4 w-4 text-blue-600" />;
+  return <Activity className="h-4 w-4 text-muted-foreground" />;
+}
+
+function PriorityCard({ item }: { item: AnalyticsHealthPresentation["priorities"][number] }) {
+  return (
+    <article className="grid gap-3 rounded-xl border border-border bg-background/60 p-4 sm:grid-cols-[14px_1fr_auto] sm:items-start">
+      <span className={`mt-1 h-3 w-3 rounded-full ${toneDotClass(item.tone)}`} />
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold leading-snug text-foreground">{item.title}</h3>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{item.description}</p>
+      </div>
+      <span className="w-fit rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+        {item.tag}
+      </span>
+    </article>
+  );
+}
+
+function HealthScoreBreakdownCard({ presentation }: { presentation: AnalyticsHealthPresentation }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="label-uppercase">Health score</p>
+          <h2 className="text-lg font-semibold text-foreground">{presentation.healthScore.value}%</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            {presentation.healthScore.explanation}
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {presentation.healthScore.breakdown.map((item) => (
+          <div key={item.id}>
+            <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+              <span className="font-semibold text-foreground">{item.label}</span>
+              <span className="text-muted-foreground">{item.score}% · {item.weight}% gewicht</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-secondary">
+              <div className="h-full rounded-full bg-emerald-600" style={{ width: `${item.score}%` }} />
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SourceCoverageCard({ presentation }: { presentation: AnalyticsHealthPresentation }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <p className="label-uppercase">Bronnen</p>
+      <h2 className="mt-1 text-lg font-semibold text-foreground">Routeerbaarheid per bron</h2>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {presentation.sourceRows.map((row) => (
+          <div key={row.source} className="rounded-xl border border-border bg-background/60 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">{row.label}</h3>
+              <span className="font-mono text-sm font-bold text-foreground">{row.matchable}/{row.total}</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${row.readyPercentage}%` }} />
+            </div>
+            <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{row.interpretation}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InsightCard({
+  icon: Icon,
+  title,
+  value,
+  description,
+}: {
+  icon: typeof Activity;
+  title: string;
+  value: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="label-uppercase truncate">{title}</p>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <p className="font-mono text-3xl font-bold text-foreground">{value}</p>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+function GitLabEndpointGapsTab({
+  rows,
+  expandedGapId,
+  onToggleGap,
+}: {
+  rows: GitLabEndpointGapRow[];
+  expandedGapId: string | null;
+  onToggleGap: (id: string) => void;
+}) {
+  const automationCount = new Set(rows.map((row) => row.automationId)).size;
+  const inJourneyCount = rows.filter((row) => row.classification === "in_process_journey" || row.classification === "shared_endpoint").length;
+  const gapCount = rows.length - inJourneyCount;
+
+  return (
+    <>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SmallStat title="GitLab automations" value={automationCount} detail="met ontvangende routes" />
+        <SmallStat title="Ontvangende routes" value={rows.length} detail="endpoint-diagnoses" />
+        <SmallStat title="In procesreis" value={inJourneyCount} detail="hard bewezen of gedeeld" tone="good" />
+        <SmallStat title="Endpoint gap" value={gapCount} detail="verklaring nodig" tone={gapCount > 0 ? "warning" : "good"} />
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4">
+          <p className="label-uppercase">GitLab endpoint gaps</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">Waarom vormt een endpoint wel of geen procesreis?</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            Elke rij gebruikt alleen exacte normalized paths en bekende methodes. Klik een endpoint open voor bronvelden en bewijs.
+          </p>
+        </div>
+        <div className="divide-y divide-border">
+          {rows.length === 0 ? (
+            <p className="p-6 text-sm text-muted-foreground">Geen GitLab endpointroutes gevonden.</p>
+          ) : rows.map((row) => (
+            <GitLabEndpointGapItem
+              key={row.id}
+              row={row}
+              expanded={expandedGapId === row.id}
+              onToggle={() => onToggleGap(row.id)}
+            />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function GitLabEndpointGapItem({
+  row,
+  expanded,
+  onToggle,
+}: {
+  row: GitLabEndpointGapRow;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <article>
+      <button
+        type="button"
+        className="grid w-full gap-3 px-5 py-4 text-left transition-colors hover:bg-secondary/40 lg:grid-cols-[1fr_150px_170px_140px] lg:items-center"
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">{row.automationName}</span>
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{row.status}</span>
+          </div>
+          <code className="mt-1 block w-fit max-w-full overflow-hidden text-ellipsis rounded bg-secondary px-2 py-1 text-xs text-muted-foreground">
+            {row.normalizedPath}
+          </code>
+        </div>
+        <span className="text-sm font-medium text-foreground">{row.method}</span>
+        <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${gapPillClass(row.classification)}`}>
+          {row.classificationLabel}
+        </span>
+        <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground lg:justify-end">
+          Diagnose
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </span>
+      </button>
+      {expanded && (
+        <div className="border-t border-border bg-secondary/30 px-5 py-4">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <EvidenceList title="Matchende senders" empty="Geen exacte sender-match." items={row.matchedSenders} />
+            <EvidenceList title="Ondersteunend bewijs" empty="Geen duplicate routebewijs." items={row.supportingEvidence} />
+          </div>
+          {row.conflictingSenders.length > 0 && (
+            <div className="mt-4">
+              <EvidenceList title="Methode-conflicten" empty="" items={row.conflictingSenders} />
+            </div>
+          )}
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold text-foreground">Waarom deze classificatie?</h3>
+              <div className="mt-3 grid gap-2">
+                {row.diagnostics.map((diagnostic) => (
+                  <div key={`${diagnostic.kind}-${diagnostic.label}`} className="rounded-lg bg-secondary/60 px-3 py-2">
+                    <p className="text-xs font-semibold text-foreground">{diagnostic.label}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{diagnostic.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold text-foreground">Eerstvolgende actie</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{row.nextAction}</p>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Bronveld receiver: <code>{row.sourceField}</code>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function EvidenceList({
+  title,
+  empty,
+  items,
+}: {
+  title: string;
+  empty: string;
+  items: Array<{ automationName: string; sourceLabel: string; method: string; normalizedPath: string; sourceField: string; detail: string }>;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      {items.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {items.map((item) => (
+            <div key={`${item.automationName}-${item.sourceField}-${item.method}`} className="rounded-lg bg-secondary/60 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-foreground">{item.automationName}</span>
+                <span className="rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{item.sourceLabel}</span>
+                <span className="rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{item.method}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                <code>{item.sourceField}</code>
+                {item.detail ? ` · ${item.detail}` : ""}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WebhookCoverageTab({ rows }: { rows: WebhookCoverageRow[] }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="border-b border-border px-5 py-4">
+        <p className="label-uppercase">Webhook dekking</p>
+        <h2 className="mt-1 text-lg font-semibold text-foreground">Outgoing routes en receiver-matches</h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+          Deze tabel laat per outgoing route zien of er een exacte GitLab/API receiver bestaat.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[840px] text-sm">
+          <thead className="border-b border-border bg-secondary/50 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3 font-semibold">Bronroute</th>
+              <th className="px-4 py-3 font-semibold">Path</th>
+              <th className="px-4 py-3 font-semibold">Doel</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3 font-semibold">Bronvelden</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rows.map((row) => (
+              <tr key={row.id} className="align-top">
+                <td className="px-4 py-3">
+                  <p className="font-medium text-foreground">{row.sourceAutomationName}</p>
+                  <p className="text-xs text-muted-foreground">{row.sourceLabel} · {row.method}</p>
+                </td>
+                <td className="px-4 py-3">
+                  <code className="rounded bg-secondary px-2 py-1 text-xs text-muted-foreground">{row.normalizedPath}</code>
+                </td>
+                <td className="px-4 py-3">
+                  <p className="font-medium text-foreground">{row.targetAutomationName ?? "Geen receiver"}</p>
+                  {row.targetLabel && <p className="text-xs text-muted-foreground">{row.targetLabel}</p>}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${coveragePillClass(row.status)}`}>
+                    {row.statusLabel}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">
+                  <p><code>{row.sourceField}</code></p>
+                  {row.targetField && <p className="mt-1"><code>{row.targetField}</code></p>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SourceQualityTab({ presentation }: { presentation: AnalyticsHealthPresentation }) {
+  return (
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {presentation.sourceRows.map((row) => (
+        <div key={row.source} className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <p className="label-uppercase">{row.label}</p>
+          <div className="mt-4 flex items-end justify-between gap-3">
+            <div>
+              <p className="font-mono text-3xl font-bold text-foreground">{row.readyPercentage}%</p>
+              <p className="text-xs text-muted-foreground">bronkwaliteit readiness</p>
+            </div>
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+              {row.incomplete} incompleet
+            </span>
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-secondary">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${row.readyPercentage}%` }} />
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{row.interpretation}</p>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function SmallStat({
+  title,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  title: string;
+  value: number;
+  detail: string;
+  tone?: AnalyticsHealthMetricTone;
+}) {
+  return (
+    <div className={`rounded-2xl border bg-card p-4 shadow-sm ${metricToneBorder(tone)}`}>
+      <p className="label-uppercase">{title}</p>
+      <p className="mt-2 font-mono text-3xl font-bold text-foreground">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function metricToneBorder(tone: AnalyticsHealthMetricTone): string {
+  if (tone === "good") return "border-t-4 border-t-emerald-500";
+  if (tone === "critical") return "border-t-4 border-t-red-500";
+  if (tone === "warning") return "border-t-4 border-t-amber-500";
+  if (tone === "info") return "border-t-4 border-t-blue-500";
+  return "border-border";
+}
+
+function toneDotClass(tone: AnalyticsHealthMetricTone): string {
+  if (tone === "good") return "bg-emerald-600";
+  if (tone === "critical") return "bg-red-600";
+  if (tone === "warning") return "bg-amber-500";
+  if (tone === "info") return "bg-blue-600";
+  return "bg-muted-foreground";
+}
+
+function cnHealthPill(score: number): string {
+  if (score >= 80) return "w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800";
+  if (score >= 60) return "w-fit rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800";
+  return "w-fit rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800";
+}
+
+function gapPillClass(classification: GitLabEndpointGapClassification): string {
+  if (classification === "in_process_journey" || classification === "shared_endpoint") {
+    return "bg-emerald-100 text-emerald-800";
+  }
+  if (classification === "source_incomplete" || classification === "method_mismatch") {
+    return "bg-red-100 text-red-800";
+  }
+  if (classification === "alternative_hard_match") {
+    return "bg-blue-100 text-blue-800";
+  }
+  return "bg-amber-100 text-amber-800";
+}
+
+function coveragePillClass(status: WebhookCoverageRow["status"]): string {
+  if (status === "matched") return "bg-emerald-100 text-emerald-800";
+  if (status === "ambiguous") return "bg-blue-100 text-blue-800";
+  if (status === "method_mismatch") return "bg-red-100 text-red-800";
+  return "bg-amber-100 text-amber-800";
 }
 
 function ChartCard({ title, data, colors }: { title: string; data: { name: string; count: number }[]; colors: string[] }) {

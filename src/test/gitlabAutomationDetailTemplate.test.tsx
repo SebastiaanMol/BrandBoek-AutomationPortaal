@@ -123,6 +123,35 @@ describe("GitLab automation detail template", () => {
     expect(screen.queryByLabelText("GitLab automation detail")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Wat doet deze backend automation?" })).not.toBeInTheDocument();
   });
+
+  it("opens legacy GitLab records without endpoint on their specific detail page", () => {
+    const legacyAutomation = makeAutomation({
+      id: "AUTO-GL-LEGACY-FILE",
+      naam: "Legacy helper without endpoint",
+      source: "gitlab",
+      categorie: "Backend Script",
+      systemen: ["GitLab"],
+      gitlabFilePath: "legacy/helper.py",
+      externalId: "legacy/helper.py",
+    });
+    vi.mocked(useAutomationsMock).mockReturnValue({ data: [], isLoading: false });
+    vi.mocked(useJourneyAutomationsMock).mockReturnValue({ data: [legacyAutomation] });
+
+    render(
+      <MemoryRouter initialEntries={["/automations/AUTO-GL-LEGACY-FILE"]}>
+        <Routes>
+          <Route path="/automations/:id" element={<AutomationDetailPage />} />
+          <Route path="/alle" element={<div>Automations beheer</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText("Automations beheer")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Legacy helper without endpoint", level: 1 })).toBeInTheDocument();
+    expect(screen.getByLabelText("GitLab automation detail")).toBeInTheDocument();
+    expect(screen.getByText("Oude GitLab bestandsimport, geen specifiek endpoint gevonden.", { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByText("Geen specifiek endpoint").length).toBeGreaterThan(0);
+  });
 });
 
 function renderDetail(id: string): void {

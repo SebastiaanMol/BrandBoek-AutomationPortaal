@@ -63,6 +63,13 @@ interface CuratedMeaningPatch {
   backgroundWork?: GitLabOperationFact[];
 }
 
+type ImportedMeaningPatch = Partial<
+  Pick<
+    GitLabAutomationMeaningPresentation,
+    "ontvangt" | "haaltOp" | "berekent" | "pastAan" | "stuurtTerug" | "backgroundWork" | "summary"
+  >
+>;
+
 const IGNORED_INPUT_ARGS = new Set([
   "self",
   "request",
@@ -142,6 +149,33 @@ const CURATED_PATCHES: CuratedMeaningPatch[] = [
       curatedFact("_company_change_task", "Start de eigenlijke dealname-update als achtergrondtaak na de HTTP-response.", "background_tasks.add_task(_company_change_task, company_id.company_id)"),
     ],
   },
+  {
+    matcher: (endpointInfo) => endpointInfo.handler === "new_create_deal" || endpointInfo.endpoint?.includes("/hubspot/create_new_deal") === true,
+    summary:
+      "Wanneer HubSpot een nieuwe salesdeal doorgeeft, ontvangt deze automatisering het deal-ID en haalt hij line items, contact, bedrijf, owner, klanttype, pipelines en bestaande deals op uit HubSpot. Daarna bepaalt hij op basis van het klanttype en de verkochte producten welke vervolgdeals nodig zijn, welke periode en dealstage daarbij horen, en of er al vergelijkbare deals bestaan. Bestaande vervolgdeals krijgen waar nodig een bijgewerkt bedrag, en ontbrekende vervolgdeals worden aangemaakt in HubSpot.",
+    ontvangt: [
+      curatedFact("deal_id", "De binnenkomende gegevens bevatten het HubSpot deal-ID van de oorspronkelijke salesdeal.", "NewDeal.deal_id"),
+    ],
+    haaltOp: [
+      curatedFact("Line items", "Haalt de producten en bedragen van de oorspronkelijke HubSpot deal op.", "service_hubspot.get_line_items_info(deal_id)"),
+      curatedFact("Contact, bedrijf en owner", "Haalt het gekoppelde contact, bedrijf en de owner op die nodig zijn voor de vervolgdeals.", "hubspot_calls.get_contact_id, hubspot_calls.get_company_id, service_hubspot.get_owner_id"),
+      curatedFact("Klanttype en pipelines", "Haalt bedrijfsinformatie en beschikbare pipelines op om te bepalen welke route gebruikt moet worden.", "hubspot_calls.get_company_info, service_hubspot.get_continuous_pipelines, service_hubspot.get_controle_pipelines"),
+      curatedFact("Bestaande HubSpot deals", "Haalt bestaande company-deals en contact-deals op om dubbele vervolgdeals te voorkomen.", "service_hubspot.fetch_all_company_deals_with_props, service_hubspot.fetch_all_contact_deals_with_props"),
+    ],
+    berekent: [
+      curatedFact("Klanttype en pipelinekeuze", "Bepaalt of controle-pipelines of continuous pipelines gebruikt moeten worden.", "software_portaal_pakket -> pipelines_to_use"),
+      curatedFact("Producten naar vervolgdeals", "Matcht verkochte producten met de pipelines waarvoor vervolgdeals nodig zijn.", "service_hubspot.match_product_to_pipeline(product_names, pipelines_to_use)"),
+      curatedFact("Periode en duplicate-check", "Bepaalt maand-, kwartaal- of jaardeals en controleert of die al bestaan.", "exists_map, contact_exists_map, get_correct_monthly_pipelines, get_correct_btw_pipelines, get_correct_yearly_pipelines"),
+      curatedFact("Dealstage en dealnaam", "Bepaalt de juiste stage en bouwt de naam voor elke nieuwe vervolgdeal.", "find_correct_stage, service_hubspot.create_dealname"),
+    ],
+    pastAan: [
+      curatedFact("Bestaande HubSpot dealbedragen", "Werkt het bedrag bij wanneer een bestaande vervolgdeal al bestaat maar het bedrag afwijkt.", "hubspot_calls.update_deal_properties(corr_deal_id, {\"amount\": str(item[\"price\"])})"),
+      curatedFact("Nieuwe HubSpot vervolgdeals", "Maakt ontbrekende maand-, kwartaal- of jaardeals aan in HubSpot.", "hubspot_calls.batch_create_deals_sync(deal_inputs)"),
+    ],
+    stuurtTerug: [
+      curatedFact("Succesmelding", "Geeft terug dat de nieuwe deal-verwerking succesvol is afgerond.", "{\"message\": \"New deal created successfully\"}"),
+    ],
+  },
 ];
 
 export function getGitLabAutomationMeaningPresentation(automation: Automatisering): GitLabAutomationMeaningPresentation {
@@ -156,20 +190,21 @@ export function getGitLabAutomationMeaningPresentation(automation: Automatiserin
   const responses = buildResponseFacts(endpointInfo, codePaths);
   const backgroundWork = buildBackgroundFacts(codePaths, endpointInfo.calls);
   const curatedPatch = CURATED_PATCHES.find((patch) => patch.matcher(endpointInfo, automation));
-  const curated = Boolean(curatedPatch);
+  const importedPatch = getImportedMeaningPatch(automation);
+  const curated = Boolean(curatedPatch || importedPatch);
 
   const meaning = {
-    ontvangt: mergeFacts(receives, curatedPatch?.ontvangt),
-    haaltOp: mergeFacts(reads, curatedPatch?.haaltOp),
-    berekent: mergeFacts(computes, curatedPatch?.berekent),
-    pastAan: mergeFacts(writes, curatedPatch?.pastAan),
-    stuurtTerug: mergeFacts(responses, curatedPatch?.stuurtTerug),
-    backgroundWork: mergeFacts(backgroundWork, curatedPatch?.backgroundWork),
+    ontvangt: selectMeaningFacts(receives, curatedPatch?.ontvangt, importedPatch?.ontvangt),
+    haaltOp: selectMeaningFacts(reads, curatedPatch?.haaltOp, importedPatch?.haaltOp),
+    berekent: selectMeaningFacts(computes, curatedPatch?.berekent, importedPatch?.berekent),
+    pastAan: selectMeaningFacts(writes, curatedPatch?.pastAan, importedPatch?.pastAan),
+    stuurtTerug: selectMeaningFacts(responses, curatedPatch?.stuurtTerug, importedPatch?.stuurtTerug),
+    backgroundWork: selectMeaningFacts(backgroundWork, curatedPatch?.backgroundWork, importedPatch?.backgroundWork),
   };
   const confidence = determineConfidence(meaning, codePaths, endpointAnalysis, curated);
   const evidence = buildEvidence(endpointInfo, codePaths, endpointAnalysis, functionAnalyses, curated);
   const gaps = buildGaps(meaning, confidence);
-  const summary = curatedPatch?.summary ?? buildSummary(automation, endpointInfo, meaning, confidence);
+  const summary = importedPatch?.summary ?? curatedPatch?.summary ?? buildSummary(automation, endpointInfo, meaning, confidence);
 
   return {
     ...meaning,
@@ -181,6 +216,58 @@ export function getGitLabAutomationMeaningPresentation(automation: Automatiserin
     gaps,
     curated,
   };
+}
+
+function getImportedMeaningPatch(automation: Automatisering): ImportedMeaningPatch | undefined {
+  const raw = automation.importProposal?.gitlab_meaning;
+  if (!isRecord(raw)) return undefined;
+
+  const patch: ImportedMeaningPatch = {};
+  const summary = raw.summary;
+  if (typeof summary === "string" && summary.trim()) patch.summary = summary.trim();
+
+  for (const key of ["ontvangt", "haaltOp", "berekent", "pastAan", "stuurtTerug", "backgroundWork"] as const) {
+    const facts = parseImportedFacts(raw[key]);
+    if (facts.length > 0) patch[key] = facts;
+  }
+
+  const hasFacts = ["ontvangt", "haaltOp", "berekent", "pastAan", "stuurtTerug", "backgroundWork"]
+    .some((key) => Array.isArray(patch[key]) && patch[key]!.length > 0);
+  return hasFacts || patch.summary ? patch : undefined;
+}
+
+function parseImportedFacts(value: unknown): GitLabOperationFact[] {
+  if (!Array.isArray(value)) return [];
+  return uniqueFacts(value.flatMap((item) => {
+    if (typeof item === "string") {
+      const label = item.trim();
+      return label ? [importedFact(label, label)] : [];
+    }
+    if (!isRecord(item)) return [];
+    const label = readString(item.label) ?? readString(item.title) ?? readString(item.name);
+    const description = readString(item.description) ?? readString(item.summary) ?? label;
+    if (!label || !description) return [];
+    const technicalDetail = readString(item.technicalDetail) ?? readString(item.detail) ?? readString(item.evidence);
+    return [importedFact(label, description, technicalDetail)];
+  }));
+}
+
+function importedFact(label: string, description: string, technicalDetail?: string): GitLabOperationFact {
+  const evidenceValue = technicalDetail ?? description;
+  return {
+    label: label.trim(),
+    description: description.trim(),
+    technicalDetail: technicalDetail?.trim(),
+    evidence: [evidence("Curated evidence", evidenceValue, "curated")],
+  };
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function getEndpointInfo(automation: Automatisering): EndpointInfo {
@@ -824,6 +911,15 @@ function getCallName(call: Pick<GitLabCallInfo, "to">): string {
 
 function cleanHubSpotTarget(value: string): string {
   return value.replace(/^hubspot_calls\./, "").split(".").at(-1) ?? value;
+}
+
+function selectMeaningFacts(
+  generated: GitLabOperationFact[],
+  curated?: GitLabOperationFact[],
+  imported?: GitLabOperationFact[],
+): GitLabOperationFact[] {
+  if (imported?.length) return uniqueFacts(imported);
+  return mergeFacts(generated, curated);
 }
 
 function mergeFacts(primary: GitLabOperationFact[], fallback?: GitLabOperationFact[]): GitLabOperationFact[] {

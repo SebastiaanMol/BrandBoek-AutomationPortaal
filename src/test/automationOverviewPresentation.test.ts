@@ -75,6 +75,35 @@ describe("automation overview presentation", () => {
     expect(presentation.outcomeLabel).toBe("Backend endpoint: Uitvoering buiten HubSpot");
   });
 
+  it("keeps the real HubSpot webhook URL visible in the expanded-row action summary", () => {
+    const presentation = getAutomationOverviewPresentation(makeAutomation({
+      source: "hubspot",
+      categorie: "HubSpot Workflow",
+      systemen: ["HubSpot"],
+      hubspotWorkflow: {
+        name: "Create new deal",
+        objectType: "deal",
+        triggers: [{ label: "Activiteit Sales Deal Stage is Actief", source: "HubSpot" }],
+        actions: [
+          {
+            index: 1,
+            type: "WEBHOOK",
+            label: "Webhook",
+            webhookMethod: "POST",
+            webhookPath: "/operations/hubspot/create_new_deal",
+            webhookUrl: "https://composed-month-production.up.railway.app/operations/hubspot/create_new_deal",
+          },
+        ],
+      },
+    }));
+
+    expect(presentation.actionSummary).toContain("https://composed-month-production.up.railway.app/operations/hubspot/create_new_deal");
+    expect(presentation.evidenceBadges).toContainEqual(expect.objectContaining({
+      label: "1 webhook",
+      detail: "composed-month-production.up.railway.app",
+    }));
+  });
+
   it("summarizes Zapier steps, handoffs, lookups and conditions", () => {
     const presentation = getAutomationOverviewPresentation(makeAutomation({
       source: "zapier",

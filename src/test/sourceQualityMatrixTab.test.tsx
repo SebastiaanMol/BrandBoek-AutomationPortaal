@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SourceQualityMatrixTab } from "@/components/flows/SourceQualityMatrixTab";
 import type { Automatisering } from "@/lib/types";
 
@@ -50,6 +50,23 @@ describe("SourceQualityMatrixTab", () => {
     expect(screen.queryByText("100% webhook-match")).not.toBeInTheDocument();
     expect(screen.getByText("Dubbele receiver-route")).toBeInTheDocument();
     expect(screen.getAllByText("GitLab duplicate receiver").length).toBeGreaterThan(0);
+  });
+
+  it("renders duplicate route evidence without React duplicate key warnings", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    render(
+      <MemoryRouter>
+        <SourceQualityMatrixTab automations={[hubspotDuplicateRouteEvidence, gitlabDuplicateRouteTarget]} />
+      </MemoryRouter>,
+    );
+
+    const keyWarnings = consoleError.mock.calls.filter((call) =>
+      call.some((part) => String(part).includes("Encountered two children with the same key")),
+    );
+    expect(keyWarnings).toHaveLength(0);
+
+    consoleError.mockRestore();
   });
 });
 
@@ -137,6 +154,39 @@ const duplicateReceiver = baseAutomation({
     endpoint: "/properties/ib/finished_webhook",
     handler: "ib_finished_webhook_copy",
     calls: [{ depth: 1, kind: "hubspot_repository_call", from: "handler", to: "repo", file: "repo.py" }],
+  },
+});
+
+const hubspotDuplicateRouteEvidence = baseAutomation({
+  id: "hs-duplicate-route-evidence",
+  naam: "HubSpot duplicate route evidence",
+  source: "hubspot",
+  categorie: "HubSpot Workflow",
+  webhookPaths: ["/operations/hubspot/create_new_deal"],
+  hubspotWorkflow: {
+    name: "HubSpot duplicate route evidence",
+    triggers: [{ label: "Deal created", source: "HubSpot" }],
+    actions: [
+      {
+        index: 1,
+        type: "WEBHOOK",
+        label: "Webhook",
+        webhookMethod: "POST",
+        webhookPath: "/operations/hubspot/create_new_deal",
+      },
+    ],
+  },
+});
+
+const gitlabDuplicateRouteTarget = baseAutomation({
+  id: "gl-duplicate-route-target",
+  naam: "GitLab duplicate route target",
+  source: "gitlab",
+  categorie: "Backend Script",
+  gitlabEndpoint: {
+    method: "POST",
+    endpoint: "/operations/hubspot/create_new_deal",
+    handler: "create_new_deal",
   },
 });
 

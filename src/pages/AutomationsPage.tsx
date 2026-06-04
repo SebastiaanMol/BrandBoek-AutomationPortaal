@@ -3,11 +3,19 @@ import { useState } from "react";
 import { Tabs } from "@/components/ui/tabs";
 import { useAutomatiseringen } from "@/lib/hooks";
 import AlleAutomatiseringen from "./AlleAutomatiseringen";
+import { readNavigationMemoryData } from "@/lib/navigationMemory";
 
 type SourceFilter = "alle" | "hubspot" | "gitlab" | "zapier" | "typeform";
 
+interface AutomationCatalogMemory {
+  sourceFilter?: SourceFilter;
+}
+
 export default function AutomationsPage() {
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("alle");
+  const rememberedCatalog = readNavigationMemoryData<AutomationCatalogMemory>("automations");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(
+    isSourceFilter(rememberedCatalog?.sourceFilter) ? rememberedCatalog.sourceFilter : "alle",
+  );
   const { data: automations = [] } = useAutomatiseringen();
   const activeCount = automations.filter((automation) => automation.status === "Actief").length;
   const disabledCount = automations.filter((automation) => automation.status === "Uitgeschakeld").length;
@@ -66,6 +74,10 @@ export default function AutomationsPage() {
       </div>
     </div>
   );
+}
+
+function isSourceFilter(value: unknown): value is SourceFilter {
+  return value === "alle" || value === "hubspot" || value === "gitlab" || value === "zapier" || value === "typeform";
 }
 
 function StatPill({ label, value }: { label: string; value: number }) {

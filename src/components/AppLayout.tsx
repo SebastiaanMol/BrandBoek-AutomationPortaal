@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
+import { AppBreadcrumbs } from "@/components/AppBreadcrumbs";
 import {
   LayoutDashboard,
   PlusCircle,
@@ -217,13 +218,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="label-uppercase ml-3 lg:ml-0">
-            {location.pathname.startsWith("/pipelines/")
-              ? "Pipeline Detail"
-              : [...navGroups.flatMap(g => g.items), ...bottomNavItems].find((n) =>
-                  isNavItemActive(location.pathname, location.search, n.url),
-                )?.title || "Portal"}
-          </span>
+          <div className="ml-3 min-w-0 lg:ml-0">
+            <AppBreadcrumbs />
+          </div>
         </header>
         <main className={`flex-1 w-full ${
           location.pathname === "/processen" ||

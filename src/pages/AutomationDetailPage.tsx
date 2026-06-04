@@ -6,6 +6,7 @@ import { HubSpotAutomationDetailTemplate } from "@/components/HubSpotAutomationD
 import { ZapierAutomationDetailTemplate } from "@/components/ZapierAutomationDetailTemplate";
 import { GitLabAutomationDetailTemplate } from "@/components/GitLabAutomationDetailTemplate";
 import { TypeformAutomationDetailTemplate } from "@/components/TypeformAutomationDetailTemplate";
+import { AutomationChainReactionCard } from "@/components/AutomationChainReactionCard";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   useAllConfirmedAutomationLinks,
-  useAutomatiseringen,
+  useAutomatiseringenIncludingLegacyGitlab,
   useFlowSuggesties,
   usePipelines,
   useSetCleanupDeleteCandidate,
@@ -37,10 +38,11 @@ import {
 } from "@/lib/typeformAutomationDetailPresentation";
 import { getAutomationSourceQualityPresentation } from "@/lib/automationSourceQuality";
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
+import { getNavigationReturnHref } from "@/lib/navigationMemory";
 
 export default function AutomationDetailPage(): React.ReactNode {
   const { id } = useParams<{ id: string }>();
-  const { data: automations = [], isLoading } = useAutomatiseringen();
+  const { data: automations = [], isLoading } = useAutomatiseringenIncludingLegacyGitlab();
   const { data: pipelines = [] } = usePipelines();
   const { data: confirmedLinks = [] } = useAllConfirmedAutomationLinks();
   const { data: flowSuggesties = [] } = useFlowSuggesties();
@@ -159,6 +161,8 @@ export default function AutomationDetailPage(): React.ReactNode {
           />
         </section>
       )}
+
+      <AutomationChainReactionCard startAutomation={automation} automations={automations} />
     </div>
   );
 }
@@ -645,7 +649,7 @@ function RawZapierDataDialog({
 function BackToAutomationsLink(): React.ReactNode {
   return (
     <Link
-      to="/alle"
+      to={getNavigationReturnHref("automations", "/alle")}
       className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-950"
     >
       <ArrowLeft className="h-4 w-4" />
@@ -790,7 +794,7 @@ function DefaultDetailHeader({
   return (
     <header className="rounded-2xl border border-border bg-card p-6 shadow-sm">
       <Link
-        to="/alle"
+        to={getNavigationReturnHref("automations", "/alle")}
         className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" />

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Pipeline, PipelineStage } from "@/lib/types";
 import { PipelineMatrix } from "@/components/PipelineMatrix";
 
@@ -39,6 +39,10 @@ function makePipeline(overrides: Partial<Pipeline> = {}): Pipeline {
 }
 
 describe("PipelineMatrix", () => {
+  beforeEach(() => {
+    navigateMock.mockClear();
+  });
+
   it("renders pipeline rows with source, status, stage counts, and stage previews", () => {
     const pipelines: Pipeline[] = [
       makePipeline({
@@ -91,6 +95,22 @@ describe("PipelineMatrix", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open Sales pipeline" }));
 
+    expect(navigateMock).toHaveBeenCalledWith("/pipelines/sales-123");
+  });
+
+  it("lets the parent remember list context before navigation", () => {
+    const onOpenPipeline = vi.fn();
+
+    render(
+      <PipelineMatrix
+        pipelines={[makePipeline({ pipelineId: "sales-123", naam: "Sales pipeline" })]}
+        onOpenPipeline={onOpenPipeline}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Sales pipeline" }));
+
+    expect(onOpenPipeline).toHaveBeenCalledWith("sales-123");
     expect(navigateMock).toHaveBeenCalledWith("/pipelines/sales-123");
   });
 });

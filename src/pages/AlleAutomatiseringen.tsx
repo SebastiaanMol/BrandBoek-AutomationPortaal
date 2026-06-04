@@ -32,6 +32,12 @@ import { ArrowRight, ChevronDown, Search as SearchIcon, Loader2, Pencil, Zap, Sp
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
+import {
+  readNavigationMemory,
+  readNavigationMemoryData,
+  rememberCurrentRoute,
+  restoreNavigationScroll,
+} from "@/lib/navigationMemory";
 
 type SourceFilter = "alle" | "hubspot" | "gitlab" | "zapier" | "typeform";
 
@@ -47,6 +53,20 @@ interface AlleAutomatiseringenProps {
   onSourceFilterChange?: (value: SourceFilter) => void;
 }
 
+interface AutomationCatalogMemory {
+  sourceFilter?: SourceFilter;
+  query?: string;
+  catFilter?: string;
+  sysFilter?: string;
+  statusFilter?: string;
+  koppelingFilter?: string;
+  sourceFindingFilter?: string;
+  sortOrder?: AutomationListSortOrder;
+  filtersOpen?: boolean;
+  expandedAutomationId?: string | null;
+  focusAutomationId?: string;
+}
+
 export default function AlleAutomatiseringen({
   sourceFilter = "alle",
   sourceTabs = [],
@@ -56,18 +76,27 @@ export default function AlleAutomatiseringen({
   const navigate = useNavigate();
   const { data, isLoading } = useAutomatiseringen();
   const { data: portalSettings } = usePortalSettings();
-  const [sortOrder, setSortOrder] = useState<AutomationListSortOrder>("created_at");
-  const [settingsApplied, setSettingsApplied] = useState(false);
-  const [query, setQuery] = useState("");
-  const [catFilter, setCatFilter] = useState<string>("alle");
-  const [sysFilter, setSysFilter] = useState<string>("alle");
-  const [statusFilter, setStatusFilter] = useState<string>("alle");
-  const [koppelingFilter, setKoppelingFilter] = useState<string>("alle");
-  const [sourceFindingFilter, setSourceFindingFilter] = useState<string>("alle");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [expandedAutomationId, setExpandedAutomationId] = useState<string | null>(null);
+  const rememberedCatalog = useMemo(
+    () => readNavigationMemoryData<AutomationCatalogMemory>("automations"),
+    [],
+  );
+  const [sortOrder, setSortOrder] = useState<AutomationListSortOrder>(
+    isAutomationListSortOrder(rememberedCatalog?.sortOrder) ? rememberedCatalog.sortOrder : "created_at",
+  );
+  const [settingsApplied, setSettingsApplied] = useState(Boolean(rememberedCatalog));
+  const [query, setQuery] = useState(getRememberedString(rememberedCatalog?.query));
+  const [catFilter, setCatFilter] = useState<string>(getRememberedString(rememberedCatalog?.catFilter, "alle"));
+  const [sysFilter, setSysFilter] = useState<string>(getRememberedString(rememberedCatalog?.sysFilter, "alle"));
+  const [statusFilter, setStatusFilter] = useState<string>(getRememberedString(rememberedCatalog?.statusFilter, "alle"));
+  const [koppelingFilter, setKoppelingFilter] = useState<string>(getRememberedString(rememberedCatalog?.koppelingFilter, "alle"));
+  const [sourceFindingFilter, setSourceFindingFilter] = useState<string>(getRememberedString(rememberedCatalog?.sourceFindingFilter, "alle"));
+  const [filtersOpen, setFiltersOpen] = useState(Boolean(rememberedCatalog?.filtersOpen));
+  const [expandedAutomationId, setExpandedAutomationId] = useState<string | null>(
+    typeof rememberedCatalog?.expandedAutomationId === "string" ? rememberedCatalog.expandedAutomationId : null,
+  );
   const rowGroupRef = useRef<HTMLDivElement | null>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 60 });
+  const restoredScrollRef = useRef(false);
 
   // Backwards compatibility for older links that opened the detail dialog.
   const pendingOpen = searchParams.get("open");
@@ -158,6 +187,32 @@ export default function AlleAutomatiseringen({
   const handleToggleAutomation = useCallback((automationId: string) => {
     setExpandedAutomationId((current) => current === automationId ? null : automationId);
   }, []);
+  const rememberCatalogNavigation = useCallback((focusAutomationId?: string) => {
+    rememberCurrentRoute("automations", {
+      sourceFilter,
+      query,
+      catFilter,
+      sysFilter,
+      statusFilter,
+      koppelingFilter,
+      sourceFindingFilter,
+      sortOrder,
+      filtersOpen,
+      expandedAutomationId,
+      focusAutomationId,
+    } satisfies AutomationCatalogMemory);
+  }, [
+    catFilter,
+    expandedAutomationId,
+    filtersOpen,
+    koppelingFilter,
+    query,
+    sortOrder,
+    sourceFilter,
+    sourceFindingFilter,
+    statusFilter,
+    sysFilter,
+  ]);
   const expandedIndex = useMemo(
     () => sorted.findIndex((automation) => automation.id === expandedAutomationId),
     [expandedAutomationId, sorted],
@@ -224,6 +279,16 @@ export default function AlleAutomatiseringen({
       window.removeEventListener("resize", scheduleUpdate);
     };
   }, [shouldWindowRows, sorted.length]);
+
+  useEffect(() => {
+    if (restoredScrollRef.current || isLoading) return;
+    const memory = readNavigationMemory("automations");
+    if (!memory || memory.scrollY <= 0) return;
+    if (sorted.length === 0) return;
+
+    restoredScrollRef.current = true;
+    restoreNavigationScroll("automations");
+  }, [isLoading, sorted.length]);
 
   const defaultSortOrder = portalSettings?.standaardSortering ?? "created_at";
   const activeFilterChips = [
@@ -426,6 +491,7 @@ export default function AlleAutomatiseringen({
                 isExpanded={isExpanded}
                 presentation={isExpanded ? expandedPresentation : null}
                 onToggle={handleToggleAutomation}
+                onRememberNavigation={rememberCatalogNavigation}
               />
             );
           })}
@@ -454,12 +520,14 @@ const AutomationCatalogRow = memo(function AutomationCatalogRow({
   isExpanded,
   presentation,
   onToggle,
+  onRememberNavigation,
 }: {
   automation: Automatisering;
   catalog: AutomationCatalogRowPresentation;
   isExpanded: boolean;
   presentation: AutomationOverviewPresentation | null;
   onToggle: (automationId: string) => void;
+  onRememberNavigation: (automationId: string) => void;
 }) {
   const sourceFinding = getActiveSourceWarningFinding(automation);
   const sourceFindingIsCritical = sourceFinding?.severity === "critical" || sourceFinding?.type === "source_missing";
@@ -543,7 +611,10 @@ const AutomationCatalogRow = memo(function AutomationCatalogRow({
           <Link
             to={`/automations/${encodeURIComponent(automation.id)}`}
             aria-label={`Open ${automation.naam}`}
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRememberNavigation(automation.id);
+            }}
             className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:w-auto"
           >
             Open
@@ -551,7 +622,11 @@ const AutomationCatalogRow = memo(function AutomationCatalogRow({
         </div>
       </div>
       {isExpanded && presentation && (
-        <AutomationOverviewExpansion automation={automation} presentation={presentation} />
+        <AutomationOverviewExpansion
+          automation={automation}
+          presentation={presentation}
+          onRememberNavigation={onRememberNavigation}
+        />
       )}
     </Fragment>
   );
@@ -805,9 +880,11 @@ function isGitLabAutomation(a: Automatisering): boolean {
 function AutomationOverviewExpansion({
   automation,
   presentation,
+  onRememberNavigation,
 }: {
   automation: Automatisering;
   presentation: AutomationOverviewPresentation;
+  onRememberNavigation: (automationId: string) => void;
 }) {
   return (
     <div className="border-t border-border bg-muted/20 px-4 py-4 md:px-5">
@@ -851,6 +928,7 @@ function AutomationOverviewExpansion({
           <Link
             to={`/automations/${encodeURIComponent(automation.id)}`}
             aria-label={`Open volledige details van ${automation.naam}`}
+            onClick={() => onRememberNavigation(automation.id)}
             className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             Volledige details
@@ -880,6 +958,14 @@ function isZapierAutomation(a: Automatisering): boolean {
 
 function isTypeformAutomation(a: Automatisering): boolean {
   return a.source === "typeform";
+}
+
+function getRememberedString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function isAutomationListSortOrder(value: unknown): value is AutomationListSortOrder {
+  return value === "created_at" || value === "naam" || value === "status";
 }
 
 function getActiveSourceWarningFinding(a: Automatisering) {

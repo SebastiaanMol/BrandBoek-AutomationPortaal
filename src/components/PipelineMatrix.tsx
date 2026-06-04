@@ -12,7 +12,12 @@ import {
   getPreviewStages,
 } from "@/lib/pipelineOverview";
 
-export function PipelineMatrix({ pipelines }: { pipelines: Pipeline[] }): ReactNode {
+interface PipelineMatrixProps {
+  pipelines: Pipeline[];
+  onOpenPipeline?: (pipelineId: string) => void;
+}
+
+export function PipelineMatrix({ pipelines, onOpenPipeline }: PipelineMatrixProps): ReactNode {
   const navigate = useNavigate();
 
   return (
@@ -42,7 +47,10 @@ export function PipelineMatrix({ pipelines }: { pipelines: Pipeline[] }): ReactN
               key={pipeline.pipelineId}
               type="button"
               aria-label={`Open ${pipeline.naam}`}
-              onClick={() => navigate(`/pipelines/${pipeline.pipelineId}`)}
+              onClick={() => {
+                onOpenPipeline?.(pipeline.pipelineId);
+                navigate(`/pipelines/${pipeline.pipelineId}`);
+              }}
               className={[
                 "group w-full bg-card px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-ring",
                 "grid gap-3 md:grid-cols-[minmax(0,1.35fr)_8rem_7rem_6rem_minmax(0,1.3fr)_11rem_2rem] md:items-center md:gap-4",

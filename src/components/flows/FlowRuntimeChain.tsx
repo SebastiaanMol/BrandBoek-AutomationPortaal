@@ -290,7 +290,7 @@ export function FlowRuntimeChain({
                 {step.workers && step.workers.length > 0 && (
                   <div className="mt-4 space-y-3">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-purple-800/75">
-                      GitLab automations in dit backendblok
+                      GitLab analyse van deze automation
                     </p>
                     <div className="space-y-3">
                       {step.workers.map((worker, workerIndex) => {

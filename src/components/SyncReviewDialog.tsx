@@ -28,6 +28,7 @@ const CHANGE_LABELS: Record<string, string> = {
   route_changed: "Webhook gewijzigd",
   source_data_incomplete: "Brondata incompleet",
   source_missing: "Niet meer gevonden",
+  legacy_gitlab_record: "Legacy GitLab",
 };
 
 const CHANGE_CLASSES: Record<string, string> = {
@@ -36,6 +37,7 @@ const CHANGE_CLASSES: Record<string, string> = {
   route_changed: "border-orange-200 bg-orange-50 text-orange-700",
   source_data_incomplete: "border-amber-200 bg-amber-50 text-amber-700",
   source_missing: "border-red-200 bg-red-50 text-red-700",
+  legacy_gitlab_record: "border-violet-200 bg-violet-50 text-violet-700",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -84,13 +86,17 @@ export function SyncReviewDialog({
     selected: selectedIds.size,
     newItems: items.filter((item) => item.changeType === "new_automation").length,
     changed: items.filter((item) => item.changeType === "metadata_changed" || item.changeType === "route_changed").length,
-    warnings: items.filter((item) => item.changeType === "source_data_incomplete" || item.changeType === "source_missing").length,
+    warnings: items.filter((item) => item.changeType === "source_data_incomplete" || item.changeType === "source_missing" || item.changeType === "legacy_gitlab_record").length,
   }), [items, selectedIds.size]);
 
   const filteredItems = useMemo(() => {
     if (activeFilter === "new") return items.filter((item) => item.changeType === "new_automation");
     if (activeFilter === "changed") return items.filter((item) => item.changeType === "metadata_changed" || item.changeType === "route_changed");
-    if (activeFilter === "warnings") return items.filter((item) => item.changeType === "source_data_incomplete" || item.changeType === "source_missing");
+    if (activeFilter === "warnings") return items.filter((item) =>
+      item.changeType === "source_data_incomplete" ||
+      item.changeType === "source_missing" ||
+      item.changeType === "legacy_gitlab_record",
+    );
     return items;
   }, [activeFilter, items]);
 
@@ -202,7 +208,7 @@ export function SyncReviewDialog({
                   <div className="min-w-0 space-y-2">
                     <p className="text-sm leading-5 text-foreground">{item.summary}</p>
                     {diffRows.length > 0 && <DiffTable rows={diffRows} />}
-                    {item.changeType === "source_missing" || item.changeType === "source_data_incomplete" ? (
+                    {item.changeType === "source_missing" || item.changeType === "source_data_incomplete" || item.changeType === "legacy_gitlab_record" ? (
                       <p className="inline-flex items-center gap-1 text-xs font-medium text-amber-700">
                         <AlertTriangle className="h-3 w-3" />
                         Bronwaarschuwing

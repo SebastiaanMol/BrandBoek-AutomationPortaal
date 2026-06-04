@@ -70,13 +70,14 @@ describe("buildFlowRuntimeChain", () => {
     expect(steps.map((step) => step.type)).toEqual([
       "signal",
       "hubspot_workflow",
-      "gitlab_backend_block",
+      "gitlab_worker",
       "return_to_hubspot",
       "state_write",
       "emitted_signal",
       "downstream",
     ]);
     expect(steps[0].title).toBe("BTW 2 maanden geboekt");
+    expect(steps[2].title).toBe("Volgend BTW-kwartaal bijwerken");
     expect(steps[2].workers).toHaveLength(1);
     expect(steps[2].workers?.[0]?.title).toBe("Volgend BTW-kwartaal bijwerken");
     expect(steps[3]).toMatchObject({
@@ -144,7 +145,7 @@ describe("buildFlowRuntimeChain", () => {
     expect(steps[2].evidence).toContain("Webhookactie vanuit Zapier automation");
   });
 
-  it("turns rich Zapier process details into numbered journey steps before the backend block", () => {
+  it("turns rich Zapier process details into numbered journey steps before the backend automation", () => {
     const zapier = makeAuto({
       id: "zapier",
       naam: "Trustoo Leads - Rotterdam",
@@ -217,7 +218,7 @@ describe("buildFlowRuntimeChain", () => {
       "signal",
       "zapier_step",
       "zapier_step",
-      "gitlab_backend_block",
+      "gitlab_worker",
       "state_write",
       "downstream",
     ]);
@@ -317,9 +318,9 @@ describe("buildFlowRuntimeChain", () => {
       title: "Zapier trigger: nieuwe lead vanuit Trustoo",
     });
     expect(steps.findIndex((step) => step.type === "zapier_step")).toBeLessThan(
-      steps.findIndex((step) => step.type === "gitlab_backend_block"),
+      steps.findIndex((step) => step.type === "gitlab_worker"),
     );
-    expect(steps.find((step) => step.type === "gitlab_backend_block")?.transitionFromPrevious?.description).toContain(
+    expect(steps.find((step) => step.type === "gitlab_worker")?.transitionFromPrevious?.description).toContain(
       "Webhook-match",
     );
   });
@@ -350,7 +351,7 @@ describe("buildFlowRuntimeChain", () => {
     expect(steps[0].description).toContain("direct aangeroepen");
     expect(steps[0].description).not.toContain("HubSpot workflow");
     expect(steps[1]).toMatchObject({
-      type: "gitlab_backend_block",
+      type: "gitlab_worker",
       title: "WeFact debiteur bijwerken",
     });
     expect(steps[1].description).not.toContain("De vorige automation");
@@ -386,7 +387,7 @@ describe("buildFlowRuntimeChain", () => {
 
     expect(steps.map((step) => step.type)).toEqual([
       "signal",
-      "gitlab_backend_block",
+      "gitlab_worker",
       "state_write",
       "downstream",
     ]);
@@ -400,7 +401,7 @@ describe("buildFlowRuntimeChain", () => {
     expect(steps.some((step) => step.type === "emitted_signal")).toBe(false);
   });
 
-  it("groups consecutive GitLab automations inside one backend block", () => {
+  it("keeps consecutive GitLab automations as separate automation nodes", () => {
     const gitlabA = makeAuto({
       id: "gl-a",
       naam: "First backend step",
@@ -428,12 +429,15 @@ describe("buildFlowRuntimeChain", () => {
 
     expect(steps.map((step) => step.type)).toEqual([
       "signal",
-      "gitlab_backend_block",
+      "gitlab_worker",
+      "gitlab_worker",
       "state_write",
       "downstream",
     ]);
-    expect(steps[1].title).toBe("2 gekoppelde GitLab automations");
-    expect(steps[1].workers?.map((worker) => worker.automationId)).toEqual(["gl-a", "gl-b"]);
+    expect(steps[1]).toMatchObject({ type: "gitlab_worker", title: "First backend step", automationId: "gl-a" });
+    expect(steps[2]).toMatchObject({ type: "gitlab_worker", title: "Second backend step", automationId: "gl-b" });
+    expect(steps[1].workers?.map((worker) => worker.automationId)).toEqual(["gl-a"]);
+    expect(steps[2].workers?.map((worker) => worker.automationId)).toEqual(["gl-b"]);
   });
 
   it("projects rich backend traces into process journey GitLab workers", () => {
@@ -483,7 +487,7 @@ describe("buildFlowRuntimeChain", () => {
       ]),
     );
 
-    const worker = steps.find((step) => step.type === "gitlab_backend_block")?.workers?.[0];
+    const worker = steps.find((step) => step.type === "gitlab_worker")?.workers?.[0];
 
     expect(worker?.backendTrace?.summary).toContain("Reset betaalt niet");
     expect(worker?.miniSteps.map((step) => step.title)).toContain("reset all from betaalt niet neemt codebeslissingen");
@@ -608,7 +612,7 @@ describe("buildFlowRuntimeChain", () => {
       "state_write",
     ]);
     expect(steps.filter((step) => isFlowRuntimeStepSelectedForAutomation(step, "gl")).map((step) => step.type)).toEqual([
-      "gitlab_backend_block",
+      "gitlab_worker",
       "return_to_hubspot",
     ]);
   });
@@ -648,7 +652,7 @@ describe("buildFlowRuntimeChain", () => {
       "signal",
       "hubspot_workflow",
       "hubspot_branching",
-      "gitlab_backend_block",
+      "gitlab_worker",
       "state_write",
       "downstream",
     ]);

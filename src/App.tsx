@@ -21,6 +21,8 @@ import Brandy from "./pages/Brandy";
 import Flows from "./pages/Flows";
 import FlowDetail from "./pages/FlowDetail";
 import FlowSuggestionDetail from "./pages/FlowSuggestionDetail";
+import ProcessJourneyReview from "./pages/ProcessJourneyReview";
+import GitLabEndpointCheck from "./pages/GitLabEndpointCheck";
 import Pipelines from "./pages/Pipelines";
 import PipelineDetail from "./pages/PipelineDetail";
 import RuntimeExplorer from "./pages/RuntimeExplorer";
@@ -50,6 +52,7 @@ function ProtectedRoutes() {
         <Route path="/automations/:id" element={<AutomationDetailPage />} />
         <Route path="/bewerk/:id" element={<BewerkAutomatisering />} />
         <Route path="/analyse" element={<Analyse />} />
+        <Route path="/gitlab-endpoint-check" element={<GitLabEndpointCheck />} />
         <Route path="/instellingen" element={<Instellingen />} />
         <Route path="/processen" element={<Processen />} />
         <Route path="/imports" element={<Imports />} />
@@ -57,6 +60,7 @@ function ProtectedRoutes() {
         <Route path="/owners" element={<Owners />} />
         <Route path="/brandy" element={<Brandy />} />
         <Route path="/flows" element={<Flows />} />
+        <Route path="/flows/review" element={<ProcessJourneyReview />} />
         <Route path="/flows/suggesties/:id" element={<FlowSuggestionDetail />} />
         <Route path="/flows/:id" element={<FlowDetail />} />
         <Route path="/pipelines" element={<Pipelines />} />

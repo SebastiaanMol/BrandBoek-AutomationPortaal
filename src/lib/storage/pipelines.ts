@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { Pipeline, PipelineStage } from "../types";
 import { invokeEdgeFunction } from "./edgeFunctions";
 import { toFriendlyDbError } from "./errors";
@@ -6,7 +7,7 @@ import { toFriendlyDbError } from "./errors";
 interface PipelineRow {
   pipeline_id: string;
   naam: string;
-  stages: PipelineStage[] | null;
+  stages: Json | null;
   synced_at: string;
   updated_at: string | null;
   beschrijving: string | null;
@@ -29,13 +30,21 @@ function mapPipelineRow(row: PipelineRow): Pipeline {
   return {
     pipelineId: row.pipeline_id,
     naam: row.naam,
-    stages: row.stages ?? [],
+    stages: readPipelineStages(row.stages),
     syncedAt: row.synced_at,
     updatedAt: row.updated_at ?? row.synced_at,
     beschrijving: row.beschrijving ?? null,
     isActive: row.is_active,
     source: row.source ?? "hubspot",
   };
+}
+
+function readPipelineStages(value: Json | null): PipelineStage[] {
+  return Array.isArray(value) ? (value as unknown as PipelineStage[]) : [];
+}
+
+function writePipelineStages(stages: PipelineStage[]): Json {
+  return stages as unknown as Json;
 }
 
 export function buildCustomPipelineStages(stageLabels: string[]): PipelineStage[] {
@@ -60,7 +69,7 @@ export async function fetchPipelines(): Promise<Pipeline[]> {
     .select("*")
     .order("naam", { ascending: true });
   if (error) throw error;
-  return ((data as PipelineRow[]) ?? []).map(mapPipelineRow);
+  return ((data as unknown as PipelineRow[]) ?? []).map(mapPipelineRow);
 }
 
 export async function setPipelineActive(pipelineId: string, isActive: boolean): Promise<void> {
@@ -86,7 +95,7 @@ export async function createCustomPipeline(input: CustomPipelineInput): Promise<
     .insert({
       pipeline_id: newId("custom"),
       naam: input.naam.trim(),
-      stages: buildCustomPipelineStages(input.stages),
+      stages: writePipelineStages(buildCustomPipelineStages(input.stages)),
       synced_at: now,
       updated_at: now,
       beschrijving: input.beschrijving?.trim() || null,
@@ -96,7 +105,7 @@ export async function createCustomPipeline(input: CustomPipelineInput): Promise<
     .select("*")
     .single();
   if (error) throw toFriendlyDbError(error);
-  return mapPipelineRow(data as PipelineRow);
+  return mapPipelineRow(data as unknown as PipelineRow);
 }
 
 export async function updateCustomPipeline(
@@ -106,7 +115,7 @@ export async function updateCustomPipeline(
     .from("pipelines")
     .update({
       naam: input.naam.trim(),
-      stages: buildCustomPipelineStages(input.stages),
+      stages: writePipelineStages(buildCustomPipelineStages(input.stages)),
       beschrijving: input.beschrijving?.trim() || null,
       is_active: input.isActive ?? true,
       updated_at: new Date().toISOString(),

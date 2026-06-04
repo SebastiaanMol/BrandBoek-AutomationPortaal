@@ -12,6 +12,7 @@ import {
   isLegacyGitLabFileAutomation,
   type ProcessJourneyCopyContext,
 } from "./processJourneyCopy";
+import { getExactWebhookProof } from "./webhookProof";
 
 export type FlowRuntimeStepType =
   | "signal"
@@ -162,7 +163,7 @@ export function getFlowRuntimeTransitionLabel(
 export function expandFlowAutomationIds(
   automationIds: string[],
   links: RuntimeChainLink[] = [],
-  maxNodes = 30,
+  maxNodes = Number.MAX_SAFE_INTEGER,
 ): string[] {
   const included = new Set(automationIds);
   let changed = true;
@@ -224,97 +225,82 @@ export function buildFlowRuntimeChain(
     const funnel = buildAutomationFunnel(automation);
 
     if (isGitLab) {
-      const gitlabAutomations: Automatisering[] = [];
-      let cursor = index;
-
-      while (cursor < automations.length) {
-        const candidate = automations[cursor];
-        const candidateIsGitLab = candidate.source === "gitlab" || Boolean(candidate.gitlabFilePath);
-        if (!candidateIsGitLab) break;
-        gitlabAutomations.push(candidate);
-        cursor += 1;
-      }
-
-      const workers = gitlabAutomations.map(buildRuntimeWorker);
-      const lastGitLabAutomation = gitlabAutomations.at(-1) ?? automation;
-      const lastGitLabFunnel = buildAutomationFunnel(lastGitLabAutomation);
-      const previousHubSpot = automations[index - 1];
+      const previousAutomation = automations[index - 1];
+      const nextAutomation = automations[index + 1];
+      const workers = [buildRuntimeWorker(automation)];
 
       steps.push({
-        id: `gitlab-backend-block-${gitlabAutomations.map((item) => item.id).join("-")}`,
-        type: "gitlab_backend_block",
-        label: "GitLab backendblok",
-        title: gitlabAutomations.length === 1
-          ? displayAutomationName(gitlabAutomations[0])
-          : `${gitlabAutomations.length} gekoppelde GitLab automations`,
-        description: gitlabAutomations.length === 1
-          ? buildSingleGitLabBlockDescription(gitlabAutomations[0], previousHubSpot)
-          : buildMultiGitLabBlockDescription(gitlabAutomations, previousHubSpot),
-        evidence: gitlabAutomations.length === 1
-          ? buildGitLabBlockEvidence(gitlabAutomations[0], previousHubSpot)
-          : buildGitLabBlockEvidence(lastGitLabAutomation, previousHubSpot),
+        id: `gitlab-worker-${automation.id}`,
+        type: "gitlab_worker",
+        label: "GitLab automation",
+        title: displayAutomationName(automation),
+        description: buildSingleGitLabBlockDescription(automation, previousAutomation),
+        evidence: buildGitLabBlockEvidence(automation, previousAutomation),
         transitionFromPrevious: buildBackendTransitionFromPrevious(
-          previousHubSpot,
-          gitlabAutomations[0],
+          previousAutomation,
+          automation,
         ),
-        automationId: gitlabAutomations[0]?.id,
+        automationId: automation.id,
         workers,
       });
 
+      if (nextAutomation) {
+        continue;
+      }
+
       const stateWrite = inferStateWrite(
-        lastGitLabAutomation,
-        automations[index - 1],
-        lastGitLabFunnel?.hubspotWrites ?? [],
+        automation,
+        previousAutomation,
+        funnel?.hubspotWrites ?? [],
       );
-      const hubspotWrites = lastGitLabFunnel?.hubspotWrites ?? [];
+      const hubspotWrites = funnel?.hubspotWrites ?? [];
       const stateWriteEvidence = hubspotWrites.length
-        ? lastGitLabFunnel.hubspotWrites.join(" ")
+        ? hubspotWrites.join(" ")
         : "Afgeleid uit de GitLab automation en omliggende startautomation.";
 
       if (hubspotWrites.length > 0) {
         steps.push({
-          id: `return-to-hubspot-${lastGitLabAutomation.id}`,
+          id: `return-to-hubspot-${automation.id}`,
           type: "return_to_hubspot",
           label: "Resultaat terug naar HubSpot",
           title: buildReturnToHubSpotTitle(stateWrite),
           description: buildReturnToHubSpotDescription(stateWrite),
           evidence: stateWriteEvidence,
-          automationId: lastGitLabAutomation.id,
+          automationId: automation.id,
         });
 
         steps.push({
-          id: `state-write-${lastGitLabAutomation.id}`,
+          id: `state-write-${automation.id}`,
           type: "state_write",
           label: "Eindpunt in HubSpot",
           title: `HubSpot registreert de uitkomst: ${stateWrite}`,
           description: buildStateWriteDescription(stateWrite),
           evidence: stateWriteEvidence,
-          automationId: previousHubSpot?.id,
+          automationId: previousAutomation?.source === "hubspot" ? previousAutomation.id : automation.id,
         });
 
         steps.push({
-          id: `emitted-signal-${lastGitLabAutomation.id}`,
+          id: `emitted-signal-${automation.id}`,
           type: "emitted_signal",
           label: "Uitgaand HubSpot-signaal",
           title: inferEmittedSignal(stateWrite),
           description: "Dit is de HubSpot-uitkomst die deze procesreis achterlaat. Een volgende procesreis wordt pas gekoppeld als deze exacte property/waarde matcht met de starttrigger van een andere HubSpot workflow.",
           evidence: "Afgeleid uit de HubSpot-update.",
-          automationId: lastGitLabAutomation.id,
+          automationId: automation.id,
         });
       } else {
-        const terminalOutcome = inferTerminalOutcome(lastGitLabAutomation);
+        const terminalOutcome = inferTerminalOutcome(automation);
         steps.push({
-          id: `terminal-outcome-${lastGitLabAutomation.id}`,
+          id: `terminal-outcome-${automation.id}`,
           type: "state_write",
           label: "Einduitkomst",
           title: terminalOutcome.title,
           description: terminalOutcome.description,
           evidence: terminalOutcome.evidence,
-          automationId: lastGitLabAutomation.id,
+          automationId: automation.id,
         });
       }
 
-      index = cursor - 1;
       continue;
     }
 
@@ -379,8 +365,8 @@ function orderAutomationsForRuntimeJourney(automations: Automatisering[]): Autom
 
   for (const source of automations) {
     for (const target of automations) {
-      if (source.id === target.id || !isGitLab(target)) continue;
-      const handoff = getExactWebhookAction(source, target);
+      if (source.id === target.id) continue;
+      const handoff = getExactWebhookProof(source, target);
       if (!handoff) continue;
       outgoing.get(source.id)?.push(target.id);
       indegree.set(target.id, (indegree.get(target.id) ?? 0) + 1);
@@ -836,15 +822,6 @@ function buildSingleGitLabBlockDescription(automation: Automatisering, previousA
   ].filter(Boolean).join(" ");
 }
 
-function buildMultiGitLabBlockDescription(automations: Automatisering[], previousAutomation?: Automatisering): string {
-  const previousLabel = previousAutomation ? sourceSystemLabel(previousAutomation) : "De vorige automation";
-  return [
-    previousAutomation ? `${previousLabel} "${previousAutomation.naam}" start dit backendblok.` : "",
-    `Daarna werken ${automations.length} GitLab automations samen aan dezelfde backendverwerking.`,
-    "Technische endpoint- en handlerdetails staan onder Logica.",
-  ].filter(Boolean).join(" ");
-}
-
 function buildGitLabBlockEvidence(automation: Automatisering, previousAutomation?: Automatisering): string {
   const webhook = previousAutomation ? getPrimaryWebhookAction(previousAutomation, automation) : undefined;
   const endpoint = getGitLabEndpointLabel(automation, webhook?.webhookPath ?? webhook?.webhookUrl, webhook?.webhookMethod);
@@ -888,26 +865,6 @@ function getPrimaryWebhookAction(automation: Automatisering, target?: Automatise
     const path = action.webhookPath ?? action.webhookUrl ?? "";
     return path.includes(targetEndpoint) || targetEndpoint.includes(path);
   }) ?? candidates[0];
-}
-
-function getExactWebhookAction(automation: Automatisering, target: Automatisering) {
-  const webhooks = (automation.hubspotWorkflow?.actions ?? []).filter((action) => action.webhookUrl || action.webhookPath);
-  const fallbackWebhooks = (automation.webhookPaths ?? []).map((path, index) => ({
-    index: index + 1,
-    type: "WEBHOOK",
-    label: `Webhook naar ${path}`,
-    webhookMethod: "POST",
-    webhookPath: path,
-    webhookUrl: path,
-  }));
-  const candidates = webhooks.length > 0 ? webhooks : fallbackWebhooks;
-  const targetEndpoint = target.gitlabEndpoint?.endpoint ?? target.endpoints?.[0] ?? target.externalId?.split("::").at(1);
-  if (!targetEndpoint) return undefined;
-
-  return candidates.find((action) => {
-    const path = action.webhookPath ?? action.webhookUrl ?? "";
-    return Boolean(path) && (path.includes(targetEndpoint) || targetEndpoint.includes(path));
-  });
 }
 
 function getSimpleTriggerSentence(

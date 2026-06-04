@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 
 export interface SavedProcessState {
   steps: unknown[];
@@ -35,12 +36,12 @@ export async function saveProcessState(pipelineId: string, state: SavedProcessSt
     .upsert(
       {
         id: pipelineId,
-        steps: state.steps,
-        connections: state.connections,
-        auto_links: state.autoLinks,
-        parked_steps: state.parkedSteps,
-        active_lanes: state.activeLanes ?? null,
-        custom_lanes: state.customLanes ?? null,
+        steps: state.steps as unknown as Json,
+        connections: state.connections as unknown as Json,
+        auto_links: state.autoLinks as unknown as Json,
+        parked_steps: state.parkedSteps as unknown as Json,
+        active_lanes: (state.activeLanes ?? null) as unknown as Json,
+        custom_lanes: (state.customLanes ?? null) as unknown as Json,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" }

@@ -186,9 +186,9 @@ export function SourceQualityMatrixTab({ automations }: { automations: Automatis
               Geen schone 1-op-1 webhook/endpoint matches gevonden.
             </div>
           ) : (
-            presentation.matches.map((match) => (
+            presentation.matches.map((match, index) => (
               <article
-                key={match.id}
+                key={`${match.id}-${index}`}
                 className="grid gap-3 rounded-xl border border-green-200 bg-green-50/40 p-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
               >
                 <div className="min-w-0">
@@ -214,9 +214,9 @@ export function SourceQualityMatrixTab({ automations }: { automations: Automatis
               </article>
             ))
           )}
-          {presentation.ambiguousMatches.map((match) => (
+          {presentation.ambiguousMatches.map((match, index) => (
             <article
-              key={match.id}
+              key={`${match.id}-${index}`}
               className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
             >
               <div className="min-w-0">
@@ -233,8 +233,11 @@ export function SourceQualityMatrixTab({ automations }: { automations: Automatis
                 </span>
               </div>
               <div className="min-w-0 space-y-2">
-                {match.targetOptions.map((option) => (
-                  <div key={option.targetAutomationId} className="rounded-lg bg-white px-3 py-2">
+                {match.targetOptions.map((option, optionIndex) => (
+                  <div
+                    key={`${option.targetAutomationId}-${option.targetPath}-${optionIndex}`}
+                    className="rounded-lg bg-white px-3 py-2"
+                  >
                     <Badge variant="outline">{option.targetLabel}</Badge>
                     <p className="mt-1 font-semibold text-foreground">{option.targetAutomationName}</p>
                     <code className="mt-1 block truncate text-xs text-muted-foreground">
@@ -327,9 +330,9 @@ function UnmatchedRoutes({
             Geen open routes.
           </p>
         ) : (
-          routes.map((route) => (
+          routes.map((route, index) => (
             <div
-              key={`${route.automationId}-${route.normalizedPath}`}
+              key={`${route.automationId}-${route.normalizedPath}-${index}`}
               className="rounded-lg border border-border px-3 py-2"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">

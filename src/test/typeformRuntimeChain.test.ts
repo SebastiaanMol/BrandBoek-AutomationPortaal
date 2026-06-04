@@ -26,7 +26,7 @@ function makeAuto(overrides: Partial<Automatisering>): Automatisering {
 }
 
 describe("Typeform runtime chain", () => {
-  it("shows Typeform form submission steps before the backend block without technical copy", () => {
+  it("shows Typeform form submission steps before the backend automation without technical copy", () => {
     const typeform = makeAuto({
       id: "typeform",
       naam: "Onboarding formulier",
@@ -109,7 +109,7 @@ describe("Typeform runtime chain", () => {
       "signal",
       "typeform_step",
       "typeform_step",
-      "gitlab_backend_block",
+      "gitlab_worker",
       "state_write",
       "downstream",
     ]);

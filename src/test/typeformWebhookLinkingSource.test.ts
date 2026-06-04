@@ -16,8 +16,9 @@ describe("Typeform webhook link detection", () => {
     expect(source).toContain("endpointMatches(webhookPath, endpoint)");
     expect(source).toContain("return normalizedWebhook === normalizedEndpoint;");
     expect(source).not.toContain("normalizedWebhook.endsWith(normalizedEndpoint)");
-    expect(source).toContain("source.webhook_paths");
-    expect(source).toContain("target.endpoints");
+    expect(source).toContain("collectOutgoingRoutes");
+    expect(source).toContain("selectPreferredIncomingRoutes");
+    expect(source).toContain("typeform.webhooks");
   });
 
   it("does not save AI or backend suggestions as process journey proof", () => {

@@ -21,6 +21,8 @@ describe("Zapier webhook link detection", () => {
     expect(source).toContain("normalizeEndpointPath");
     expect(source).toContain("endpointMatches(webhookPath, endpoint)");
     expect(source).toContain("return normalizedWebhook === normalizedEndpoint;");
+    expect(source).toContain("collectOutgoingRoutes");
+    expect(source).toContain("selectPreferredIncomingRoutes");
     expect(source).not.toContain("normalizedWebhook.endsWith(normalizedEndpoint)");
   });
 });

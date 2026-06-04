@@ -35,6 +35,18 @@ interface ReviewerOverridesShape {
   cleanup_delete_candidate_at?: string | null;
 }
 
+type AutomationWithLegacyImprovementField = Automatisering & {
+  verbeterideeen?: string;
+};
+
+function readVerbeterideeen(item: AutomationWithLegacyImprovementField): string {
+  return item.verbeterideeën ?? item.verbeterideeen ?? "";
+}
+
+function readJsonArray<T>(value: unknown): T[] | undefined {
+  return Array.isArray(value) ? (value as T[]) : undefined;
+}
+
 export async function fetchAutomatiseringen(): Promise<Automatisering[]> {
   return fetchAutomatiseringenBase(false);
 }
@@ -110,7 +122,7 @@ async function fetchAutomatiseringenBase(includeLegacyGitlabFiles: boolean): Pro
     afhankelijkheden: r.afhankelijkheden,
     owner: r.owner,
     status: r.status as Status,
-    verbeterideeen: r.verbeterideeen,
+    verbeterideeën: r.verbeterideeen,
     mermaidDiagram: r.mermaid_diagram,
     koppelingen: kopMap[r.id] || [],
     fasen: (r.fasen || []) as KlantFase[],
@@ -125,7 +137,7 @@ async function fetchAutomatiseringenBase(includeLegacyGitlabFiles: boolean): Pro
     hubspotRunCount365d: r.hubspot_run_count_365d ?? undefined,
     hubspotWorkflow: (r.import_proposal as ImportProposalShape | null)?.hubspot_workflow ?? undefined,
     webhookPaths: (r.import_proposal as ImportProposalShape | null)?.webhookPaths ?? undefined,
-    branches: r.branches ?? undefined,
+    branches: readJsonArray(r.branches),
     beschrijvingInSimpeleTaal: (r.import_proposal as ImportProposalShape | null)?.beschrijving_in_simpele_taal ?? undefined,
     gitlabFilePath: r.gitlab_file_path ?? undefined,
     gitlabEndpoint: readGitLabEndpoint(r.import_proposal as ImportProposalShape | null),
@@ -172,7 +184,7 @@ export async function insertAutomatisering(item: Automatisering): Promise<void> 
     afhankelijkheden: item.afhankelijkheden,
     owner: item.owner,
     status: item.status,
-    verbeterideeen: item.verbeterideeen,
+    verbeterideeen: readVerbeterideeen(item),
     mermaid_diagram: item.mermaidDiagram,
     fasen: item.fasen,
   });
@@ -209,7 +221,7 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
       afhankelijkheden: item.afhankelijkheden,
       owner: item.owner,
       status: item.status,
-      verbeterideeen: item.verbeterideeen,
+      verbeterideeen: readVerbeterideeen(item),
       mermaid_diagram: item.mermaidDiagram,
       fasen: item.fasen,
     }).eq("id", item.id),
@@ -240,7 +252,7 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
     afhankelijkheden: item.afhankelijkheden,
     owner: item.owner,
     status: item.status,
-    verbeterideeen: item.verbeterideeen,
+    verbeterideeen: readVerbeterideeen(item),
     mermaid_diagram: item.mermaidDiagram,
     fasen: item.fasen,
   });

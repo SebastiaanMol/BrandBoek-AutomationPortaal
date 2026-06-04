@@ -1,0 +1,522 @@
+# Webhook/endpoint analyse bronautomations
+
+Gegenereerd: 2026-05-28T13:53:34.064Z
+Scope: approved/source automations uit `automatiseringen` voor HubSpot, Zapier, GitLab en Typeform.
+Definitie: HubSpot/Zapier/Typeform hebben een webhook/handoff path; GitLab heeft een receiver endpoint path. Typeform telt alleen actieve webhooks met path.
+
+## Samenvatting
+| Bron | Totaal | Met webhook/endpoint | Zonder | Dekking |
+|---|---:|---:|---:|---:|
+| hubspot | 287 | 23 | 264 | 8% |
+| zapier | 62 | 6 | 56 | 10% |
+| gitlab | 90 | 59 | 31 | 66% |
+| typeform | 37 | 14 | 23 | 38% |
+
+## Waarom ontbreekt het?
+### hubspot
+- 181x geen webhook-action in actions
+- 82x actions ontbreken
+- 1x workflowdata ontbreekt
+
+### zapier
+- 56x geen webhook-handoff in Zapier stappen
+
+### gitlab
+- 31x oude GitLab bestandsimport zonder endpoint-record
+
+### typeform
+- 23x geen webhooks opgeslagen
+
+## Ontbrekende automations per bron
+### hubspot (264)
+- AUTO-079 ? Whatsapp ? geen webhook-action in actions
+- AUTO-081 ? Afspraak gemist 2 ? geen webhook-action in actions
+- AUTO-085 ? Copy Machtiging contact property naar deal ? actions ontbreken
+- AUTO-086 ? Stap 1.1: als contact name & contact owner bekend wordt, dan aanpassen in property deal - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-087 ? contact name naar ticket name voor toggl project ? geen webhook-action in actions
+- AUTO-088 ? Contact Owner Change ? geen webhook-action in actions
+- AUTO-089 ? Stap 1.1: als contact mail/taal bekend wordt, dan aanpassen in property deal - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-090 ? [TJILP] Nieuw contact vanuit TJILP ? geen webhook-action in actions
+- AUTO-091 ? Contact Name Change ? geen webhook-action in actions
+- AUTO-092 ? Associate Deal with Contact ? geen webhook-action in actions
+- AUTO-093 ? [Offerte.nl-sheet] Nieuw contact vanuit offerte.nl-sheet ? geen webhook-action in actions
+- AUTO-094 ? [Via-via] Nieuw contact vanuit Via-via sheet ? geen webhook-action in actions
+- AUTO-095 ? Jaarlijkse klanten nieuwsbrief november ? geen webhook-action in actions
+- AUTO-096 ? Jaarlijkse klanten nieuwsbrief februari  ? geen webhook-action in actions
+- AUTO-097 ? Jaarlijkse klanten nieuwsbrief mei ? geen webhook-action in actions
+- AUTO-098 ? Jaarlijkse klanten nieuwsbrief augustus ? geen webhook-action in actions
+- AUTO-099 ? Meeting send email reminder ? geen webhook-action in actions
+- AUTO-100 ? Op afspraak geweest 2 ? geen webhook-action in actions
+- AUTO-101 ? Reminder follow-up e-mail ? actions ontbreken
+- AUTO-102 ? HUBSPOT TEST Reminder follow-up e-mail (cloned) ? geen webhook-action in actions
+- AUTO-103 ? Taal sync vanuit contact naar sales pipeline ? geen webhook-action in actions
+- AUTO-104 ? Set contacts as marketing contacts ? geen webhook-action in actions
+- AUTO-105 ? Send a follow-up email after form submission ? geen webhook-action in actions
+- AUTO-106 ? Geen Taal in Contact- Melding ? geen webhook-action in actions
+- AUTO-107 ? Copy type bankkoppeling van contact naar deal ? geen webhook-action in actions
+- AUTO-109 ? When a contact clicks a link in the email ? geen webhook-action in actions
+- AUTO-110 ? Copy City from contact to deal- eenmalig ? actions ontbreken
+- AUTO-111 ? Copy City from contact to deal- automatisch  ? actions ontbreken
+- AUTO-112 ? JRen property contact goed zetten aan de hand van company properties ? actions ontbreken
+- AUTO-113 ? Copy Jaarrekeningen property from Contact to deal ? actions ontbreken
+- AUTO-114 ? Copy contact jaarrekeningen property to deals (dynamic) ? actions ontbreken
+- AUTO-115 ? Bedrijfzvoorm van "contact" overnemen naar deal voor IB pipeline 2024 ? actions ontbreken
+- AUTO-116 ? Copy contact typeform property to deal ? actions ontbreken
+- AUTO-117 ? Copy Jaarklant helper to Jaarklant  ? actions ontbreken
+- AUTO-118 ? Delete contacts with no activity ? workflowdata ontbreekt ? findings: source_missing/critical: Deze automation kan niet meer worden teruggevonden bij HubSpot.
+- AUTO-HS-1725881497 ? Nieuwe portaalklant -> dashboard = true ? geen webhook-action in actions
+- AUTO-HS-536358463 ? VPB goed plaatsen gebaseerd op JR status 2023 ? geen webhook-action in actions
+- AUTO-HS-1686680870 ? Check for prio in JR pipeline ? actions ontbreken
+- AUTO-HS-30753375 ? Stap 4.1: OB 2020 Q2 | als deal owner veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-1699565650 ? Correct Stage IB ? actions ontbreken ? findings: webhook_changed/warning: Webhook- of endpointinformatie wijkt af bij HubSpot.
+- AUTO-HS-37241684 ? Stap 2.1: LH september 2020 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-32342610 ? Stap 3.1: OB 2020 Q2 | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-414564944 ? DTM info ontvange ? geen webhook-action in actions
+- AUTO-HS-29477278 ? Pipeline is "Inbox", Ticket status is "Closed" ? actions ontbreken
+- AUTO-HS-1617882177 ? Ser priority to green when JR = done ? actions ontbreken
+- AUTO-HS-32344537 ? Stap 3.1: IB 2019 | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-37237241 ? Stap 2.1: OB 2020 Q3 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-32344285 ? Stap 4.1: IB 2019 | als deal owner veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-32583271 ? Stap 3.1: LH 2020 juli | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-164532906 ? Default-tweede gemiste telefoon gesprek ? geen webhook-action in actions
+- AUTO-HS-37239133 ? Stap 3.1: OB 2020 Q3 | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT  ? geen webhook-action in actions
+- AUTO-HS-32344896 ? Stap 4.1: VPB 2019 | als deal owner veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-32583275 ? Stap 4.1: LH 2020 juli | als deal owner veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-164562318 ? BTW naar contact verzonden ? geen webhook-action in actions
+- AUTO-HS-37239158 ? Stap 4.1: OB 2020 Q3 | als deal owner veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-37240478 ? Stap 4.1: LH 2020 augustus | als deal owner verandert, dan verandert deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-33417497 ? Stap 3.1: LH 2020 juni | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-37240473 ? Stap 3.1: LH 2020 augustus | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-29589094 ? Pipeline is "OB", Ticket status is "Open" ? actions ontbreken
+- AUTO-HS-44587456 ? Pipeline is "Droomstarters", deal stage is "Mail Verstuurd" ? actions ontbreken
+- AUTO-HS-1765676439 ? Overnemen Pakketdetails van deal naar company ? geen webhook-action in actions
+- AUTO-HS-32345153 ? Stap 4.2: VPB 2019 | als company name veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-29474222 ? Change ticket status when an email is sent to a customer ? geen webhook-action in actions
+- AUTO-HS-75421827 ? Forecast Probability Mapping for Pipeline: Inkomstenbelasting - 2020 ? geen webhook-action in actions
+- AUTO-HS-29474000 ? Change ticket status when a customer replies to an email ? geen webhook-action in actions
+- AUTO-HS-190138776 ? Veroudering Pakketklanten ? geen webhook-action in actions
+- AUTO-HS-1606906949 ? Openstaand Factuur ? geen webhook-action in actions
+- AUTO-HS-32583267 ? Stap 2.1: LH juli 2020 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-37241564 ? Stap 4.2: LH 2020 september | als company name verandert, dan verandert deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-1663413383 ? Update Software Portaal Pakket property for associated records ? geen webhook-action in actions
+- AUTO-HS-414562703 ? Deal prio high ? geen webhook-action in actions
+- AUTO-HS-149895041 ? DTM derde gemiste telefoon gesprek ? geen webhook-action in actions
+- AUTO-HS-592552865 ? Put deals in correct BTW stage based on Bankkoppeling Status  (HubSpot 592552865) ? geen webhook-action in actions
+- AUTO-HS-1643663109 ? Copy record ID from dossier to company ex post (for zapier automation) ? actions ontbreken
+- AUTO-HS-164532917 ? Default-DTM eerste bel moment ? geen webhook-action in actions
+- AUTO-HS-430053771 ? set source to organic ? geen webhook-action in actions
+- AUTO-HS-164535421 ? BTW naar contact berekening gereed ? geen webhook-action in actions
+- AUTO-HS-164557869 ? Default-DTM gemiste fysieke afspraak ? geen webhook-action in actions
+- AUTO-HS-164575117 ? Contact naar IB verzonden ? geen webhook-action in actions
+- AUTO-HS-164568338 ? Contact naar JR verzonden ? geen webhook-action in actions
+- AUTO-HS-149404974 ? DTM afspraak ? geen webhook-action in actions
+- AUTO-HS-503843674 ? set source to Offerte.nl eenmalig ? geen webhook-action in actions
+- AUTO-HS-1656807343 ? Update Onboarding Typeform status for accepted deals ? geen webhook-action in actions
+- AUTO-HS-1656807783 ? Enroll contacts when Klippa nodig is No ? geen webhook-action in actions
+- AUTO-HS-149895065 ? DTM eerste gemiste telefoon gesprek ? geen webhook-action in actions
+- AUTO-HS-503852471 ? Won DTM eenmalig ? geen webhook-action in actions
+- AUTO-HS-503922801 ? set source to Offerte.nl eenmalig (cloned) ? geen webhook-action in actions
+- AUTO-HS-164609094 ? JR verzonden naar contact ? geen webhook-action in actions
+- AUTO-HS-571236204 ? Deal prio high BTW (cloned) ? geen webhook-action in actions
+- AUTO-HS-1639801486 ? Move deal based on jaarrekening prioriteit property - Dynamic ? actions ontbreken
+- AUTO-HS-536358465 ? JR goed plaatsen gebaseerd op JR status 2023 ? geen webhook-action in actions
+- AUTO-HS-167430055 ? Line items ontbreken ? geen webhook-action in actions
+- AUTO-HS-4054721 ? Pipeline is "Sales Pipeline", deal stage is "Afspraak maken" ? actions ontbreken
+- AUTO-HS-1606842145 ? Software Jaarcontrole pipeline bewegen  ? geen webhook-action in actions
+- AUTO-HS-1617879166 ? Copy company jaarrekening property to deal (dynamic) ? actions ontbreken
+- AUTO-HS-571239966 ? JR goedplaatsen Klant is Nieuw  ? geen webhook-action in actions
+- AUTO-HS-1699666192 ? Create new deal ? actions ontbreken
+- AUTO-HS-31084098 ? Stap 1.2: als company name bekend wordt, dan dit invullen in property deal - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-591326586 ? Deal prio medium BTW q2 2024 (cloned) ? geen webhook-action in actions
+- AUTO-HS-29476233 ? Pipeline is "Inbox", Ticket status is "In process" ? actions ontbreken
+- AUTO-HS-304074580 ? Pipeline is "BTW - Q3 2022*", deal stage is "Open*" ? actions ontbreken
+- AUTO-HS-595728772 ? Remove company from portal ? actions ontbreken ? findings: webhook_changed/warning: Webhook- of endpointinformatie wijkt af bij HubSpot.
+- AUTO-HS-30512246 ? Pipeline is "Sales Pipeline", deal stage is "Geen gehoor" ? actions ontbreken
+- AUTO-HS-39883418 ? [TJILP] Calendly trigger - terugbel afspraak ? geen webhook-action in actions
+- AUTO-HS-617822874 ? Copy moeilijkheids graad van dossier naar company ? actions ontbreken
+- AUTO-HS-472027153 ? Bankkoppeling - Machtiging uitvragen ? geen webhook-action in actions
+- AUTO-HS-40406761 ? Deal modified (Contact & Company) ? geen webhook-action in actions
+- AUTO-HS-1607136322 ? Moeilijkheids graad copy van company naar deal ? actions ontbreken
+- AUTO-HS-536897883 ? JR naar q1-q4 geboekt 2023 ? geen webhook-action in actions
+- AUTO-HS-1617863520 ? Move JR deal based on Jaarrekening company property - default ? actions ontbreken
+- AUTO-HS-1704778538 ? Verlopen datum kopieren van companies naar deals ? geen webhook-action in actions
+- AUTO-HS-568921450 ? Move to Bankkoppeling actief stage rechtzetten  ? geen webhook-action in actions
+- AUTO-HS-380243561 ? JR status 2022 uit VPB pipeline ? geen webhook-action in actions
+- AUTO-HS-589479738 ? Put deals in correct BTW stage based on Bankkoppeling Status ? geen webhook-action in actions
+- AUTO-HS-536333828 ? IB informatie status 2023 ? geen webhook-action in actions
+- AUTO-HS-1617887756 ? Move JR deal based on Jaarrekening company property - dynamic ? actions ontbreken
+- AUTO-HS-32358747 ? Stap 2.1: VPB 2019 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-1607217739 ? Copy moeilijkheidsgraad from company to deal (cloned) ? actions ontbreken
+- AUTO-HS-1617934593 ? Move VPB deal when JR = done (dynamic) ? geen webhook-action in actions
+- AUTO-HS-1618075059 ? When machtiging deal = actief, change contact property ? actions ontbreken
+- AUTO-HS-536357813 ? JR prio van uit IB 2023 ? geen webhook-action in actions
+- AUTO-HS-1617863497 ? moeijlijkheids graad priority: jaarrekening 2024 - dynamic ? actions ontbreken
+- AUTO-HS-1637748761 ? Copy software/portaal/pakket from company to deal ? actions ontbreken
+- AUTO-HS-1617938093 ? Move VPB deal when JR = done (default)  ? actions ontbreken
+- AUTO-HS-152366623 ? Taal sync vanuit sales pipeline naar contact ? geen webhook-action in actions
+- AUTO-HS-1628298543 ? Put deals from "JR JAARKLANT" to "GEGEVENS GEREED" when Bankkoppeling Status is active ? actions ontbreken
+- AUTO-HS-222194353 ? default no afspraak ? geen webhook-action in actions
+- AUTO-HS-1639801219 ? Move deal based on Jaarrekening Prioriteit - Default ? actions ontbreken
+- AUTO-HS-164566603 ? Contact naar JR berekening gereed ? geen webhook-action in actions
+- AUTO-HS-1631950770 ? Set Deal Property: Activiteit Sales Deal Stage - Dynamic ? actions ontbreken
+- AUTO-HS-1639801463 ? Copy company property "Jaarklant Prioriteit" to associated deals - dynamic ? actions ontbreken
+- AUTO-HS-164554537 ? default- eerste fysieke afspraak ? geen webhook-action in actions
+- AUTO-HS-380303715 ? JR goed plaatsen gebaseerd op JR status ? geen webhook-action in actions
+- AUTO-HS-190144939 ? Default-dtm van maken van afspraak ? geen webhook-action in actions
+- AUTO-HS-430048942 ? set source to ageras ? geen webhook-action in actions
+- AUTO-HS-1692210986 ? Update dealstage in BTW stage op basis van bankkoppeling ? actions ontbreken ? findings: webhook_changed/warning: Webhook- of endpointinformatie wijkt af bij HubSpot.
+- AUTO-HS-1626865560 ? Priority based on Lead Source ? geen webhook-action in actions
+- AUTO-HS-571875714 ? JR Nieuwe klant Prio ? geen webhook-action in actions
+- AUTO-HS-1629092974 ? Put deals from "JR JAARKLANT" to "GEGEVENS GEREED" bankkoppeling status - default ? actions ontbreken
+- AUTO-HS-43599719 ? New Pipeline ? geen webhook-action in actions
+- AUTO-HS-260634530 ? Update deal amount in IB ? geen webhook-action in actions
+- AUTO-HS-1637744759 ? Set 'betaalt niet' company property based on sales pipeline ? actions ontbreken
+- AUTO-HS-414564243 ? Deal prio medium ? geen webhook-action in actions
+- AUTO-HS-1645306120 ? Update deal stage for monthly customers in the pipeline (Jaarrekening 2024) ? actions ontbreken
+- AUTO-HS-1643678644 ? Move EZ with only IB to IB Particulier deal stage  ? actions ontbreken
+- AUTO-HS-1645386516 ? Update deal stage for monthly customers in the pipeline (BTW - Q2 2025) ? actions ontbreken
+- AUTO-HS-1692203165 ? Customer Type changes -> Check Beginner Stage ? actions ontbreken ? findings: webhook_changed/warning: Webhook- of endpointinformatie wijkt af bij HubSpot.
+- AUTO-HS-32574834 ? Stap 4.2: LH 2020 juli | als company name veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-536328727 ? JR status 2023 uit VPB pipeline ? geen webhook-action in actions
+- AUTO-HS-462618522 ?  Nieuwe klant ? geen webhook-action in actions
+- AUTO-HS-32358794 ? Stap 2.1: IB 2019 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-503852551 ? set source to Offerte.nl ? geen webhook-action in actions
+- AUTO-HS-1703559009 ? Create sales note in new sales pipeline ? actions ontbreken
+- AUTO-HS-1656787626 ? Update Onboarding Typeform status for deals in onboarding stages ? actions ontbreken
+- AUTO-HS-1657996625 ? Mark onboarding as not completed when deal in Offerte geaccepteerd start ? geen webhook-action in actions
+- AUTO-HS-1658033308 ? Set onboarding voltooid datum ? geen webhook-action in actions
+- AUTO-HS-1697511609 ? Set company intensiteit based on deal line item list ? actions ontbreken
+- AUTO-HS-508279951 ? set dtm afspraak to dtm mail verstuurd eenmalig ? geen webhook-action in actions
+- AUTO-HS-1663397220 ? Update Moeilijkheidsgraad property on associated records ? geen webhook-action in actions
+- AUTO-HS-563280020 ? Create follow-up sales gesprek notitite ? geen webhook-action in actions
+- AUTO-HS-1631923489 ? Set Deal Property: Activiteit Sales Deal Stage - Default ? actions ontbreken
+- AUTO-HS-145760532 ? Won DTM ? geen webhook-action in actions
+- AUTO-HS-1692173640 ? Deal in Beginner Stage Property ? actions ontbreken
+- AUTO-HS-1696374857 ? Set Jaarklant property ? actions ontbreken
+- AUTO-HS-1697577818 ? Set Software/Portaal/Pakket/CSV based on dealstage ? actions ontbreken
+- AUTO-HS-1617456897 ? When Jaarrekening Company changes changes sync contact ? actions ontbreken
+- AUTO-HS-1696425999 ? Set intensiteit based on line items ? actions ontbreken
+- AUTO-HS-121077652 ? Set Ageras offertebedrag ? geen webhook-action in actions
+- AUTO-HS-28781822 ? Pipeline is "Sales Pipeline", deal stage is "Prospect offerte" ? actions ontbreken
+- AUTO-HS-1702031225 ? Koppeling sales pipeline en klantenbestand ? actions ontbreken
+- AUTO-HS-536333753 ? IB prio gebaseerd op JR 2023 ? geen webhook-action in actions
+- AUTO-HS-1617635417 ? Alle companies zonder JR = JR Niet nodig ? actions ontbreken
+- AUTO-HS-32344539 ? Stap 4.2: IB 2019 | als contact name veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-613877511 ? JR New Deal Priority 2024 ? geen webhook-action in actions
+- AUTO-HS-37239220 ? Stap 4.2: OB 2020 Q3 | als company name veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-548555668 ? Move to Bankkoppeling actief stage ? geen webhook-action in actions
+- AUTO-HS-557728343 ? Geen gehoor 3 - Workflow ? actions ontbreken
+- AUTO-HS-1692220740 ? Put deals from "JR JAARKLANT" to "GEGEVENS GEREED" bankkoppeling status voor 2025 ? actions ontbreken
+- AUTO-HS-536364075 ? JR status 2023 uit BTW Q4 ? geen webhook-action in actions
+- AUTO-HS-1617439913 ? Jaarrekening company property aanpassen aan hand van JR pipeline ? actions ontbreken
+- AUTO-HS-571243639 ? IB prio gebaseerd op JR 2023 En Klant is Nieuw ? geen webhook-action in actions
+- AUTO-HS-169461915 ? Forecast amount naar 0 ? geen webhook-action in actions
+- AUTO-HS-1639820211 ? Copy record ID from dossier to company (for zapier automation) ? actions ontbreken
+- AUTO-HS-565271096 ? Pipeline is "Sales Pipeline met Automation", deal stage is "Onboarding gesprek " ? geen webhook-action in actions
+- AUTO-HS-1617437494 ? Jaarrekening company property aanpassen uit BTW ? actions ontbreken
+- AUTO-HS-399485785 ? IB prio gebaseerd op JR ? geen webhook-action in actions
+- AUTO-HS-1658021291 ? Set duur van onboarding  ? geen webhook-action in actions
+- AUTO-HS-613505187 ? loonadministratie deal maken- gebaseerd op omzettingen ? actions ontbreken
+- AUTO-HS-149342866 ? Fysieke afspraak gemaakt ? geen webhook-action in actions
+- AUTO-HS-164532901 ? Default- DTM eerste gemiste telefoon gesprek ? geen webhook-action in actions
+- AUTO-HS-536358467 ? JR status 2023 uit JR pipeline ? geen webhook-action in actions
+- AUTO-HS-536368564 ? JR status 2023 uit IB pipeline ? geen webhook-action in actions
+- AUTO-HS-164533009 ? Default- DTM mail verstuurd ? geen webhook-action in actions
+- AUTO-HS-326236783 ? q1-q4 geboekt goed plaatsen ? geen webhook-action in actions
+- AUTO-HS-613984418 ? JR 2024 manual trigger ? geen webhook-action in actions
+- AUTO-HS-591326083 ? Deal prio high BTW q2 2024 ? geen webhook-action in actions
+- AUTO-HS-1606841758 ? Jaarcontrole 2024 nieuwe klanten ? actions ontbreken
+- AUTO-HS-1617851917 ? moeijlijkheids graad priority: jaarrekening 2024 - default ? actions ontbreken
+- AUTO-HS-1659863813 ? Update onboarding status to Yes when deal stage changes and sales activity is active ? geen webhook-action in actions
+- AUTO-HS-614271107 ? Bankkoppeling actief -> Gegevens gereed ? actions ontbreken
+- AUTO-HS-616057973 ? bankkoppeling verloopt datum from company to deal ? actions ontbreken
+- AUTO-HS-592800770 ? Copy bankkoppeling status from company to deal ? geen webhook-action in actions
+- AUTO-HS-1644267797 ? Set Company Property based on Geen JR - dynamic ? actions ontbreken
+- AUTO-HS-1804832146 ? OCI - Offerte Geaccepteerd → Google Ads Conversie ? geen webhook-action in actions
+- AUTO-HS-1657984007 ? Keeps track of whether onboarding is completed ? geen webhook-action in actions
+- AUTO-HS-1617938082 ? Copy jaarrekening company property to VPB deal (default) ? actions ontbreken
+- AUTO-HS-1639796334 ? Change contact property Jaarrekening Prio based on IB Deal - Default ? actions ontbreken
+- AUTO-HS-1732407572 ? VIG ontvangen ? geen webhook-action in actions
+- AUTO-HS-1774265347 ? Gegevens voor 1 april aangeleverd -> priority ? geen webhook-action in actions
+- AUTO-HS-29477283 ? Pipeline is "Inbox", Ticket status is "Beantwoord" ? actions ontbreken
+- AUTO-HS-1798721133 ? Copy dossier naam from company to deal ? geen webhook-action in actions
+- AUTO-HS-37240562 ? Stap 2.1: LH augustus 2020 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-38211489 ? Company name change ? geen webhook-action in actions
+- AUTO-HS-29476224 ? Pipeline is "Inbox", Ticket status is "New" ? actions ontbreken
+- AUTO-HS-33439613 ? Stap 2.1: LH juni 2020 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT (cloned) (cloned) ? geen webhook-action in actions
+- AUTO-HS-1793356932 ? Datum klacht instellen ? geen webhook-action in actions
+- AUTO-HS-33439794 ? Stap 4.1: LH 2020 juni | als deal owner veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-37241694 ? Stap 3.1: LH 2020 september | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-326276520 ? JR status Q4 2022 ? geen webhook-action in actions
+- AUTO-HS-31074745 ? Stap 4.2: OB 2020 Q2 | als company name veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-37548510 ? New Deal ? geen webhook-action in actions
+- AUTO-HS-103974764 ? Pipeline is "Belastingdienst - bezwaar & verzoeken", Ticket status is "Gegevens klant opgevraagd / brief schrijven" ? actions ontbreken
+- AUTO-HS-30250544 ? Pipeline is "OB", deal stage is "Open" ? actions ontbreken
+- AUTO-HS-38516796 ? reset ? geen webhook-action in actions
+- AUTO-HS-380302981 ? JR status 2022 uit IB pipeline ? geen webhook-action in actions
+- AUTO-HS-40234057 ? Associate Deal with Company ? geen webhook-action in actions
+- AUTO-HS-149890896 ? DTM tweede gemiste telefoon gesprek ? geen webhook-action in actions
+- AUTO-HS-32345208 ? Stap 3.1: VPB 2019 | verander deal owner in contact owner - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-32573239 ? Stap 2.1: OB 2020 Q2 | deal trigger maakt nieuwe deal aan - ALTIJD AAN ZONDER RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-164533005 ? Default-DTM derde gemiste telefoon gesprek ? geen webhook-action in actions
+- AUTO-HS-157139593 ? Kwaliteits niveau lead (cloned) ? geen webhook-action in actions
+- AUTO-HS-1601815447 ? Software goed zetten in dossier ? geen webhook-action in actions
+- AUTO-HS-1692171427 ? 'BTW 2 maanden geboekt' instellen ? actions ontbreken ? findings: webhook_changed/warning: Webhook- of endpointinformatie wijkt af bij HubSpot.
+- AUTO-HS-33417498 ? Stap 4.2: LH 2020 juni | als company name veranderd, dan veranderd deal naam - ALTIJD AAN MET RE-ENROLMENT (cloned) ? geen webhook-action in actions
+- AUTO-HS-164576879 ? Contact naar VPB verzonden ? geen webhook-action in actions
+- AUTO-HS-303514220 ? Pipeline is "BTW Q4 2022", deal stage is "Open" ? actions ontbreken
+- AUTO-HS-399359796 ? JR status 2022 uit JR pipeline  ? geen webhook-action in actions
+- AUTO-HS-164532896 ? default-Won DTM ? geen webhook-action in actions
+- AUTO-HS-380331543 ? IB informatie status 2022 ? geen webhook-action in actions
+- AUTO-HS-399359805 ? VPB goed plaatsen gebaseerd op JR status ? geen webhook-action in actions
+- AUTO-HS-32865245 ? Pipeline is "Inbox", Ticket status is "Doorgestuurd" ? actions ontbreken
+- AUTO-HS-190168626 ? Termijn pakketklanten ? geen webhook-action in actions
+- AUTO-HS-472004617 ? Bankkoppeling - Stuur reminder ? geen webhook-action in actions
+- AUTO-HS-37240481 ? Stap 4.2: LH 2020 augustus | als company name verandert, dan verandert deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-164531277 ? default- stop datum ? geen webhook-action in actions
+- AUTO-HS-37241562 ? Stap 4.1: LH 2020 september | als deal owner verandert, dan verandert deal naam - ALTIJD AAN MET RE-ENROLMENT ? geen webhook-action in actions
+- AUTO-HS-1622829402 ? Pipeline is "Sales Pipeline met Automation", deal stage is "Offerte opgesteld en verzonden" ? actions ontbreken
+- AUTO-HS-152475193 ? Add Batch of Clockify Clients ? geen webhook-action in actions
+- AUTO-HS-38215757 ? Deal Owner Change ? geen webhook-action in actions
+- AUTO-HS-472175511 ? Add Deals for Bankkoppeling ? geen webhook-action in actions
+- AUTO-HS-39915727 ? [TJILP] Calendly trigger - terugbelafspraak - geen gehoor ? geen webhook-action in actions
+- AUTO-HS-1645386809 ? Update deal stage for monthly customers in the pipeline (BTW - Q1 2025) ? actions ontbreken
+- AUTO-HS-414573424 ? Deal prio low ? geen webhook-action in actions
+- AUTO-HS-1663377454 ? Update records with known Moeilijkheidsgraad property ? geen webhook-action in actions
+- AUTO-HS-380329652 ? JR prio ? geen webhook-action in actions
+- AUTO-HS-142736420 ? Dtm Eerste Bel Moment ? geen webhook-action in actions
+- AUTO-HS-1656791712 ? Update Loonadministratie property for contacts with No Loonadministratie nodig ? actions ontbreken
+- AUTO-HS-145756551 ? Stop Date ? geen webhook-action in actions
+- AUTO-HS-503896884 ? set source to Offerte.nl eenmalig (cloned) 2 ? geen webhook-action in actions
+- AUTO-HS-1639798298 ? Change contact property Jaarrekening Prio based on IB Deal - Dynamic ? actions ontbreken
+- AUTO-HS-521734440 ? Tijdelijk - Q4 - Aanmaken ? geen webhook-action in actions
+- AUTO-HS-536943416 ? JR status Q4 2023 niet af ? geen webhook-action in actions
+- AUTO-HS-122934648 ? Datum eerste contact ? actions ontbreken
+- AUTO-HS-164530279 ? Default -Unieke Klant ? geen webhook-action in actions
+
+### zapier (56)
+- AUTO-147 ? Geen gehoor 1: Telefonische mail ? geen webhook-handoff in Zapier stappen
+- AUTO-148 ? Geen gehoor 2: Telefonische mail ? geen webhook-handoff in Zapier stappen
+- AUTO-149 ? Geen gehoor 3: Telefonische mail ? geen webhook-handoff in Zapier stappen
+- AUTO-150 ? Geen gehoor 4: Telefonische mail ? geen webhook-handoff in Zapier stappen
+- AUTO-151 ? Automatische herinnering videogesprek - Rogier ? geen webhook-handoff in Zapier stappen
+- AUTO-152 ? Deal stage update na 4 dagen: Afwachting -> Chase ? geen webhook-handoff in Zapier stappen
+- AUTO-153 ? Deal stage update na 4 dagen: Chase -> Alert chase! ? geen webhook-handoff in Zapier stappen
+- AUTO-154 ? Incoming Ligo Deals ? geen webhook-handoff in Zapier stappen
+- AUTO-155 ? Alert Chase! mail naar Joost ? geen webhook-handoff in Zapier stappen
+- AUTO-156 ? Opvolging na 14 dagen ? geen webhook-handoff in Zapier stappen
+- AUTO-157 ? Meeting naar draft mail ? geen webhook-handoff in Zapier stappen
+- AUTO-158 ? Typeform: NOOIT DELEN! Vervolg meerdere entiteiten vragenlijst (Hubspot) ? geen webhook-handoff in Zapier stappen
+- AUTO-159 ? Typeform EZ/VOF mailing ? geen webhook-handoff in Zapier stappen
+- AUTO-160 ? Typeform vervolg EZ/VOF mailing ? geen webhook-handoff in Zapier stappen
+- AUTO-161 ? Add deal to hubspot from BB site form ? geen webhook-handoff in Zapier stappen
+- AUTO-163 ? Deal from 'Offerte opgesteld en verzonden' to 'Chase 1' ? geen webhook-handoff in Zapier stappen
+- AUTO-165 ? Automatische herinnering videogesprek - Fleur ? geen webhook-handoff in Zapier stappen
+- AUTO-166 ? Update HubSpot Contact Property for Typeform IB NL Form Responses ? geen webhook-handoff in Zapier stappen
+- AUTO-167 ? Deal from 'No show' to 'No show chase' ? geen webhook-handoff in Zapier stappen
+- AUTO-168 ? Typeform IB NL (Geen Doorlopende Machtiging) is filled out ? geen webhook-handoff in Zapier stappen
+- AUTO-169 ? Typeform IB ENG (Geen Doorlopende Machtiging) is filled out ? geen webhook-handoff in Zapier stappen
+- AUTO-170 ? Typeform IB NL (Doorlopende Machtiging) is filled out ? geen webhook-handoff in Zapier stappen
+- AUTO-171 ? Typeform IB ENG (Doorlopende Machtiging) is filled out ? geen webhook-handoff in Zapier stappen
+- AUTO-172 ? Automatische herinnering videogesprek - Tom ? geen webhook-handoff in Zapier stappen
+- AUTO-173 ? Create Incident in Fibery ? geen webhook-handoff in Zapier stappen
+- AUTO-174 ? Incident sync fibery to hubspot ? geen webhook-handoff in Zapier stappen
+- AUTO-176 ? Typeform Stichting/BV/Holding/Meerdere entiteiten mailing ? geen webhook-handoff in Zapier stappen
+- AUTO-177 ? Send email to BTW/toegewezen ? geen webhook-handoff in Zapier stappen
+- AUTO-178 ? Facebook Leads - Willemijn ? geen webhook-handoff in Zapier stappen
+- AUTO-179 ? Mail Bente als Typeform loonadministratie DGA ENG is ingevuld ? geen webhook-handoff in Zapier stappen
+- AUTO-180 ? Mail Bente als Typeform loonadministratie reguliere werknemers Eng is ingevuld ? geen webhook-handoff in Zapier stappen
+- AUTO-181 ? Mail Bente als Typeform loonadministratie reguliere werknemers is ingevuld ? geen webhook-handoff in Zapier stappen
+- AUTO-182 ? Mail Bente als Typeform loonadministratie DGA is ingevuld ? geen webhook-handoff in Zapier stappen
+- AUTO-183 ? Facebook Leads - Laura ? geen webhook-handoff in Zapier stappen
+- AUTO-184 ? Facebook Leads - Omzetting 2025 ? geen webhook-handoff in Zapier stappen
+- AUTO-185 ? Deal Stage Update na 14 dagen: Loonadministratie ? geen webhook-handoff in Zapier stappen
+- AUTO-186 ? Automatische Mail naar Klant ? geen webhook-handoff in Zapier stappen
+- AUTO-187 ? Leads Typeform BV - Check ? geen webhook-handoff in Zapier stappen
+- AUTO-188 ? Send Conversion to Google Ads ? geen webhook-handoff in Zapier stappen
+- AUTO-189 ? Leads BB Website Typeform ? geen webhook-handoff in Zapier stappen
+- AUTO-190 ? Send email to BTW/toegewezen - Algemeen ? geen webhook-handoff in Zapier stappen
+- AUTO-191 ? Send email to BTW/toegewezen - Pakket/Software ? geen webhook-handoff in Zapier stappen
+- AUTO-192 ? Leads Boekhouder Amsterdam Typeform ? geen webhook-handoff in Zapier stappen
+- AUTO-193 ? Leads Slimme Aftrekposten Typeform ? geen webhook-handoff in Zapier stappen
+- AUTO-194 ? Zapier Zap 328284439 ? geen webhook-handoff in Zapier stappen
+- AUTO-195 ? Leads Contactformulier (Zazu) II Typeform ? geen webhook-handoff in Zapier stappen
+- AUTO-196 ? (Concept Bob) Leads Contactformulier (Zazu) II Typeform ? geen webhook-handoff in Zapier stappen
+- AUTO-197 ? IB ENG (Doorlopende machtiging) 2025 ? geen webhook-handoff in Zapier stappen
+- AUTO-198 ? IB NL (Doorlopende machtiging) 2025 ? geen webhook-handoff in Zapier stappen
+- AUTO-199 ? IB ENG (Geen doorlopende machtiging) 2025 ? geen webhook-handoff in Zapier stappen
+- AUTO-200 ? IB NL (Geen doorlopende machtiging) 2025 ? geen webhook-handoff in Zapier stappen
+- AUTO-201 ? Untitled Zap ? geen webhook-handoff in Zapier stappen
+- AUTO-202 ? Automatische herinnering videogesprek - Wicher ? geen webhook-handoff in Zapier stappen
+- AUTO-203 ? Typeform omzetting mailing ? geen webhook-handoff in Zapier stappen
+- AUTO-204 ? Typeform vervolg omzetting mailing ? geen webhook-handoff in Zapier stappen
+- AUTO-205 ? Untitled Zap (Zapier) ? geen webhook-handoff in Zapier stappen
+
+### gitlab (31)
+- AUTO-046 ? Beheer van Clockify klanten, projecten en taken ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-049 ? HubSpot Deal Zoeker ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-050 ? HubSpot Deal Creatie ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-051 ? HubSpot Deal Builder ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-052 ? BTW Router Bankkoppeling Update ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-053 ? Beheer "Betaalt Niet" Deals ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-054 ? HubSpot Deal Naam Updates ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-055 ? Factuurbeheer en synchronisatie ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-056 ? Bepaal de juiste dealfase ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-057 ? HubSpot BTW Dossier & Deal Update ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-058 ? HubSpot Deal Statusbeheer & VPB Update ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-059 ? Hulpfuncties voor gegevensverwerking ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-060 ? HubSpot Pijplijn & Workflow Hulpprogramma's ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-061 ? VA VPB Kandidaten Analyse ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-062 ? Voorlopige Aanslag IB Beheer ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-063 ? Dealbeheer en -updates ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-064 ? BTW Toewijzing Propagatie ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-065 ? JR Eigenaren Overzicht voor IB Deals ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-066 ? Jaarrekening Deal Update en Prioriteit Synchronisatie ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-067 ? HubSpot BTW Deal Updates vanuit Dossierwijzigingen ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-068 ? IB gereed om te maken statuscontrole ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-069 ? HubSpot API Rate Limiter ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-070 ? HubSpot Pijplijn Deal Migratie Helper ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-071 ? Machtiging Fiscaal Online Actief Status ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-072 ? Type Definities Applicatie ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-073 ? HubSpot Hulpprogramma Functies ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-074 ? Synchronisatie openstaand bedrag ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-075 ? Wefact Klant- en Factuurbeheer ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-077 ? KvK Bedrijfsgegevens Ophalen ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-078 ? Verwerken van Sales Leads ? oude GitLab bestandsimport zonder endpoint-record
+- AUTO-119 ? Typeform Webhook Verwerking en Integratie ? oude GitLab bestandsimport zonder endpoint-record
+
+### typeform (23)
+- AUTO-206 ? Na omzetting - Loonadministratie reguliere werknemers ? geen webhooks opgeslagen
+- AUTO-208 ? Na omzetting - Loonadministratie DGA ? geen webhooks opgeslagen
+- AUTO-213 ? Brand Boekhouders prijzen 2025 ? geen webhooks opgeslagen
+- AUTO-214 ? Boekhouder Amsterdam (developer test) ? geen webhooks opgeslagen
+- AUTO-216 ? Slimme Aftrekposten ? geen webhooks opgeslagen
+- AUTO-221 ? Loonadministratie DGA ENG ? geen webhooks opgeslagen
+- AUTO-222 ? Loonadministratie reguliere werknemers Eng ? geen webhooks opgeslagen
+- AUTO-223 ? Loonadministratie reguliere werknemers ? geen webhooks opgeslagen
+- AUTO-224 ? Loonadministratie DGA ? geen webhooks opgeslagen
+- AUTO-225 ? My new form ? geen webhooks opgeslagen
+- AUTO-226 ? IB NL (Geen Doorlopende Machtiging) Vragenlijst 2024 (geen JR-vragen) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-227 ? IB ENG (Geen Doorlopende Machtiging) Income Tax Inquiry 2024 (no 'annual statement'-questions)) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-228 ? IB NL (Doorlopende Machtiging) Vragenlijst 2024 (geen JR-vragen) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-229 ? IB ENG (Doorlopende Machtiging) Income Tax Inquiry 2024 (no 'annual statement'-questions)) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-234 ? Nieuw klantinformatie uitvragen (bestand Robert) ? geen webhooks opgeslagen
+- AUTO-235 ? Nieuw klantinformatie uitvragen ? geen webhooks opgeslagen
+- AUTO-236 ? IB ENG (Doorlopende Machtiging) Income Tax Inquiry 2023 (no 'annual statement'-questions)) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-237 ? IB NL (Doorlopende Machtiging) Vragenlijst 2023 (geen JR-vragen) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-238 ? IB ENG (Geen Doorlopende Machtiging) Income Tax Inquiry 2023 (no 'annual statement'-questions)) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-239 ? IB NL (Geen Doorlopende Machtiging) Vragenlijst 2023 (geen JR-vragen) - Brand Boekhouders ? geen webhooks opgeslagen
+- AUTO-240 ? My new form (Lbml3yBe) ? geen webhooks opgeslagen
+- AUTO-241 ? My new form (GN7pouhO) ? geen webhooks opgeslagen
+- AUTO-242 ? My new form (C51SASK9) ? geen webhooks opgeslagen
+
+## Automations met webhook/endpoint per bron
+### hubspot (23)
+- AUTO-108 ? Name Change of Contact ? /operations/hubspot/contact/updating_dealname
+- AUTO-HS-1788604573 ? IB Typeform ingevuld -> JR prio bolletje ? /properties/jr_priority_dot_from_ib_typeform
+- AUTO-HS-1732519443 ? VA IB ingediend -> IB deal property aanpassen ? /properties/va_ib/finishe_webhook
+- AUTO-HS-1680634239 ? Update IB kan gemaakt worden property ? /properties/update_ib_kan_gemaakt_worden
+- AUTO-HS-1671688508 ? Revert betaalt niet when deal leaves "Betaalt niet" in sales pipeline ? /operations/hubspot/reset_betaalt_niet
+- AUTO-HS-1706224664 ? Deels geboekt en Q1 tot Q4 geboekt automatisering ? /properties/update_jr_stage_from_btw_geboekt
+- AUTO-HS-1667523927 ? Set betaalt niet ? /operations/hubspot/betaalt_niet
+- AUTO-HS-1799671812 ? Bedrijven zonder bankkoppeling instellen ? /properties/bankkoppeling/sync_bedrijven_zonder_bankkoppeling_webhook
+- AUTO-HS-1790547798 ? JR boekers property invullen vanuit JR pipeline ? /properties/jr/sync_related_ib_jr_owners_same_year
+- AUTO-HS-1783234581 ? Ophalen KvK gegevens ? /kvk/hubspot/sync_company
+- AUTO-HS-1686608443 ? Move JR deals based on priority from IB ? /properties/jr_prio_from_ib
+- AUTO-HS-1790545719 ? JR boekers instellen ? /properties/ib/sync_jr_owners_same_year
+- AUTO-HS-577992302 ? Name Change of Company ? /operations/hubspot/company/updating_dealname
+- AUTO-HS-1732581911 ? VA VPB ingediend -> VPB deal property aanpassen ? /properties/va_vpb/finishe_webhook
+- AUTO-HS-609079138 ? Delete jaarklanten from portal ? /v2/administrations/offboard/hubspot
+- AUTO-HS-1680508287 ? Set VPB priority ? /properties/update_vpb_deals_when_jr_updated
+- AUTO-HS-1704689256 ? Move BTW deal if Monthly deals are all complete ? /operations/hubspot/berekening_compleet
+- AUTO-HS-1798803783 ? Set future deal owners and controleurs for BTW deals ? /properties/btw/finished_webhook
+- AUTO-HS-1732522292 ? VPB ingediend -> VA VPB deal aanpassen ? /properties/vpb/finished_webhook
+- AUTO-HS-1732891157 ? Set Jaar based on Create Date, Customer Service ? /properties/update_year
+- AUTO-HS-1764372826 ? Upsert WeFact client ? /wefact/hubspot/upsert_debtor
+- AUTO-HS-1732519425 ? IB ingediend -> VA IB deal aanpassen ? /properties/ib/finished_webhook
+- AUTO-HS-1749801371 ? Upsert Clockify client ? /clockify/hubspot/upsert_client
+
+### zapier (6)
+- AUTO-144 ? Trustoo Leads - Rotterdam ? /sales/leads/hubspot/trustoo
+- AUTO-145 ? Trustoo Leads - Amsterdam ? /sales/leads/hubspot/trustoo
+- AUTO-146 ? Trustoo Leads - Utrecht ? /sales/leads/hubspot/trustoo
+- AUTO-162 ? Trustoo Leads - Tilburg ? /sales/leads/hubspot/trustoo
+- AUTO-164 ? Put Clients in Portal ? /v2/auth/signup, /v2/auth/login, /v2/administrations/create, /v2/users/update/%7b%7b278948098__user___id%7d%7d, /v2/users/send-invite, /v2/users/update/%7b%7b302857826__user___id%7d%7d
+- AUTO-175 ? Update jaarklant property ? /properties/update_jaarklant_property
+
+### gitlab (59)
+- AUTO-041 ? HubSpot Bankverbindingsstatus Bijwerken ? /portal/hubspot/bank_connection_status
+- AUTO-042 ? Clockify Klant Bijwerken vanuit HubSpot ? /clockify/hubspot/upsert_client
+- AUTO-043 ? KVK Bedrijfssynchronisatie ? /kvk/hubspot/sync_company
+- AUTO-044 ? HubSpot Operations API ? /operations/hubspot/owner, /operations/hubspot/new_pipeline/deal/amount, /operations/hubspot/contact/updating_dealname, /operations/hubspot/company/updating_dealname, /operations/hubspot/dossiers/{contact_id}, /operations/hubspot/deal/delete_vat_deal, /operations/hubspot/workflows/pipeline_usage, /operations/hubspot/active_pipelines, /operations/hubspot/betaalt_niet, /operations/hubspot/reset_betaalt_niet, /operations/get_company_deals, /operations/hubspot/clone_pipeline, /operations/hubspot/create_new_deal, /operations/hubspot/put_active_deals_in_new_deal, /operations/hubspot/btw_dealstage_based_on_bank_connection, /operations/hubspot/berekening_compleet, /operations/hubspot/move_dm_deal_to_geen_ib
+- AUTO-045 ? Typeform Webhook Verwerking ? /typeform/webhook
+- AUTO-047 ? Wefact debiteur upsert vanuit HubSpot ? /wefact/hubspot/upsert_debtor, /wefact/hubspot/test_list
+- AUTO-048 ? Lead- en Dealbeheer voor Sales in HubSpot ? /sales/leads/hubspot/trustoo, /sales/leads/hubspot/offerte.nl, /sales/leads/hubspot/ligo, /sales/leads/hubspot/solvari, /sales/leads/hubspot/calendly, /sales/migrate_deals
+- AUTO-076 ? HubSpot Eigenschappen Automatisering ? /properties/assign_correct_stage, /properties/update_vpb_deals_when_jr_updated, /properties/get_property/{object_type}, /properties/update_ib_kan_gemaakt_worden, /properties/jr_prio_from_ib, /properties/jr_priority_dot_from_ib_typeform, /properties/ib/prereqs_webhook, /properties/ib/machtiging_actief_webhook, /properties/ib/machtiging_actief_contact_webhook, /properties/ib/route_after_typeform_and_machtiging, /properties/ib/finished_webhook, /properties/btw/finished_webhook, /properties/ib/sync_jr_owners_same_year, /properties/va_ib/finished_webhook, /properties/vpb/finished_webhook, /properties/va_vpb/finished_webhook, /properties/jr_prio_if_ib_ready_except_jr, /properties/jr/sync_related_ib_jr_owners_same_year, /properties/check_correct_stage, /properties/btw/update_next_quarter_prev2m, /properties/update_jr_stage_from_btw_geboekt, /properties/update_year
+- AUTO-120 ? Contact change endpoint (POST /operations/hubspot/contact/updating_dealname) ? /operations/hubspot/contact/updating_dealname
+- AUTO-121 ? Put active deals in new deal (POST /operations/hubspot/put_active_deals_in_new_deal) ? /operations/hubspot/put_active_deals_in_new_deal
+- AUTO-122 ? Get company deals (POST /operations/get_company_deals) ? /operations/get_company_deals
+- AUTO-123 ? Move dm deal to geen ib (POST /operations/hubspot/move_dm_deal_to_geen_ib) ? /operations/hubspot/move_dm_deal_to_geen_ib
+- AUTO-124 ? Ib prereqs webhook (POST /properties/ib/prereqs_webhook) ? /properties/ib/prereqs_webhook
+- AUTO-125 ? Va ib finished webhook (POST /properties/va_ib/finished_webhook) ? /properties/va_ib/finished_webhook
+- AUTO-126 ? Leads trustoo (POST /sales/leads/hubspot/trustoo) ? /sales/leads/hubspot/trustoo
+- AUTO-127 ? Upsert wefact debtor from hubspot (POST /wefact/hubspot/upsert_debtor) ? /wefact/hubspot/upsert_debtor
+- AUTO-128 ? Update dossier (POST /operations/hubspot/dossiers/{contact_id}) ? /operations/hubspot/dossiers/{contact_id}
+- AUTO-129 ? Reset betaalt niet (POST /operations/hubspot/reset_betaalt_niet) ? /operations/hubspot/reset_betaalt_niet
+- AUTO-130 ? Check pipeline usage (POST /operations/hubspot/workflows/pipeline_usage) ? /operations/hubspot/workflows/pipeline_usage
+- AUTO-131 ? Get property (POST /properties/get_property/{object_type}) ? /properties/get_property/{object_type}
+- AUTO-132 ? Jr priority dot from ib typeform (POST /properties/jr_priority_dot_from_ib_typeform) ? /properties/jr_priority_dot_from_ib_typeform
+- AUTO-133 ? Check correct stage (POST /properties/check_correct_stage) ? /properties/check_correct_stage
+- AUTO-134 ? Va vpb finished webhook (POST /properties/va_vpb/finished_webhook) ? /properties/va_vpb/finished_webhook
+- AUTO-135 ? Update year (POST /properties/update_year) ? /properties/update_year
+- AUTO-136 ? Test list by hubspot id (GET /wefact/hubspot/test_list) ? /wefact/hubspot/test_list
+- AUTO-137 ? Update deal amount (POST /operations/hubspot/new_pipeline/deal/amount) ? /operations/hubspot/new_pipeline/deal/amount
+- AUTO-138 ? Active pipelines (GET /operations/hubspot/active_pipelines) ? /operations/hubspot/active_pipelines
+- AUTO-139 ? Berekening compleet (POST /operations/hubspot/berekening_compleet) ? /operations/hubspot/berekening_compleet
+- AUTO-140 ? Btw finished webhook (POST /properties/btw/finished_webhook) ? /properties/btw/finished_webhook
+- AUTO-141 ? Jr sync related ib jr owners same year (POST /properties/jr/sync_related_ib_jr_owners_same_year) ? /properties/jr/sync_related_ib_jr_owners_same_year
+- AUTO-142 ? Leads solvari (POST /sales/leads/hubspot/solvari) ? /sales/leads/hubspot/solvari
+- AUTO-143 ? Typeform webhook (POST /typeform/webhook) ? /typeform/webhook
+- AUTO-GL-2b5c9c47-daae-4f33-816b-167a28303028 ? Company change endpoint (POST /operations/hubspot/company/updating_dealname) ? /operations/hubspot/company/updating_dealname
+- AUTO-GL-78721b02-fa8b-4576-9965-67b562276f26 ? Get owner id (GET /operations/hubspot/owner) ? /operations/hubspot/owner
+- AUTO-GL-6d97718e-def8-449d-b245-e88867f25791 ? Kvk sync company (POST /kvk/hubspot/sync_company) ? /kvk/hubspot/sync_company
+- AUTO-GL-251332b6-3b98-43ec-81b8-6658f6e2ee96 ? Delete vat deal endpoint (POST /operations/hubspot/deal/delete_vat_deal) ? /operations/hubspot/deal/delete_vat_deal
+- AUTO-GL-ab343aa6-a3ef-4003-a820-7685b36396c3 ? Upsert clockify client from hubspot (POST /clockify/hubspot/upsert_client) ? /clockify/hubspot/upsert_client
+- AUTO-GL-0126d88e-e5fa-4d96-b0bb-78f1c1498d98 ? Clone pipeline (POST /operations/hubspot/clone_pipeline) ? /operations/hubspot/clone_pipeline
+- AUTO-GL-88cf40e9-9423-4911-858c-24070ea6299c ? New create deal (POST /operations/hubspot/create_new_deal) ? /operations/hubspot/create_new_deal
+- AUTO-GL-e82401f9-9068-4878-ad8c-fc48ebf7f3ae ? Change bank connection status (POST /portal/hubspot/bank_connection_status) ? /portal/hubspot/bank_connection_status
+- AUTO-GL-5aee7cf9-a3f3-429f-96b7-2fcae2729e09 ? Set vpb prio (POST /properties/update_vpb_deals_when_jr_updated) ? /properties/update_vpb_deals_when_jr_updated
+- AUTO-GL-28f02936-c676-4f96-b887-6dc6afb51793 ? Btw dealstage based on bank connection (POST /operations/hubspot/btw_dealstage_based_on_bank_connection) ? /operations/hubspot/btw_dealstage_based_on_bank_connection
+- AUTO-GL-4403ac77-542d-4452-b6d9-f177ebb25b94 ? Update ib deal (POST /properties/update_ib_kan_gemaakt_worden) ? /properties/update_ib_kan_gemaakt_worden
+- AUTO-GL-be1124ab-07c5-4d21-94d0-244b895319bb ? Assign correct stage (POST /properties/assign_correct_stage) ? /properties/assign_correct_stage
+- AUTO-GL-9c3dd6d9-e1fa-4b53-8872-bb9b4788ff8c ? Ib route after typeform and machtiging (POST /properties/ib/route_after_typeform_and_machtiging) ? /properties/ib/route_after_typeform_and_machtiging
+- AUTO-GL-75010a54-b39a-4cce-87ea-8ff7756b366d ? Ib machtiging actief webhook (POST /properties/ib/machtiging_actief_webhook) ? /properties/ib/machtiging_actief_webhook
+- AUTO-GL-c3976734-3b4c-460e-994d-c69cef8648cc ? Ib machtiging actief contact webhook (POST /properties/ib/machtiging_actief_contact_webhook) ? /properties/ib/machtiging_actief_contact_webhook
+- AUTO-GL-2e6c65bc-7fa3-419b-bfc7-2e4d36ee7eaf ? Jr prio from ib (POST /properties/jr_prio_from_ib) ? /properties/jr_prio_from_ib
+- AUTO-GL-eebf59fd-d302-45a7-a046-49eae60043c2 ? Ib finished webhook (POST /properties/ib/finished_webhook) ? /properties/ib/finished_webhook
+- AUTO-GL-8f5896dc-c847-42ef-92c0-8f14cb11cdee ? Vpb finished webhook (POST /properties/vpb/finished_webhook) ? /properties/vpb/finished_webhook
+- AUTO-GL-a7e753b2-72f8-4622-b1ef-c4aa493fd42d ? Jr prio if ib ready except jr (POST /properties/jr_prio_if_ib_ready_except_jr) ? /properties/jr_prio_if_ib_ready_except_jr
+- AUTO-GL-386234c4-1756-47cc-aa9e-da77d0c6225b ? Update next quarter prev2m (POST /properties/btw/update_next_quarter_prev2m) ? /properties/btw/update_next_quarter_prev2m
+- AUTO-GL-7630fdef-d6cb-4077-92b4-b28713c59322 ? Ib sync jr owners same year (POST /properties/ib/sync_jr_owners_same_year) ? /properties/ib/sync_jr_owners_same_year
+- AUTO-GL-475158fb-e209-44e5-911e-9df76fd5e65d ? Migrate deals (POST /sales/migrate_deals) ? /sales/migrate_deals
+- AUTO-GL-6a9afbda-4fb3-4f72-99f6-2be1c5edbaf8 ? Leads ligo (POST /sales/leads/hubspot/ligo) ? /sales/leads/hubspot/ligo
+- AUTO-GL-8cd17053-a273-4402-9c3c-0c192c4d76bc ? Leads offerte nl (POST /sales/leads/hubspot/offerte.nl) ? /sales/leads/hubspot/offerte.nl
+- AUTO-GL-8e401fd3-ce5a-4bb7-9c93-faa38dfebe10 ? Leads calendly (POST /sales/leads/hubspot/calendly) ? /sales/leads/hubspot/calendly
+- AUTO-GL-55130090-698a-458e-8cb8-694191b15143 ? Geboekte kwartalen (POST /properties/update_jr_stage_from_btw_geboekt) ? /properties/update_jr_stage_from_btw_geboekt
+- AUTO-GL-cb6d4222-1345-4a96-829e-733fb08ae13b ? Set betaalt niet (POST /operations/hubspot/betaalt_niet) ? /operations/hubspot/betaalt_niet
+
+### typeform (14)
+- AUTO-207 ? VERVOLG! Klant-/bedrijfsinformatie na omzetting ? /typeform/onboarding
+- AUTO-209 ? Questionnaire income tax 2025 - Brand Boekhouders (Doorlopende Machtiging) ? /typeform/webhook
+- AUTO-210 ? Vragenformulier inkomstenbelasting 2025 - Brand Boekhouders (Doorlopende Machtiging) ? /typeform/webhook
+- AUTO-211 ? Questionnaire income tax 2025 - Brand Boekhouders (Geen Doorlopende Machtiging) ? /typeform/webhook
+- AUTO-212 ? Vragenformulier inkomstenbelasting 2025 - Brand Boekhouders (Geen Doorlopende Machtiging) ? /typeform/webhook
+- AUTO-215 ? Contactformulier (Zazu) II ? /sales/leads/hubspot/typeform
+- AUTO-217 ? Klant-/bedrijfsinformatie na omzetting ? /typeform/onboarding
+- AUTO-218 ? Boekhouder Amsterdam ? /sales/leads/hubspot/typeform
+- AUTO-219 ? Contactformulier ? /sales/leads/hubspot/typeform
+- AUTO-220 ? BV-check ? /sales/leads/hubspot/typeform
+- AUTO-230 ? NOOIT DELEN! Vervolg van EZ/VOF vragenlijst: Klantinformatie met meerdere IB-bedrijven ? /typeform/onboarding
+- AUTO-231 ? NOOIT DELEN! Vervolg van BV vragenlijst: Klantinformatie met meerdere entiteiten ? /typeform/onboarding
+- AUTO-232 ? Klantinformatie BV/Holding/Stichting ? /typeform/onboarding
+- AUTO-233 ? Klantinformatie EZ of VOF ? /typeform/onboarding

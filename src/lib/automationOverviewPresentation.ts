@@ -33,6 +33,7 @@ function buildHubSpotOverview(automation: Automatisering): AutomationOverviewPre
   const workflow = automation.hubspotWorkflow;
   const detailPresentation = getHubSpotAutomationDetailPresentation(automation);
   const dataflow = detailPresentation.dataflow;
+  const primaryWebhook = detailPresentation.webhookActions.find((action) => action.url || action.path);
   const triggerCount = workflow?.triggers?.length ?? 0;
   const actionCount = workflow?.actions?.length ?? automation.stappen.length;
   const webhookCount = countUnique([
@@ -43,7 +44,7 @@ function buildHubSpotOverview(automation: Automatisering): AutomationOverviewPre
 
   if (triggerCount > 0) badges.push({ label: countLabel(triggerCount, "trigger", "triggers"), tone: "good" });
   if (actionCount > 0) badges.push({ label: countLabel(actionCount, "actie", "acties") });
-  if (webhookCount > 0) badges.push({ label: countLabel(webhookCount, "webhook", "webhooks"), tone: "good" });
+  if (webhookCount > 0) badges.push({ label: countLabel(webhookCount, "webhook", "webhooks"), detail: formatWebhookBadgeDetail(primaryWebhook?.url), tone: "good" });
   if (typeof automation.hubspotRunCount365d === "number") {
     badges.push({ label: `${new Intl.NumberFormat("nl-NL").format(automation.hubspotRunCount365d)} runs`, detail: "365 dagen" });
   }
@@ -51,7 +52,8 @@ function buildHubSpotOverview(automation: Automatisering): AutomationOverviewPre
     badges.push({ label: "Laatste run", detail: formatDate(automation.hubspotLastRunAt) });
   }
 
-  const actionSummary = buildHubSpotDataflowActionSummary(dataflow)
+  const actionSummary = buildHubSpotWebhookActionSummary(workflow?.name ?? automation.naam, primaryWebhook)
+    || buildHubSpotDataflowActionSummary(dataflow)
     || (actionCount > 0
       ? `HubSpot voert ${actionCount} ${actionCount === 1 ? "workflowactie" : "workflowacties"} uit${webhookCount > 0 ? ", inclusief een webhook-overdracht" : ""}.`
       : "HubSpot bewaakt de workflowvoorwaarden en voert de ingestelde opvolging uit.");
@@ -62,6 +64,24 @@ function buildHubSpotOverview(automation: Automatisering): AutomationOverviewPre
     outcomeLabel: buildHubSpotDataflowOutcome(dataflow) || "Uitkomst niet bewezen in HubSpot-data",
     evidenceBadges: badges,
   });
+}
+
+function buildHubSpotWebhookActionSummary(
+  workflowName: string,
+  webhook: ReturnType<typeof getHubSpotAutomationDetailPresentation>["webhookActions"][number] | undefined,
+): string {
+  const target = webhook?.url;
+  if (!target) return "";
+  return `${workflowName} stuurt ${webhook.method || "POST"} webhook naar ${target}.`;
+}
+
+function formatWebhookBadgeDetail(target: string | undefined): string | undefined {
+  if (!target) return undefined;
+  try {
+    return new URL(target).hostname;
+  } catch {
+    return target;
+  }
 }
 
 function buildHubSpotDataflowActionSummary(dataflow: ReturnType<typeof getHubSpotAutomationDetailPresentation>["dataflow"]): string {

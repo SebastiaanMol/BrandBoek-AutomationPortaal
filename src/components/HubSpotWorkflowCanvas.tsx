@@ -410,12 +410,12 @@ function buildVisualWorkflowActions(
         step: `${index + 1}. ${getActionStepLabel(action, isWebhook)}`,
         type: action.type || "HubSpot action",
         title: isWebhook
-          ? "Stuurt door naar verwerking"
+          ? getWebhookActionTitle(action.webhookMethod, webhook)
           : propertyName
             ? `Set ${formatPropertyLabel(propertyName)}`
             : action.label,
         body: isWebhook
-          ? "Technische route staat in Logica."
+          ? webhook
           : propertyName
             ? propertyValue ? `to ${propertyValue}` : "waarde nog niet gesynchroniseerd uit HubSpot"
             : propertyValue || action.label,
@@ -440,9 +440,9 @@ function buildVisualWorkflowActions(
         step: `${index + 1}. ${isWebhook ? "Doorsturen" : "HubSpot update"}`,
         type: isWebhook ? "WEBHOOK" : "SET_PROPERTY",
         title: isWebhook
-          ? "Stuurt door naar verwerking"
+          ? getWebhookActionTitle("POST", webhook)
           : `Set ${formatPropertyLabel(propertyName ?? "eigenschap")}`,
-        body: isWebhook ? "Technische route staat in Logica." : propertyValue ? `to ${propertyValue}` : "waarde nog niet gesynchroniseerd uit HubSpot",
+        body: isWebhook ? webhook : propertyValue ? `to ${propertyValue}` : "waarde nog niet gesynchroniseerd uit HubSpot",
         tone: isWebhook ? "webhook" : "edit",
         propertyName: propertyName ? formatPropertyLabel(propertyName) : undefined,
         propertyValue,
@@ -597,8 +597,24 @@ function extractPropertyFromStep(step: string): string | undefined {
 }
 
 function formatWebhookDisplay(webhookUrl?: string | null, webhookPath?: string | null): string {
-  if (webhookUrl && (!webhookPath || webhookPath === "/")) return webhookUrl;
-  return webhookPath ?? webhookUrl ?? "";
+  return webhookUrl ?? webhookPath ?? "";
+}
+
+function getWebhookActionTitle(method: string | null | undefined, webhook: string): string {
+  const host = getWebhookHostLabel(webhook);
+  return host
+    ? `Stuurt ${method || "POST"} naar ${host}`
+    : `Stuurt ${method || "POST"} naar verwerking`;
+}
+
+function getWebhookHostLabel(webhook: string): string | null {
+  try {
+    const host = new URL(webhook).hostname;
+    if (host.includes("railway.app")) return "Railway";
+    return host;
+  } catch {
+    return null;
+  }
 }
 
 function extractPropertyValueFromStep(step: string): string | undefined {

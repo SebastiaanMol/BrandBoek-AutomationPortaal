@@ -2,6 +2,8 @@ export * from "./queryHooks/automations";
 export * from "./queryHooks/integrations";
 export * from "./queryHooks/portalSettings";
 export * from "./queryHooks/automationLinks";
+export * from "./queryHooks/processJourneyReviewItems";
 export * from "./queryHooks/pipelines";
 export * from "./queryHooks/processState";
 export * from "./queryHooks/flows";
+export * from "./queryHooks/processJourneyCuration";

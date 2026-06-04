@@ -111,6 +111,7 @@ function renderOverview(): void {
 describe("Automations overview UI", () => {
   beforeEach(() => {
     automations = defaultAutomations;
+    sessionStorage.clear();
   });
 
   it("uses the process journey overview shell", () => {
@@ -323,6 +324,56 @@ describe("Automations overview UI", () => {
 
     await waitFor(() => {
       screen.getByRole("row", { name: /Automation 159/i });
+    });
+  });
+
+  it("restores automation catalog state from navigation memory", () => {
+    sessionStorage.setItem("automationNavigator.navigation.automations", JSON.stringify({
+      pathname: "/alle",
+      search: "",
+      hash: "",
+      scrollY: 0,
+      updatedAt: Date.now(),
+      data: {
+        sourceFilter: "hubspot",
+        query: "workflow",
+        statusFilter: "Actief",
+        sortOrder: "naam",
+        expandedAutomationId: "AUTO-HUBSPOT",
+        filtersOpen: true,
+      },
+    }));
+
+    renderOverview();
+
+    expect(screen.getByPlaceholderText("Zoek op naam, bron, trigger of beschrijving...")).toHaveValue("workflow");
+    screen.getByText("Zoek: workflow");
+    screen.getByText("Status: Actief");
+    screen.getByText("Sortering: Naam");
+    screen.getByRole("row", { name: /HubSpot workflow/i });
+    expect(screen.queryByRole("row", { name: /GitLab backend/i })).not.toBeInTheDocument();
+    screen.getByRole("button", { name: "Verberg proceslijn voor HubSpot workflow" });
+  });
+
+  it("remembers automation catalog state before opening a detail page", () => {
+    Object.defineProperty(window, "scrollY", { value: 333, configurable: true });
+    renderOverview();
+
+    fireEvent.change(screen.getByPlaceholderText("Zoek op naam, bron, trigger of beschrijving..."), {
+      target: { value: "HubSpot" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Toon proceslijn voor HubSpot workflow" }));
+    fireEvent.click(screen.getByRole("link", { name: "Open HubSpot workflow" }));
+
+    const stored = JSON.parse(sessionStorage.getItem("automationNavigator.navigation.automations") ?? "{}");
+
+    expect(stored.pathname).toBe("/");
+    expect(stored.scrollY).toBe(333);
+    expect(stored.data).toMatchObject({
+      sourceFilter: "alle",
+      query: "HubSpot",
+      expandedAutomationId: "AUTO-HUBSPOT",
+      focusAutomationId: "AUTO-HUBSPOT",
     });
   });
 });
