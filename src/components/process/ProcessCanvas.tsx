@@ -1,17 +1,12 @@
 import { useRef, useMemo, useState, useCallback, useEffect } from "react";
-import type { ProcessStep, Connection, Automation, TeamKey, CustomLane } from "@/data/processData";
-import { TEAM_CONFIG, TEAM_ORDER } from "@/data/processData";
-
-// Returns lane config for a given team key (handles both preset and custom lanes)
-function getLaneConfig(
-  team: string,
-  customLanes?: CustomLane[],
-): { label: string; bg: string; stroke: string; text: string; dot: string } {
-  if (team in TEAM_CONFIG) return TEAM_CONFIG[team as TeamKey];
-  const custom = customLanes?.find(l => l.key === team);
-  if (custom) return custom;
-  return { label: team, bg: "hsl(0 0% 97%)", stroke: "hsl(0 0% 60%)", text: "hsl(0 0% 35%)", dot: "hsl(0 0% 55%)" };
-}
+import type { ProcessStep, Connection, Automation, CustomLane } from "@/data/processData";
+import {
+  buildLaneKeys,
+  filterValidActiveLanes,
+  getLaneConfig,
+  isPipelineStep,
+  TEAM_ORDER,
+} from "@/data/processData";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -27,6 +22,20 @@ const DOT_SPACING  = 29;    // (36 × 0.80)
 const EDGE_PAD     = 19;    // (24 × 0.80)
 const ARROW_MARGIN = 13;    // (16 × 0.80)
 const EVT_R        = 18;    // (22 × 0.80)
+const ROUTE_MAIN   = "#1d4ed8";
+const ROUTE_HOVER  = "#2563eb";
+const ROUTE_OPTIONAL = "#ea580c";
+const ROUTE_END    = "#dc2626";
+const PHASE_BAR_BG = "#0759d6";
+const GRID_SIZE    = 28;
+
+// Viewer-mode lane accent colours (spec)
+const VIEWER_LANE_COLORS: Record<string, string> = {
+  marketing:    "#6366F1",
+  sales:        "#2563EB",
+  onboarding:   "#059669",
+  klantrelaties:"#DB2877",
+};
 
 // ── Helper types ──────────────────────────────────────────────────────────────
 
@@ -121,7 +130,7 @@ function buildArrow(
   from: ProcessStep,
   to: ProcessStep,
   colX: number[],
-  laneStarts: Record<TeamKey, number>,
+  laneStarts: Record<string, number>,
   midXOffset = 0,
 ): ArrowData {
   const fx = colX[from.column], fy = stepCY(from, laneStarts);
@@ -266,7 +275,7 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
 
 // ── StepBox ───────────────────────────────────────────────────────────────────
 
-function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, customLanes }: {
+function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, customLanes, viewerMode }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick?: () => void;
@@ -274,11 +283,17 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
   onStepMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   customLanes?: CustomLane[];
+  viewerMode?: boolean;
 }) {
   const [hov, setHov] = useState(false);
   const cfg = getLaneConfig(step.team, customLanes);
   const x = cx - STEP_W / 2, y = cy - STEP_H / 2;
   const label = step.label.length > 18 ? step.label.slice(0, 17) + "…" : step.label;
+
+  const fill   = viewerMode ? "#EFF6FF" : "white";
+  const stroke = viewerMode ? "#3B82F6" : (hov ? cfg.stroke : "#cbd5e1");
+  const sw     = viewerMode ? 1.5 : (hov ? 2 : 1.5);
+  const txtFill = viewerMode ? "#1D4ED8" : "#1e293b";
 
   return (
     <g style={{ opacity: isDragging ? 0.3 : 1 }}
@@ -286,22 +301,48 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
       onContextMenu={onContextMenu}>
       {isTarget && (
         <rect x={x - 3} y={y - 3} width={STEP_W + 6} height={STEP_H + 6}
-          rx="10" fill="none" stroke={cfg.stroke} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
+          rx="10" fill="none" stroke={viewerMode ? "#3B82F6" : cfg.stroke} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
       )}
-      <rect x={x} y={y} width={STEP_W} height={STEP_H} rx="8" fill="white"
-        stroke={hov ? cfg.stroke : "#cbd5e1"} strokeWidth={hov ? 2 : 1.5}
+      <rect x={x} y={y} width={STEP_W} height={STEP_H} rx="8" fill={fill}
+        stroke={stroke} strokeWidth={sw}
         style={{ cursor: "pointer", filter: hov ? "drop-shadow(0 2px 6px rgba(0,0,0,.1))" : undefined }}
         onMouseDown={onStepMouseDown} onClick={onClick} />
-      <rect x={x} y={y} width={4} height={STEP_H} rx="2" fill={cfg.stroke} style={{ pointerEvents: "none" }} />
-      <text x={cx + 4} y={cy} textAnchor="middle" dominantBaseline="middle"
-        fontSize="9" fontWeight="500" fill="#1e293b"
+      {!viewerMode && <rect x={x} y={y} width={4} height={STEP_H} rx="2" fill={cfg.stroke} style={{ pointerEvents: "none" }} />}
+      <text x={viewerMode ? cx : cx + 4} y={cy} textAnchor="middle" dominantBaseline="middle"
+        fontSize="9" fontWeight="500" fill={txtFill}
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
       {onPortMouseDown && (
-        <circle cx={x + STEP_W} cy={cy} r={5} fill={cfg.stroke} stroke="white" strokeWidth="1.5"
+        <circle cx={x + STEP_W} cy={cy} r={5} fill={viewerMode ? "#3B82F6" : cfg.stroke} stroke="white" strokeWidth="1.5"
           style={{ cursor: "crosshair" }}
           onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
+      {isPipelineStep(step) && (
+        <g style={{ pointerEvents: "none" }}>
+          <rect
+            x={cx + STEP_W / 2 - 4 - 44}
+            y={cy - STEP_H / 2 + 3}
+            width={44}
+            height={12}
+            rx="3"
+            fill="#F1F5F9"
+            stroke="#CBD5E1"
+            strokeWidth="0.5"
+          />
+          <text
+            x={cx + STEP_W / 2 - 4 - 22}
+            y={cy - STEP_H / 2 + 3 + 6}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize="7"
+            fontWeight="600"
+            fill="#475569"
+            style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
+          >
+            Pipeline
+          </text>
+        </g>
       )}
     </g>
   );
@@ -309,7 +350,7 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
 
 // ── DecisionDiamond ───────────────────────────────────────────────────────────
 
-function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, customLanes }: {
+function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, customLanes, viewerMode }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick?: () => void;
@@ -317,6 +358,7 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
   onStepMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   customLanes?: CustomLane[];
+  viewerMode?: boolean;
 }) {
   const [hov, setHov] = useState(false);
   const cfg = getLaneConfig(step.team, customLanes);
@@ -325,34 +367,38 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
   const ptsTarget = `${cx},${cy - h - 6} ${cx + h + 6},${cy} ${cx},${cy + h + 6} ${cx - h - 6},${cy}`;
   const label = step.label.length > 13 ? step.label.slice(0, 12) + "…" : step.label;
 
+  const fill   = viewerMode ? "#EFF6FF" : "white";
+  const stroke = viewerMode ? "#3B82F6" : (hov ? cfg.stroke : "#cbd5e1");
+  const crossColor = viewerMode ? "#3B82F6" : (hov ? cfg.stroke : "#64748b");
+
   return (
     <g style={{ opacity: isDragging ? 0.3 : 1 }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       onContextMenu={onContextMenu}>
       {isTarget && (
-        <polygon points={ptsTarget} fill="none" stroke={cfg.stroke}
+        <polygon points={ptsTarget} fill="none" stroke={viewerMode ? "#3B82F6" : cfg.stroke}
           strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
       )}
       <polygon
         points={pts}
-        fill="white"
-        stroke={hov ? cfg.stroke : "#cbd5e1"}
+        fill={fill}
+        stroke={stroke}
         strokeWidth={hov ? 2 : 1.5}
         style={{ cursor: "pointer", filter: hov ? "drop-shadow(0 2px 6px rgba(0,0,0,.1))" : undefined }}
         onMouseDown={onStepMouseDown}
         onClick={onClick}
       />
       <line x1={cx - h * 0.45} y1={cy - h * 0.45} x2={cx + h * 0.45} y2={cy + h * 0.45}
-        stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
+        stroke={crossColor} strokeWidth="2" style={{ pointerEvents: "none" }} />
       <line x1={cx + h * 0.45} y1={cy - h * 0.45} x2={cx - h * 0.45} y2={cy + h * 0.45}
-        stroke={hov ? cfg.stroke : "#64748b"} strokeWidth="2" style={{ pointerEvents: "none" }} />
+        stroke={crossColor} strokeWidth="2" style={{ pointerEvents: "none" }} />
       <text x={cx} y={cy + h + 10} textAnchor="middle" dominantBaseline="middle"
-        fontSize="8" fontWeight="500" fill="#1e293b"
+        fontSize="8" fontWeight="500" fill={viewerMode ? "#1D4ED8" : "#1e293b"}
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
       {onPortMouseDown && (
-        <circle cx={cx + h} cy={cy} r={5} fill={cfg.stroke} stroke="white" strokeWidth="1.5"
+        <circle cx={cx + h} cy={cy} r={5} fill={viewerMode ? "#3B82F6" : cfg.stroke} stroke="white" strokeWidth="1.5"
           style={{ cursor: "crosshair" }}
           onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
       )}
@@ -547,6 +593,41 @@ function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDo
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
+function ProcessCanvasLegend() {
+  const itemClass = "flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap";
+  return (
+    <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-border bg-card/95 px-4 py-2 backdrop-blur-sm">
+      <div className="flex items-center gap-4 overflow-x-auto">
+        <span className="text-[11px] font-semibold text-foreground">Legenda</span>
+        <span className={itemClass}>
+          <span className="h-0.5 w-8 rounded-full" style={{ background: ROUTE_MAIN }} />
+          Hoofdproces
+        </span>
+        <span className={itemClass}>
+          <span className="h-0.5 w-8 border-t-2 border-dashed" style={{ borderColor: ROUTE_OPTIONAL }} />
+          Correctie / optioneel
+        </span>
+        <span className={itemClass}>
+          <span className="h-0.5 w-8 rounded-full" style={{ background: ROUTE_END }} />
+          Uitzondering / einde
+        </span>
+        <span className={itemClass}>
+          <span className="h-3 w-3 rounded-full border-2 border-green-600 bg-green-50" />
+          Start/einde
+        </span>
+        <span className={itemClass}>
+          <span className="h-3 w-5 rounded-sm border border-slate-300 bg-white" />
+          Taak
+        </span>
+        <span className={itemClass}>
+          <span className="h-3 w-3 rotate-45 border border-blue-500 bg-white" />
+          Gateway
+        </span>
+      </div>
+    </div>
+  );
+}
+
 interface ProcessCanvasProps {
   steps: ProcessStep[];
   connections: Connection[];
@@ -554,6 +635,8 @@ interface ProcessCanvasProps {
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
   customLanes?: CustomLane[];
   readOnly?: boolean;
+  displayStyle?: "viewer";
+  onRenameLane?: (laneKey: string) => void;
   onStepClick?: (s: ProcessStep) => void;
   onAutomationClick?: (a: Automation) => void;
   onAddConnection?: (fromId: string, toId: string) => void;
@@ -566,6 +649,7 @@ interface ProcessCanvasProps {
   onParkStep?: (stepId: string) => void;
   onDeleteStep?: (stepId: string) => void;
   onPlaceStagedStep?: (step: ProcessStep, team: string, column: number, row: number) => void;
+  onInsertRowAfter?: (team: string, afterRow: number) => void;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -574,16 +658,22 @@ export function ProcessCanvas({
   steps, connections, automations,
   activeLanes, customLanes,
   readOnly = false,
+  displayStyle,
+  onRenameLane,
   onStepClick, onAutomationClick,
   onAddConnection, onDeleteConnection,
   onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
-  onParkStep, onDeleteStep, onPlaceStagedStep,
+  onParkStep, onDeleteStep, onPlaceStagedStep, onInsertRowAfter,
 }: ProcessCanvasProps) {
+  const viewerMode = displayStyle === "viewer";
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Visible lanes — preset order + any custom lanes appended
-  const allLaneKeys = [...TEAM_ORDER, ...(customLanes?.map(l => l.key) ?? [])];
-  const visibleTeams = activeLanes ?? allLaneKeys;
+  const allLaneKeys = useMemo(() => buildLaneKeys(customLanes), [customLanes]);
+  const visibleTeams = useMemo(
+    () => activeLanes ? filterValidActiveLanes(activeLanes, customLanes) : allLaneKeys,
+    [activeLanes, allLaneKeys, customLanes],
+  );
 
   const colX = useMemo(
     () => computeColX(steps, connections, automations),
@@ -617,7 +707,7 @@ export function ProcessCanvas({
   draggingRef.current = dragging;
   const onParkStepRef = useRef(onParkStep);
   onParkStepRef.current = onParkStep;
-  const [newStepDrag, setNewStepDrag] = useState<{ col: number; team: TeamKey; row: number } | null>(null);
+  const [newStepDrag, setNewStepDrag] = useState<{ col: number; team: string; row: number } | null>(null);
   const [drawingBranch, setDrawingBranch] = useState<{
     automationId: string; startX: number; startY: number; curX: number; curY: number;
   } | null>(null);
@@ -632,6 +722,7 @@ export function ProcessCanvas({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const panningRef = useRef<{ startX: number; scrollLeft: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
+  const [hoverSep, setHoverSep] = useState<{ team: string; afterRow: number } | null>(null);
 
   // Step-to-step connections only (not branch edges)
   const stepConnections = useMemo(
@@ -749,7 +840,7 @@ export function ProcessCanvas({
   // Snap y → {team, row}, allowing one new row beyond current max.
   // preferredTeam: when dragging a step, keep it in its own lane even if the
   // cursor strays into the extension zone below that lane.
-  function nearestTeamRow(y: number): { team: TeamKey; row: number } {
+  function nearestTeamRow(y: number): { team: string; row: number } {
     // Find the lane the cursor is currently in
     let best = visibleTeams[0];
     for (const team of visibleTeams) {
@@ -841,6 +932,28 @@ export function ProcessCanvas({
       setDragging(d => d ? { ...d, curX: pt.x, curY: pt.y, moved } : null);
     }
     if (drawingBranch) setDrawingBranch(d => d ? { ...d, curX: pt.x, curY: pt.y } : null);
+
+    // Separator hover: only in viewer-style mode, only when not interacting
+    if (viewerMode && onInsertRowAfter && !dragging && !drawing && !drawingBranch) {
+      const SNAP = 14;
+      let found = false;
+      for (const team of visibleTeams) {
+        const startY = laneStarts[team] ?? 0;
+        const maxR = maxRowInLane(team, steps);
+        for (let r = 0; r <= maxR; r++) {
+          const lineY = startY + (r + 1) * ROW_H;
+          if (Math.abs(pt.y - lineY) < SNAP) {
+            const hasAbove = steps.some(s => s.team === team && (s.row ?? 0) === r);
+            const hasBelow = steps.some(s => s.team === team && (s.row ?? 0) === r + 1);
+            if (hasAbove && hasBelow) { setHoverSep({ team, afterRow: r }); found = true; break; }
+          }
+        }
+        if (found) break;
+      }
+      if (!found) setHoverSep(null);
+    } else if (hoverSep) {
+      setHoverSep(null);
+    }
   }
 
   function handleMouseUp(e: React.MouseEvent) {
@@ -898,9 +1011,16 @@ export function ProcessCanvas({
     ? dragTarget.team : null;
   const effectiveSvgHeight = svgHeight + (extensionTeam ? ROW_H : 0);
 
+  const gridStyle = viewerMode ? {
+    background: "#F8FAFC",
+    backgroundImage: `repeating-linear-gradient(0deg, rgba(0,0,0,0.04) 0px, transparent 1px, transparent ${GRID_SIZE}px), repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0px, transparent 1px, transparent ${GRID_SIZE}px)`,
+    backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
+  } : {};
+
   return (
-    <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-hidden w-full" style={{ height: effectiveSvgHeight }}>
-      <svg ref={svgRef} width={svgWidth} height={effectiveSvgHeight}
+    <div className="relative w-full bg-card" style={gridStyle}>
+      <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-hidden w-full" style={{ height: effectiveSvgHeight }}>
+        <svg ref={svgRef} width={svgWidth} height={effectiveSvgHeight}
         onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
         onMouseLeave={() => { setDrawing(null); setDrawingBranch(null); }}
         onClick={() => setContextMenu(null)}
@@ -957,44 +1077,107 @@ export function ProcessCanvas({
             </marker>
           ))}
           <marker id="ah-branch" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
-            <polygon points="0 0, 9 3.5, 0 7" fill="#d97706" />
+            <polygon points="0 0, 9 3.5, 0 7" fill={ROUTE_OPTIONAL} />
+          </marker>
+          <marker id="ah-main" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill={ROUTE_MAIN} />
+          </marker>
+          <marker id="ah-end" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill={ROUTE_END} />
           </marker>
         </defs>
 
         {/* ── Lane backgrounds (variable height, row dividers) ── */}
-        {visibleTeams.map(team => {
+        <g data-testid="process-phase-bar">
+        {visibleTeams.map((team, idx) => {
           const cfg    = getLaneConfig(team, customLanes);
           const startY = laneStarts[team];
           const lh     = laneHeightFn(team, steps);
           const maxR   = maxRowInLane(team, steps);
 
+          const laneAccent = VIEWER_LANE_COLORS[team] ?? cfg.stroke;
+
           return (
-            <g key={team}>
-              <rect x={0} y={startY} width={svgWidth} height={lh} fill={cfg.bg} />
+            <g key={team} aria-label={`Fase ${idx + 1}: ${cfg.label}`}>
+              {viewerMode ? (
+                <>
+                  <rect x={0} y={startY} width={svgWidth} height={lh} fill={laneAccent} fillOpacity={0.04} />
+                  <rect x={0} y={startY} width={LANE_HDR_W} height={lh} fill={laneAccent} fillOpacity={0.1} />
+                  <line x1={LANE_HDR_W} y1={startY} x2={LANE_HDR_W} y2={startY + lh} stroke="#E2E8F0" strokeWidth="0.5" />
+                  <foreignObject
+                    x={0} y={startY} width={LANE_HDR_W} height={lh}
+                    onClick={onRenameLane ? () => onRenameLane(team) : undefined}
+                    style={{ cursor: onRenameLane ? "text" : undefined }}>
+                    <div style={{
+                      width: "100%", height: "100%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      padding: "6px 4px", textAlign: "center",
+                      fontSize: "9px", fontWeight: "700", letterSpacing: "0.6px",
+                      textTransform: "uppercase", color: laneAccent,
+                      lineHeight: 1.3, wordBreak: "break-word", overflowWrap: "break-word",
+                      fontFamily: "IBM Plex Sans, system-ui, sans-serif", userSelect: "none",
+                    }}>
+                      {cfg.label}
+                    </div>
+                  </foreignObject>
+                  <line x1={0} y1={startY + lh} x2={svgWidth} y2={startY + lh} stroke="#E2E8F0" strokeWidth="0.5" />
+                  {Array.from({ length: maxR }, (_, r) => (
+                    <line key={r}
+                      x1={LANE_HDR_W} y1={startY + (r + 1) * ROW_H}
+                      x2={svgWidth}   y2={startY + (r + 1) * ROW_H}
+                      stroke="#E2E8F0" strokeWidth="0.5" strokeDasharray="4 4" />
+                  ))}
+                </>
+              ) : (
+                <>
+                  <rect x={0} y={startY} width={svgWidth} height={lh} fill="#ffffff" />
+                  <rect x={LANE_HDR_W} y={startY} width={svgWidth - LANE_HDR_W} height={lh} fill={cfg.bg} fillOpacity={0.36} />
 
-              {/* Row dividers inside lane */}
-              {Array.from({ length: maxR }, (_, r) => (
-                <line key={r}
-                  x1={LANE_HDR_W} y1={startY + (r + 1) * ROW_H}
-                  x2={svgWidth}   y2={startY + (r + 1) * ROW_H}
-                  stroke="#e2e8f0" strokeWidth="1" strokeDasharray="6 4" />
-              ))}
+                  {/* Row dividers inside lane */}
+                  {Array.from({ length: maxR }, (_, r) => (
+                    <line key={r}
+                      x1={LANE_HDR_W} y1={startY + (r + 1) * ROW_H}
+                      x2={svgWidth}   y2={startY + (r + 1) * ROW_H}
+                      stroke="#e2e8f0" strokeWidth="1" strokeDasharray="6 4" />
+                  ))}
 
-              <line x1={0} y1={startY + lh} x2={svgWidth} y2={startY + lh}
-                stroke="#e2e8f0" strokeWidth="1" />
-              <rect x={0} y={startY} width={4} height={lh} fill={cfg.stroke} />
-              <rect x={4} y={startY} width={LANE_HDR_W - 4} height={lh} fill={cfg.bg} />
-              <line x1={LANE_HDR_W} y1={startY} x2={LANE_HDR_W} y2={startY + lh}
-                stroke="#e2e8f0" strokeWidth="1" />
-              <text x={LANE_HDR_W / 2 + 4} y={startY + lh / 2}
-                textAnchor="middle" dominantBaseline="middle"
-                fontSize="10" fontWeight="700" fill={cfg.text} letterSpacing="0.03em"
-                style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
-                {cfg.label}
-              </text>
+                  <line x1={0} y1={startY + lh} x2={svgWidth} y2={startY + lh}
+                    stroke="#e2e8f0" strokeWidth="1" />
+                  <rect x={0} y={startY} width={LANE_HDR_W} height={lh} fill={PHASE_BAR_BG} />
+                  <rect x={0} y={startY} width={4} height={lh} fill={cfg.stroke} />
+                  <line x1={LANE_HDR_W} y1={startY} x2={LANE_HDR_W} y2={startY + lh}
+                    stroke="#bfdbfe" strokeWidth="1" />
+                  <text x={LANE_HDR_W / 2} y={startY + Math.min(36, lh / 2)}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize="26" fontWeight="800" fill="white"
+                    style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+                    {idx + 1}
+                  </text>
+                  <foreignObject x={10} y={startY + Math.min(50, lh - 32)} width={LANE_HDR_W - 20} height={Math.max(24, lh - 50)}>
+                      <div
+                        style={{
+                          alignItems: "center",
+                          color: "white",
+                          display: "flex",
+                          fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          height: "100%",
+                          justifyContent: "center",
+                          lineHeight: 1.15,
+                          overflowWrap: "anywhere",
+                          textAlign: "center",
+                        }}
+                      >
+                        {cfg.label}
+                      </div>
+                    </foreignObject>
+                </>
+              )}
             </g>
           );
         })}
+        </g>
 
         {/* ── Extension zone: ghost row below lane when dragging to a new row ── */}
         {extensionTeam && (() => {
@@ -1006,7 +1189,7 @@ export function ProcessCanvas({
               <rect x={0} y={startY + lh} width={svgWidth} height={ROW_H}
                 fill={cfg.bg} fillOpacity={0.6} />
               <rect x={0} y={startY + lh} width={4} height={ROW_H} fill={cfg.stroke} />
-              <rect x={4} y={startY + lh} width={LANE_HDR_W - 4} height={ROW_H} fill={cfg.bg} fillOpacity={0.6} />
+              <rect x={4} y={startY + lh} width={LANE_HDR_W - 4} height={ROW_H} fill={PHASE_BAR_BG} fillOpacity={0.9} />
               <rect x={LANE_HDR_W} y={startY + lh} width={svgWidth - LANE_HDR_W} height={ROW_H}
                 fill="none" stroke={cfg.stroke} strokeWidth={1.5} strokeDasharray="8 4" opacity={0.5} />
             </g>
@@ -1022,6 +1205,10 @@ export function ProcessCanvas({
           const isHov = hoveredConn === conn.id;
           const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
           const hasAuto = connAutos.length > 0;
+          const isEndRoute = to.type === "end" || to.type === "terminate";
+          const mainStroke = isEndRoute ? ROUTE_END : isHov ? ROUTE_HOVER : ROUTE_MAIN;
+          const postStroke = isEndRoute ? ROUTE_END : ROUTE_OPTIONAL;
+          const routeLabel = isEndRoute ? "Uitzondering of einde route" : "Hoofdproces route";
           const mid = arrow.postDotMid;
           const isEditingPost = editingLabel?.connId === conn.id;
           const postLabelText = conn.label || "";
@@ -1031,10 +1218,12 @@ export function ProcessCanvas({
               {/* Pre-dot segment always in gray; post-dot in amber dashed when automation sits on this connection */}
               {hasAuto ? (
                 <>
-                  <path d={arrow.preDotPath} stroke={isHov ? "#3b82f6" : "#94a3b8"} strokeWidth="1.5" fill="none"
+                  <path d={arrow.preDotPath} stroke={mainStroke} strokeWidth="1.7" fill="none"
+                    aria-label={routeLabel}
                     strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
-                  <path d={arrow.postDotPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
-                    markerEnd={`url(#${isHov ? "ah-h" : "ah-branch"})`} opacity={0.85} style={{ pointerEvents: "none" }} />
+                  <path d={arrow.postDotPath} stroke={postStroke} strokeWidth="1.7" strokeDasharray={isEndRoute ? undefined : "5 3"} fill="none"
+                    aria-label={isEndRoute ? routeLabel : "Correctie of optionele route"}
+                    markerEnd={`url(#${isEndRoute ? "ah-end" : "ah-branch"})`} opacity={0.9} style={{ pointerEvents: "none" }} />
                   {/* Label on post-dot segment — edit input when active, badge when label is set */}
                   {isEditingPost ? (
                     <foreignObject x={mid.x - postEstW / 2} y={mid.y - 13} width={Math.max(postEstW, 120)} height={26}>
@@ -1056,8 +1245,9 @@ export function ProcessCanvas({
                   ) : null}
                 </>
               ) : (
-                <path d={arrow.path} stroke={isHov ? "#3b82f6" : "#94a3b8"} strokeWidth="1.5" fill="none"
-                  markerEnd={`url(#${isHov ? "ah-h" : "ah"})`}
+                <path d={arrow.path} stroke={mainStroke} strokeWidth="1.7" fill="none"
+                  aria-label={routeLabel}
+                  markerEnd={`url(#${isEndRoute ? "ah-end" : "ah-main"})`}
                   strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
               )}
               <path d={arrow.path} stroke="transparent" strokeWidth="22" fill="none" className="cursor-pointer"
@@ -1174,7 +1364,7 @@ export function ProcessCanvas({
             return (
               <DecisionDiamond key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
-                customLanes={customLanes}
+                customLanes={customLanes} viewerMode={viewerMode}
                 onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
                 onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
                 onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
@@ -1185,13 +1375,34 @@ export function ProcessCanvas({
           return (
             <StepBox key={step.id} step={step} cx={cx} cy={cy}
               isDragging={isDrag} isTarget={isTarget}
-              customLanes={customLanes}
+              customLanes={customLanes} viewerMode={viewerMode}
               onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
               onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
               onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
               onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
           );
         })}
+
+        {/* ── Row-separator insert indicator (viewer mode only) ── */}
+        {hoverSep && viewerMode && (() => {
+          const lineY = (laneStarts[hoverSep.team] ?? 0) + (hoverSep.afterRow + 1) * ROW_H;
+          const pillW = 80;
+          const midX  = (LANE_HDR_W + svgWidth) / 2;
+          return (
+            <g style={{ cursor: "pointer" }}
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onInsertRowAfter?.(hoverSep.team, hoverSep.afterRow); setHoverSep(null); }}>
+              <rect x={LANE_HDR_W} y={lineY - 14} width={svgWidth - LANE_HDR_W} height={28} fill="transparent" />
+              <line x1={LANE_HDR_W} y1={lineY} x2={svgWidth} y2={lineY}
+                stroke="#3B82F6" strokeWidth={1.5} strokeDasharray="6 4" opacity={0.6} style={{ pointerEvents: "none" }} />
+              <rect x={midX - pillW / 2} y={lineY - 11} width={pillW} height={22} rx="11" fill="#3B82F6" style={{ pointerEvents: "none" }} />
+              <text x={midX} y={lineY + 1} textAnchor="middle" dominantBaseline="middle"
+                fontSize="11" fontWeight="700" fill="white" style={{ pointerEvents: "none", userSelect: "none" }}>
+                + Stap
+              </text>
+            </g>
+          );
+        })()}
 
         {/* ── Drag ghost ── */}
         {dragging?.moved && (() => {
@@ -1228,12 +1439,12 @@ export function ProcessCanvas({
             : gy;
 
           if (isDecision(step)) {
-            const str = getLaneConfig(step.team, customLanes).stroke;
+            const str = viewerMode ? "#3B82F6" : getLaneConfig(step.team, customLanes).stroke;
             const pts = `${gx},${gy - DECISION_H} ${gx + DECISION_H},${gy} ${gx},${gy + DECISION_H} ${gx - DECISION_H},${gy}`;
             const h = DECISION_H;
             return (
               <g opacity={0.65} style={{ pointerEvents: "none" }}>
-                <polygon points={pts} fill="white" stroke={str} strokeWidth="2" />
+                <polygon points={pts} fill={viewerMode ? "#EFF6FF" : "white"} stroke={str} strokeWidth="2" />
                 {step.type === "decision" ? (
                   <>
                     <line x1={gx - h * 0.45} y1={gy - h * 0.45} x2={gx + h * 0.45} y2={gy + h * 0.45}
@@ -1262,11 +1473,11 @@ export function ProcessCanvas({
             <g opacity={0.65} style={{ pointerEvents: "none" }}>
               {/* Ghost card following cursor */}
               <rect x={gx - STEP_W / 2} y={gy - STEP_H / 2} width={STEP_W} height={STEP_H}
-                rx="8" fill="white" stroke={getLaneConfig(step.team, customLanes).stroke} strokeWidth="2" />
-              <rect x={gx - STEP_W / 2} y={gy - STEP_H / 2} width={4} height={STEP_H}
-                rx="2" fill={getLaneConfig(step.team, customLanes).stroke} />
-              <text x={gx + 4} y={gy} textAnchor="middle" dominantBaseline="middle"
-                fontSize="9" fontWeight="500" fill="#1e293b"
+                rx="8" fill={viewerMode ? "#EFF6FF" : "white"} stroke={viewerMode ? "#3B82F6" : getLaneConfig(step.team, customLanes).stroke} strokeWidth="2" />
+              {!viewerMode && <rect x={gx - STEP_W / 2} y={gy - STEP_H / 2} width={4} height={STEP_H}
+                rx="2" fill={getLaneConfig(step.team, customLanes).stroke} />}
+              <text x={viewerMode ? gx : gx + 4} y={gy} textAnchor="middle" dominantBaseline="middle"
+                fontSize="9" fontWeight="500" fill={viewerMode ? "#1D4ED8" : "#1e293b"}
                 style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
                 {step.label.length > 18 ? step.label.slice(0, 17) + "…" : step.label}
               </text>
@@ -1370,7 +1581,8 @@ export function ProcessCanvas({
                 onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}
                 onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }} />
               {/* Visible path */}
-              <path d={branchPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="5 3" fill="none"
+              <path d={branchPath} stroke={ROUTE_OPTIONAL} strokeWidth="1.7" strokeDasharray="5 3" fill="none"
+                aria-label="Correctie of optionele route"
                 markerEnd="url(#ah-branch)" opacity={0.75} style={{ pointerEvents: "none" }} />
               {/* Label always horizontal, offset from midpoint so it doesn't overlap the line */}
               {isEditing ? (
@@ -1426,11 +1638,13 @@ export function ProcessCanvas({
           const midX = (startX + curX) / 2;
           const previewPath = `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${curY} L ${curX} ${curY}`;
           return (
-            <path d={previewPath} stroke="#d97706" strokeWidth="1.5" strokeDasharray="6 3" fill="none"
+            <path d={previewPath} stroke={ROUTE_OPTIONAL} strokeWidth="1.5" strokeDasharray="6 3" fill="none"
               markerEnd="url(#ah-branch)" style={{ pointerEvents: "none" }} />
           );
         })()}
-      </svg>
+        </svg>
+      </div>
+      <ProcessCanvasLegend />
 
       {/* ── Context menu ── */}
       {contextMenu && (
