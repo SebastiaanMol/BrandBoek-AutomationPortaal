@@ -92,6 +92,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [paletteOpen, setPaletteOpen] = useState(false);
   const savedLinksRef        = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
   const savedParkedStepsRef  = useRef<ProcessStep[]>([]);
+  const fileInputRef         = useRef<HTMLInputElement>(null);
 
   const [parkedSteps, setParkedSteps]           = useState<ProcessStep[]>([]);
   const [rightTab, setRightTab]                 = useState<"automations" | "stappen">("automations");
@@ -266,6 +267,36 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       customLanes,
     });
     toast.success("Backup gedownload als JSON");
+  }
+
+  async function handleImportBackup(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file) return;
+
+    try {
+      const savedState = await importProcessBackup(file);
+      const restoredAutos = state.automations.map(a => ({
+        ...a,
+        fromStepId: savedState.autoLinks[a.id]?.fromStepId,
+        toStepId:   savedState.autoLinks[a.id]?.toStepId,
+      }));
+      setState(prev => ({
+        ...prev,
+        steps:       savedState.steps       as ProcessStep[],
+        connections: savedState.connections as ProcessState["connections"],
+        automations: restoredAutos,
+        activeLanes: savedState.activeLanes ?? prev.activeLanes,
+        customLanes: savedState.customLanes as CustomLane[] | undefined ?? prev.customLanes,
+      }));
+      if (savedState.activeLanes) setActiveLanes(savedState.activeLanes);
+      if (savedState.customLanes) setCustomLanes(savedState.customLanes as CustomLane[]);
+      setParkedSteps(savedState.parkedSteps as ProcessStep[]);
+      setIsDirty(true);
+      toast.success("Backup geladen — controleer en klik Opslaan om op te slaan");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Importeren mislukt");
+    }
   }
 
   // ── Step handlers ──────────────────────────────────────────────────────────
@@ -703,6 +734,16 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <Button
+            variant="ghost" size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+            title="Importeer een JSON backup"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Importeer
+          </Button>
 
           <Button variant="ghost" size="sm" onClick={() => setConfirmReset(true)} disabled={!isDirty}
             className="gap-1.5 text-muted-foreground hover:text-foreground">
@@ -1198,6 +1239,14 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleImportBackup}
+      />
     </div>
   );
 }
