@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { RotateCcw, Save, ImageDown, FileDown, ChevronDown, HelpCircle, X, Rows3, Plus } from "lucide-react";
+import { RotateCcw, Save, ImageDown, FileDown, ChevronDown, HelpCircle, X, Rows3, Plus, Pencil, Download, Upload } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +28,18 @@ import { UnassignedPanel } from "@/components/process/UnassignedPanel";
 import { AutomationDetailPanel } from "@/components/process/AutomationDetailPanel";
 import { StepDialog } from "@/components/process/StepDialog";
 import type { ProcessStep, Automation, TeamKey, ProcessState, CustomLane } from "@/data/processData";
-import { initialState, stagesToProcessState, TEAM_ORDER, TEAM_CONFIG, CUSTOM_LANE_PALETTE } from "@/data/processData";
+import {
+  buildLaneKeys,
+  CUSTOM_LANE_PALETTE,
+  filterValidActiveLanes,
+  getLaneConfig,
+  initialState,
+  isPresetLaneKey,
+  stagesToProcessState,
+  TEAM_CONFIG,
+  TEAM_ORDER,
+  upsertCustomLaneConfig,
+} from "@/data/processData";
 import { useAutomatiseringen } from "@/lib/queryHooks/automations";
 import { usePipelines } from "@/lib/queryHooks/pipelines";
 import { useProcessState } from "@/lib/queryHooks/processState";
@@ -37,6 +48,7 @@ import { saveProcessState } from "@/lib/storage/processState";
 import { detectDrift } from "@/lib/processDrift";
 import { StepStagingPanel } from "@/components/process/StepStagingPanel";
 import { exportProcessCanvasPdf, exportProcessCanvasPng } from "@/lib/processExport";
+import { exportProcessBackup, importProcessBackup } from "@/lib/processBackup";
 import { buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
@@ -63,9 +75,10 @@ interface ProcessenEditorProps {
   pipelineId: string;
   onSwitchPipeline: (id: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  displayStyle?: "viewer";
 }
 
-export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }: ProcessenEditorProps) {
+export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, displayStyle }: ProcessenEditorProps) {
 
   const queryClient = useQueryClient();
   const [state, setState]     = useState<ProcessState>(initialState);
@@ -87,6 +100,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
   const [customLanes, setCustomLanes]           = useState<CustomLane[]>([]);
   const [newLaneDialogOpen, setNewLaneDialogOpen] = useState(false);
   const [newLaneName, setNewLaneName]             = useState("");
+  const [renameLaneKey, setRenameLaneKey]         = useState<string | null>(null);
+  const [renameLaneName, setRenameLaneName]       = useState("");
 
   const { data: allPipelines = [] } = usePipelines();
   const pipelines = allPipelines.filter(p => p.isActive);
@@ -153,10 +168,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     const restoredCustom = (savedState.customLanes ?? []) as CustomLane[];
     setCustomLanes(restoredCustom);
     if (savedState.activeLanes) {
-      const allValidKeys = [...TEAM_ORDER, ...restoredCustom.map(l => l.key)];
-      setActiveLanes(savedState.activeLanes.filter(l => allValidKeys.includes(l)));
+      setActiveLanes(filterValidActiveLanes(savedState.activeLanes, restoredCustom));
     } else {
-      setActiveLanes([...TEAM_ORDER, ...restoredCustom.map(l => l.key)]);
+      setActiveLanes(buildLaneKeys(restoredCustom));
     }
     setIsDirty(false);
   }, [savedState, stateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -180,7 +194,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
   const [selectedAuto, setSelectedAuto] = useState<Automation | null>(null);
   const [editingStep, setEditingStep]   = useState<ProcessStep | null>(null);
   const [stepDialogOpen, setStepDialogOpen] = useState(false);
-  const [stepDefaults, setStepDefaults] = useState<{ team?: TeamKey; column?: number; row?: number; type?: ProcessStep["type"] }>({});
+  const [stepDefaults, setStepDefaults] = useState<{ team?: string; column?: number; row?: number; type?: ProcessStep["type"] }>({});
 
   // Notify parent when dirty state changes
   useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
@@ -235,6 +249,25 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     }
   }
 
+  function handleExportBackup() {
+    const pipeline = pipelines.find(p => p.pipelineId === pipelineId);
+    const autoLinks: Record<string, { fromStepId: string; toStepId: string }> = {};
+    state.automations.forEach(a => {
+      if (a.fromStepId && a.toStepId) {
+        autoLinks[a.id] = { fromStepId: a.fromStepId, toStepId: a.toStepId };
+      }
+    });
+    exportProcessBackup(pipeline?.naam ?? pipelineId, {
+      steps:       state.steps,
+      connections: state.connections,
+      autoLinks,
+      parkedSteps,
+      activeLanes,
+      customLanes,
+    });
+    toast.success("Backup gedownload als JSON");
+  }
+
   // ── Step handlers ──────────────────────────────────────────────────────────
   const handleStepClick = useCallback((step: ProcessStep) => {
     if (step.type === "start" || step.type === "end") return;
@@ -266,7 +299,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     toast.success("Stap verwijderd");
   }
 
-  function handleAddStep(team: TeamKey, column: number, row: number, type: ProcessStep["type"] = "task") {
+  function handleAddStep(team: string, column: number, row: number, type: ProcessStep["type"] = "task") {
     if (type === "start" || type === "end") {
       update(s => ({
         ...s,
@@ -286,42 +319,53 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
   }
 
   function handleAddEventStep(type: "start" | "end") {
-    const col  = type === "start" ? 0 : maxColumn + 1;
-    const team: TeamKey = type === "start" ? "marketing" : "management";
+    if (type === "start") {
+      // Find existing start events and stack the new one below the last one
+      update(s => {
+        const existingStarts = s.steps.filter(x => x.type === "start");
+        const last = existingStarts.length > 0
+          ? existingStarts.reduce((a, b) => (b.row ?? 0) > (a.row ?? 0) ? b : a)
+          : null;
+        return {
+          ...s,
+          steps: [...s.steps, {
+            id:     `ev-start-${Date.now()}`,
+            label:  "Start",
+            type:   "start" as const,
+            team:   last ? last.team : ("marketing" as TeamKey),
+            column: last ? last.column : 0,
+            row:    last ? (last.row ?? 0) + 1 : 0,
+          }],
+        };
+      });
+      return;
+    }
+    // End event: place at far right
+    const col = maxColumn + 1;
     update(s => ({
       ...s,
       steps: [...s.steps, {
-        id:    `ev-${type}-${Date.now()}`,
-        label: type === "start" ? "Start" : "Einde",
-        team,
+        id:    `ev-end-${Date.now()}`,
+        label: "Einde",
+        team:  "management" as TeamKey,
         column: col,
-        type,
+        type:  "end" as const,
       }],
     }));
   }
 
-  function handleMoveStep(stepId: string, newTeam: TeamKey, newColumn: number, newRow: number = 0) {
+  function handleMoveStep(stepId: string, newTeam: string, newColumn: number, newRow: number = 0) {
     update(s => {
       const moving = s.steps.find(x => x.id === stepId);
       if (!moving) return s;
 
-      // Event markers use INSERT behaviour: slide everything to make room, close the gap left behind.
+      // Event markers (start/end) move freely — no column slide, just reposition.
       if (moving.type === "start" || moving.type === "end") {
-        const oldCol = moving.column;
-        if (oldCol === newColumn) return { ...s, steps: s.steps.map(x => x.id === stepId ? { ...x, team: newTeam, row: newRow } : x) };
         return {
           ...s,
-          steps: s.steps.map(x => {
-            if (x.id === stepId) return { ...x, team: newTeam, column: newColumn, row: newRow };
-            if (newColumn > oldCol) {
-              // Moving right: steps strictly between old and new shift left by 1
-              if (x.column > oldCol && x.column <= newColumn) return { ...x, column: x.column - 1 };
-            } else {
-              // Moving left: steps between new and old shift right by 1
-              if (x.column >= newColumn && x.column < oldCol) return { ...x, column: x.column + 1 };
-            }
-            return x;
-          }),
+          steps: s.steps.map(x =>
+            x.id === stepId ? { ...x, team: newTeam, column: newColumn, row: newRow } : x
+          ),
         };
       }
 
@@ -417,7 +461,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     }
   }
 
-  function handlePlaceStep(step: ProcessStep, team: TeamKey, column: number, row: number) {
+  function handlePlaceStep(step: ProcessStep, team: string, column: number, row: number) {
     const placed = { ...step, team, column, row };
     update(s => ({
       ...s,
@@ -465,7 +509,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
       setActiveLanes(prev => prev.filter(l => l !== laneKey));
     } else {
       // Re-add the lane — preserve current order, append if new
-      const allKeys = [...TEAM_ORDER, ...customLanes.map(l => l.key)];
+      const allKeys = buildLaneKeys(customLanes);
       setActiveLanes(allKeys.filter(l => l === laneKey || activeLanes.includes(l)));
     }
     setIsDirty(true);
@@ -484,6 +528,44 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
     setActiveLanes(prev => [...prev, newLane.key]);
     setNewLaneName("");
     setNewLaneDialogOpen(false);
+    setIsDirty(true);
+  }
+
+  function handleOpenRenameLane(laneKey: string) {
+    const cfg = getLaneConfig(laneKey, customLanes);
+    setRenameLaneKey(laneKey);
+    setRenameLaneName(cfg.label);
+  }
+
+  function handleRenameLane() {
+    if (!renameLaneKey) return;
+    const name = renameLaneName.trim();
+    if (!name) return;
+    const current = getLaneConfig(renameLaneKey, customLanes);
+    setCustomLanes(prev => upsertCustomLaneConfig(prev, { ...current, label: name }));
+    setRenameLaneKey(null);
+    setRenameLaneName("");
+    setIsDirty(true);
+    toast.success("Swimlane hernoemd");
+  }
+
+  function handleInsertRowAfter(team: string, afterRow: number) {
+    const insertRow = afterRow + 1;
+    const shifted = state.steps.map((s) =>
+      s.team === team && (s.row ?? 0) >= insertRow ? { ...s, row: (s.row ?? 0) + 1 } : s,
+    );
+    const firstColInRow = state.steps
+      .filter((s) => s.team === team && (s.row ?? 0) === afterRow)
+      .map((s) => s.column)[0] ?? 0;
+    const newStep: import("@/data/processData").ProcessStep = {
+      id: `step-${Date.now()}`,
+      label: "Nieuwe stap",
+      team,
+      column: firstColInRow,
+      row: insertRow,
+      type: "task",
+    };
+    setState(prev => ({ ...prev, steps: [...shifted, newStep] }));
     setIsDirty(true);
   }
 
@@ -614,6 +696,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
                 <FileDown className="h-4 w-4" />
                 PDF downloaden
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleExportBackup} className="gap-2">
+                <Download className="h-4 w-4" />
+                Backup als JSON
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -623,7 +710,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
             Reset
           </Button>
 
-          <Button size="sm" onClick={() => setConfirmSave(true)} disabled={!isDirty} className="gap-1.5">
+          <Button size="sm" onClick={() => handleSave()} disabled={!isDirty} className="gap-1.5">
             <Save className="h-3.5 w-3.5" />
             Opslaan
           </Button>
@@ -722,13 +809,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
             <DropdownMenuContent align="end" className="w-56 p-1">
               {/* Active lanes — shown in current order with move controls */}
               {activeLanes.map((laneKey, idx) => {
-                const isPreset = (TEAM_ORDER as string[]).includes(laneKey);
-                const label  = isPreset ? TEAM_CONFIG[laneKey as TeamKey].label : (customLanes.find(l => l.key === laneKey)?.label ?? laneKey);
-                const stroke = isPreset ? TEAM_CONFIG[laneKey as TeamKey].stroke : (customLanes.find(l => l.key === laneKey)?.stroke ?? "#888");
+                const isPreset = isPresetLaneKey(laneKey);
+                const cfg = getLaneConfig(laneKey, customLanes);
                 return (
                   <div key={laneKey} className="flex items-center gap-0.5 px-1 py-1 rounded hover:bg-muted/50 group">
-                    <span className="w-2 h-2 rounded-full shrink-0 mr-1" style={{ background: stroke }} />
-                    <span className="flex-1 text-sm truncate">{label}</span>
+                    <span className="w-2 h-2 rounded-full shrink-0 mr-1" style={{ background: cfg.stroke }} />
+                    <span className="flex-1 text-sm truncate">{cfg.label}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleOpenRenameLane(laneKey); }}
+                      className="p-0.5 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100"
+                      title="Hernoem"
+                    ><Pencil className="h-3 w-3" /></button>
                     <button
                       onClick={e => { e.stopPropagation(); handleMoveLane(laneKey, -1); }}
                       disabled={idx === 0}
@@ -759,7 +850,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
 
               {/* Hidden lanes */}
               {(() => {
-                const allKeys = [...TEAM_ORDER, ...customLanes.map(l => l.key)];
+                const allKeys = buildLaneKeys(customLanes);
                 const hidden  = allKeys.filter(k => !activeLanes.includes(k));
                 if (!hidden.length) return null;
                 return (
@@ -767,13 +858,12 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
                     <DropdownMenuSeparator className="my-1" />
                     <p className="px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Verborgen</p>
                     {hidden.map(laneKey => {
-                      const isPreset = (TEAM_ORDER as string[]).includes(laneKey);
-                      const label  = isPreset ? TEAM_CONFIG[laneKey as TeamKey].label : (customLanes.find(l => l.key === laneKey)?.label ?? laneKey);
-                      const stroke = isPreset ? TEAM_CONFIG[laneKey as TeamKey].stroke : (customLanes.find(l => l.key === laneKey)?.stroke ?? "#888");
+                      const isPreset = isPresetLaneKey(laneKey);
+                      const cfg = getLaneConfig(laneKey, customLanes);
                       return (
                         <div key={laneKey} className="flex items-center gap-1 px-1 py-1 rounded hover:bg-muted/50">
-                          <span className="w-2 h-2 rounded-full shrink-0 mr-1 opacity-40" style={{ background: stroke }} />
-                          <span className="flex-1 text-sm text-muted-foreground truncate">{label}</span>
+                          <span className="w-2 h-2 rounded-full shrink-0 mr-1 opacity-40" style={{ background: cfg.stroke }} />
+                          <span className="flex-1 text-sm text-muted-foreground truncate">{cfg.label}</span>
                           <button
                             onClick={e => { e.stopPropagation(); handleToggleLane(laneKey); }}
                             className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
@@ -811,19 +901,22 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
 
         {/* Canvas */}
         <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-auto p-4">
+          <div className={`flex-1 overflow-auto ${displayStyle === "viewer" ? "" : "p-4"}`}>
             {loading ? (
               <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
                 Proceskaart laden…
               </div>
             ) : null}
-            <div className={`process-canvas-wrap border border-border rounded-[var(--radius-outer)] overflow-hidden bg-card shadow-sm ${loading ? "hidden" : ""}`}>
+            <div className={`process-canvas-wrap overflow-hidden ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"} ${loading ? "hidden" : ""}`}>
               <ProcessCanvas
                 steps={state.steps}
                 connections={state.connections}
                 automations={state.automations}
                 activeLanes={activeLanes}
                 customLanes={customLanes}
+                displayStyle={displayStyle}
+                onRenameLane={displayStyle === "viewer" ? handleOpenRenameLane : undefined}
+                onInsertRowAfter={displayStyle === "viewer" ? handleInsertRowAfter : undefined}
                 onStepClick={handleStepClick}
                 onAutomationClick={handleAutoClick}
                 onAddConnection={handleAddConnection}
@@ -840,14 +933,16 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
             </div>
 
             {/* Legend */}
-            <div className="mt-3 flex items-center gap-4 flex-wrap">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Tip:</span> Sleep automations naar pijlen ·
-                Sleep stappen om te verplaatsen ·
-                Sleep vanuit het poortje (rechts op een stap) om een verbinding te tekenen ·
-                Dubbelklik op een pijl om te verwijderen
-              </p>
-            </div>
+            {displayStyle !== "viewer" && (
+              <div className="mt-3 flex items-center gap-4 flex-wrap">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Tip:</span> Sleep automations naar pijlen ·
+                  Sleep stappen om te verplaatsen ·
+                  Sleep vanuit het poortje (rechts op een stap) om een verbinding te tekenen ·
+                  Dubbelklik op een pijl om te verwijderen
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -926,6 +1021,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
         step={editingStep}
         maxColumn={maxColumn}
         defaultValues={stepDefaults}
+        activeLanes={activeLanes}
+        customLanes={customLanes}
         onSave={handleSaveStep}
         onDelete={editingStep ? handleDeleteStep : undefined}
         onClose={() => { setStepDialogOpen(false); setEditingStep(null); }}
@@ -991,23 +1088,6 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
         </div>
       )}
 
-      {/* ── Bevestiging Opslaan ────────────────────────────────────────── */}
-      <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Proceskaart opslaan?</AlertDialogTitle>
-            <AlertDialogDescription>
-              De huidige versie wordt opgeslagen in de database. Dit overschrijft de vorige opgeslagen versie.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuleren</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { handleSave(); setConfirmSave(false); }}>
-              Ja, opslaan
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* ── Navigatie blokkeren bij onopgeslagen wijzigingen ─────────── */}
       <AlertDialog open={blocker.state === "blocked"} onOpenChange={() => blocker.reset?.()}>
@@ -1057,6 +1137,45 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange }:
       </AlertDialog>
 
       {/* ── Bevestiging pipeline wisselen ──────────────────────────────── */}
+      <AlertDialog
+        open={!!renameLaneKey}
+        onOpenChange={open => {
+          if (!open) {
+            setRenameLaneKey(null);
+            setRenameLaneName("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Swimlane hernoemen</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deze naam wordt opgeslagen voor deze proceskaart.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <input
+            aria-label="Swimlane naam"
+            value={renameLaneName}
+            onChange={e => setRenameLaneName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") handleRenameLane();
+              if (e.key === "Escape") {
+                setRenameLaneKey(null);
+                setRenameLaneName("");
+              }
+            }}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            autoFocus
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setRenameLaneName("")}>Annuleren</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRenameLane} disabled={!renameLaneName.trim()}>
+              Opslaan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={confirmSwitch} onOpenChange={setConfirmSwitch}>
         <AlertDialogContent>
           <AlertDialogHeader>
