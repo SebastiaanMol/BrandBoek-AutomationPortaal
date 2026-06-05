@@ -76,6 +76,49 @@ export const TEAM_ORDER: TeamKey[] = [
   "marketing", "sales", "onboarding", "klantrelaties", "boekhouding", "management",
 ];
 
+export type LaneConfig = Omit<CustomLane, "key">;
+
+const FALLBACK_LANE_CONFIG: LaneConfig = {
+  label: "Onbekend",
+  bg: "hsl(0 0% 97%)",
+  stroke: "hsl(0 0% 60%)",
+  text: "hsl(0 0% 35%)",
+  dot: "hsl(0 0% 55%)",
+};
+
+export function isPresetLaneKey(key: string): key is TeamKey {
+  return (TEAM_ORDER as string[]).includes(key);
+}
+
+export function getLaneConfig(team: string, customLanes: CustomLane[] = []): CustomLane {
+  const custom = customLanes.find((lane) => lane.key === team);
+  if (custom) return custom;
+  if (isPresetLaneKey(team)) return { key: team, ...TEAM_CONFIG[team] };
+  return { key: team, ...FALLBACK_LANE_CONFIG, label: team };
+}
+
+export function buildLaneKeys(customLanes: CustomLane[] = []): string[] {
+  const keys = new Set<string>(TEAM_ORDER);
+  for (const lane of customLanes) {
+    if (!isPresetLaneKey(lane.key)) keys.add(lane.key);
+  }
+  return Array.from(keys);
+}
+
+export function filterValidActiveLanes(activeLanes: string[] = [], customLanes: CustomLane[] = []): string[] {
+  const validKeys = new Set(buildLaneKeys(customLanes));
+  return activeLanes.filter((laneKey) => validKeys.has(laneKey));
+}
+
+export function upsertCustomLaneConfig(customLanes: CustomLane[], lane: CustomLane): CustomLane[] {
+  const existingIndex = customLanes.findIndex((item) => item.key === lane.key);
+  if (existingIndex === -1) return [...customLanes, lane];
+
+  const next = [...customLanes];
+  next[existingIndex] = lane;
+  return next;
+}
+
 export const initialState: ProcessState = {
   steps: [
     // Event markers
@@ -145,4 +188,8 @@ export function stagesToProcessState(pipeline: Pipeline): ProcessState {
     toStepId:   steps[i + 1].id,
   }));
   return { steps, connections, automations: [] };
+}
+
+export function isPipelineStep(step: ProcessStep): boolean {
+  return step.id.startsWith("stage-");
 }
