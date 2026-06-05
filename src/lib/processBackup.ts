@@ -46,12 +46,14 @@ export function exportProcessBackup(
   const safe = pipelineName.replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
   a.href     = url;
   a.download = `proces-backup-${safe}-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
 export async function importProcessBackup(file: File): Promise<SavedProcessState> {
-  if (!file.name.endsWith(".json") && file.type !== "application/json") {
+  if (!file.name.toLowerCase().endsWith(".json")) {
     throw new Error("Alleen .json bestanden zijn geldig.");
   }
   if (file.size > 5 * 1024 * 1024) {
@@ -80,6 +82,12 @@ export async function importProcessBackup(file: File): Promise<SavedProcessState
   if (!Array.isArray(s.parkedSteps)) throw new Error("'state.parkedSteps' moet een array zijn.");
   if (typeof s.autoLinks !== "object" || s.autoLinks === null || Array.isArray(s.autoLinks)) {
     throw new Error("'state.autoLinks' moet een object zijn.");
+  }
+  for (const [key, val] of Object.entries(s.autoLinks as object)) {
+    const entry = val as Record<string, unknown>;
+    if (typeof entry.fromStepId !== "string" || typeof entry.toStepId !== "string") {
+      throw new Error(`'state.autoLinks.${key}' mist fromStepId of toStepId.`);
+    }
   }
 
   return {

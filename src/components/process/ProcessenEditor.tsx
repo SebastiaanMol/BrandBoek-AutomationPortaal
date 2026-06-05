@@ -286,11 +286,12 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         steps:       savedState.steps       as ProcessStep[],
         connections: savedState.connections as ProcessState["connections"],
         automations: restoredAutos,
-        activeLanes: savedState.activeLanes ?? prev.activeLanes,
-        customLanes: savedState.customLanes as CustomLane[] | undefined ?? prev.customLanes,
       }));
-      if (savedState.activeLanes) setActiveLanes(savedState.activeLanes);
-      if (savedState.customLanes) setCustomLanes(savedState.customLanes as CustomLane[]);
+      const restoredCustomLanes = savedState.customLanes as CustomLane[] | undefined;
+      if (restoredCustomLanes) setCustomLanes(restoredCustomLanes);
+      if (savedState.activeLanes) {
+        setActiveLanes(filterValidActiveLanes(savedState.activeLanes, restoredCustomLanes ?? []));
+      }
       setParkedSteps(savedState.parkedSteps as ProcessStep[]);
       setIsDirty(true);
       toast.success("Backup geladen — controleer en klik Opslaan om op te slaan");
