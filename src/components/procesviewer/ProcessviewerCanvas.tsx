@@ -783,9 +783,9 @@ function BpmnNode({
       {isPipelineStep(step) && (
         <g style={{ pointerEvents: "none" }}>
           <rect
-            x={cx + STEP_W / 2 - 4 - 46}
+            x={cx + STEP_W / 2 - 4 - 44}
             y={cy - STEP_H / 2 + 3}
-            width={46}
+            width={44}
             height={13}
             rx="3"
             fill="#F1F5F9"
@@ -793,11 +793,11 @@ function BpmnNode({
             strokeWidth="0.5"
           />
           <text
-            x={cx + STEP_W / 2 - 4 - 23}
+            x={cx + STEP_W / 2 - 4 - 22}
             y={cy - STEP_H / 2 + 3 + 6.5}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize="7.5"
+            fontSize="8"
             fontWeight="600"
             fill="#475569"
             style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}

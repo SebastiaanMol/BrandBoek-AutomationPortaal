@@ -335,7 +335,7 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
             y={cy - STEP_H / 2 + 3 + 6}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize="7"
+            fontSize="8"
             fontWeight="600"
             fill="#475569"
             style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
