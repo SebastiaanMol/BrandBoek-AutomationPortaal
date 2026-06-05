@@ -14,9 +14,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Trash2, ChevronDown, ChevronUp } from "lucide-react";
-import type { ProcessStep, TeamKey } from "@/data/processData";
-import { TEAM_CONFIG, TEAM_ORDER } from "@/data/processData";
+import { Trash2, ChevronDown, ChevronUp, Lock } from "lucide-react";
+import type { CustomLane, ProcessStep } from "@/data/processData";
+import { buildLaneKeys, getLaneConfig, isPipelineStep } from "@/data/processData";
 
 // ── BPMN type icon components (20×20 SVG, rendered at h-5 w-5) ───────────────
 
@@ -114,21 +114,35 @@ interface StepDialogProps {
   open: boolean;
   step: ProcessStep | null;       // null = add new
   maxColumn: number;
-  defaultValues?: { team?: TeamKey; column?: number; row?: number; type?: StepType };
+  defaultValues?: { team?: string; column?: number; row?: number; type?: StepType };
+  activeLanes?: string[];
+  customLanes?: CustomLane[];
   onSave: (step: ProcessStep) => void;
   onDelete?: (id: string) => void;
   onClose: () => void;
 }
 
-export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDelete, onClose }: StepDialogProps) {
+export function StepDialog({
+  open,
+  step,
+  maxColumn,
+  defaultValues,
+  activeLanes,
+  customLanes,
+  onSave,
+  onDelete,
+  onClose,
+}: StepDialogProps) {
   const [label, setLabel]           = useState("");
-  const [team, setTeam]             = useState<TeamKey>("sales");
+  const [team, setTeam]             = useState("sales");
   const [column, setColumn]         = useState(0);
   const [row, setRow]               = useState(0);
   const [description, setDesc]      = useState("");
   const [stepType, setStepType]     = useState<StepType>("task");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typeExpanded, setTypeExpanded]   = useState(false);
+
+  const isLocked = !!step && isPipelineStep(step);
 
   useEffect(() => {
     if (step) {
@@ -177,13 +191,25 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Naam</Label>
-              <Input
-                value={label}
-                onChange={e => setLabel(e.target.value)}
-                placeholder="bijv. Intake gesprek"
-                onKeyDown={e => e.key === "Enter" && handleSave()}
-                autoFocus
-              />
+              {isLocked ? (
+                <div className="flex items-center gap-2 rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate">{label}</span>
+                </div>
+              ) : (
+                <Input
+                  value={label}
+                  onChange={e => setLabel(e.target.value)}
+                  placeholder="bijv. Intake gesprek"
+                  onKeyDown={e => e.key === "Enter" && handleSave()}
+                  autoFocus
+                />
+              )}
+              {isLocked && (
+                <p className="text-[11px] text-muted-foreground">
+                  Naam bepaald door de pipeline
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -198,22 +224,25 @@ export function StepDialog({ open, step, maxColumn, defaultValues, onSave, onDel
 
             <div className="space-y-1.5">
               <Label>Team</Label>
-              <Select value={team} onValueChange={v => setTeam(v as TeamKey)}>
+              <Select value={team} onValueChange={setTeam}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TEAM_ORDER.map(t => (
+                  {(activeLanes?.length ? activeLanes : buildLaneKeys(customLanes)).map(t => {
+                    const cfg = getLaneConfig(t, customLanes);
+                    return (
                     <SelectItem key={t} value={t}>
                       <span className="flex items-center gap-2">
                         <span
                           className="inline-block w-2.5 h-2.5 rounded-full"
-                          style={{ background: TEAM_CONFIG[t].stroke }}
+                          style={{ background: cfg.stroke }}
                         />
-                        {TEAM_CONFIG[t].label}
+                        {cfg.label}
                       </span>
                     </SelectItem>
-                  ))}
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
