@@ -12,6 +12,7 @@ export interface ProcessBackup {
     parkedSteps: unknown[];
     activeLanes?: string[];
     customLanes?: unknown[];
+    flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
   };
 }
 
@@ -24,6 +25,7 @@ export function exportProcessBackup(
     parkedSteps: ProcessStep[];
     activeLanes: string[];
     customLanes: CustomLane[];
+    flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
   },
 ): void {
   const backup: ProcessBackup = {
@@ -37,6 +39,7 @@ export function exportProcessBackup(
       parkedSteps: state.parkedSteps,
       activeLanes: state.activeLanes,
       customLanes: state.customLanes,
+      flowLinks:   state.flowLinks,
     },
   };
 

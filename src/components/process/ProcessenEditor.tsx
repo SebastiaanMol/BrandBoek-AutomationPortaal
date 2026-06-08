@@ -273,6 +273,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       parkedSteps,
       activeLanes,
       customLanes,
+      flowLinks,
     });
     toast.success("Backup gedownload als JSON");
   }
@@ -1165,7 +1166,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 flowLinks={flowLinks}
                 steps={state.steps}
                 onAutomationClick={handleAutoClick}
-                onFlowClick={handleDetachFlow}
+                onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
               />
             ) : (
               <StepStagingPanel
