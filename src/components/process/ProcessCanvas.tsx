@@ -8,15 +8,17 @@ import {
   TEAM_ORDER,
 } from "@/data/processData";
 
+const LINK_ICON_PATH = "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71";
+
 // ── Layout constants ──────────────────────────────────────────────────────────
 
 const ROW_H        = 88;    // height of one row within a swimlane  (110 × 0.80)
 const LANE_HDR_W   = 106;   // (132 × 0.80)
 const STEP_W       = 122;   // (152 × 0.80)
 const STEP_H       = 42;    // (52 × 0.80)
-const DECISION_H   = 26;    // half-diagonal of decision diamond     (32 × 0.80)
+const DECISION_H   = 36;    // half-diagonal of decision diamond
 const BASE_COL_W   = 198;   // (248 × 0.80)
-const EVT_COL_W    = 96;    // (120 × 0.80)
+const EVT_COL_W    = BASE_COL_W; // same width as task cols — prevents narrow snap zone causing drift to wrong column
 const DOT_R        = 11;    // (14 × 0.80)
 const DOT_SPACING  = 29;    // (36 × 0.80)
 const EDGE_PAD     = 19;    // (24 × 0.80)
@@ -57,13 +59,20 @@ function stepRow(step: ProcessStep) {
 
 // ── Lane / row layout helpers ─────────────────────────────────────────────────
 
+// Max row across tasks only — used for column layout and task clamping
 function maxRowInLane(team: string, steps: ProcessStep[]): number {
   const rows = steps.filter(s => s.team === team && !isEvent(s)).map(s => stepRow(s));
   return rows.length ? Math.max(...rows) : 0;
 }
 
+// Max row across ALL steps including events — used for lane height
+function maxRowInLaneFull(team: string, steps: ProcessStep[]): number {
+  const rows = steps.filter(s => s.team === team).map(s => stepRow(s));
+  return rows.length ? Math.max(...rows) : 0;
+}
+
 function laneHeightFn(team: string, steps: ProcessStep[]): number {
-  return (maxRowInLane(team, steps) + 1) * ROW_H;
+  return (maxRowInLaneFull(team, steps) + 1) * ROW_H;
 }
 
 function buildLaneStarts(steps: ProcessStep[], teams: string[] = TEAM_ORDER): Record<string, number> {
@@ -136,21 +145,8 @@ function buildArrow(
   const fx = colX[from.column], fy = stepCY(from, laneStarts);
   const tx = colX[to.column],   ty = stepCY(to, laneStarts);
 
-  const sameRow = from.team === to.team && stepRow(from) === stepRow(to);
-  const sameCol = from.column === to.column;
-
-  if (sameRow) {
-    const ltr = from.column <= to.column;
-    const sx = ltr ? edgeRight(from, fx) : edgeLeft(from, fx);
-    const ex = ltr ? edgeLeft(to, tx)   : edgeRight(to, tx);
-    const dc: Pt = { x: (sx + ex) / 2, y: fy };
-    const pre  = `M ${sx} ${fy} L ${dc.x - DOT_R} ${fy}`;
-    const post = `M ${dc.x + DOT_R} ${fy} L ${ex} ${fy}`;
-    const postDotMid: Pt = { x: (dc.x + DOT_R + ex) / 2, y: fy };
-    return { path: `M ${sx} ${fy} L ${ex} ${ty}`, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: false, dotCenter: dc, isVertical: false };
-  }
-
-  if (sameCol) {
+  // Same column → straight vertical
+  if (from.column === to.column) {
     const down = fy < ty;
     const sy = down ? edgeDown(from, fy) : edgeUp(from, fy);
     const ey = down ? edgeUp(to, ty)     : edgeDown(to, ty);
@@ -161,19 +157,30 @@ function buildArrow(
     return { path: `M ${fx} ${sy} L ${tx} ${ey}`, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: true, dotCenter: dc, isVertical: true };
   }
 
-  // Orthogonal routing: exit right → vertical → enter left (90° corners only)
-  // The vertical segment is placed just past the from-step's right edge (in the inter-column gap)
-  // rather than at the midpoint, so it never passes through intermediate step nodes.
-  // midXOffset staggers parallel connections sharing the same column corridor so they don't overlap.
-  const sx = edgeRight(from, fx), ex = edgeLeft(to, tx);
-  const midX = sx + DOT_R * 2 + EDGE_PAD + midXOffset;
-  // Smooth cubic bezier: exit horizontally, curve into vertical, curve out horizontally into target
-  const cr = Math.min(24, Math.abs(ty - fy) / 2); // corner radius, capped at 24px
-  const goDown = ty > fy;
-  const path = `M ${sx} ${fy} L ${midX - cr} ${fy} C ${midX} ${fy} ${midX} ${fy} ${midX} ${fy + (goDown ? cr : -cr)} L ${midX} ${ty + (goDown ? -cr : cr)} C ${midX} ${ty} ${midX} ${ty} ${midX + cr} ${ty} L ${ex} ${ty}`;
-  const dc: Pt = { x: (sx + midX - cr) / 2, y: fy };
-  const pre  = `M ${sx} ${fy} L ${dc.x - DOT_R} ${fy}`;
-  const post = `M ${dc.x + DOT_R} ${fy} L ${midX - cr} ${fy} C ${midX} ${fy} ${midX} ${fy} ${midX} ${fy + (goDown ? cr : -cr)} L ${midX} ${ty + (goDown ? -cr : cr)} C ${midX} ${ty} ${midX} ${ty} ${midX + cr} ${ty} L ${ex} ${ty}`;
+  // All other connections — same formula as the viewer:
+  // H to midpoint → Q corner → V → Q corner → H to target
+  const ltr = from.column < to.column;
+  const sx = ltr ? edgeRight(from, fx) : edgeLeft(from, fx);
+  const ex = ltr ? edgeLeft(to, tx)   : edgeRight(to, tx);
+
+  const midX = (sx + ex) / 2 + midXOffset;
+  const r = 10;
+  const dy = ty > fy ? r : -r;
+  const dx = ltr ? r : -r;
+
+  if (Math.abs(fy - ty) < 4) {
+    // Truly horizontal: straight line
+    const dc: Pt = { x: (sx + ex) / 2, y: fy };
+    const pre  = `M ${sx} ${fy} H ${dc.x - DOT_R}`;
+    const post = `M ${dc.x + DOT_R} ${fy} H ${ex}`;
+    const postDotMid: Pt = { x: (dc.x + DOT_R + ex) / 2, y: fy };
+    return { path: `M ${sx} ${fy} H ${ex}`, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: false, dotCenter: dc, isVertical: false };
+  }
+
+  const path = `M ${sx} ${fy} H ${midX - dx} Q ${midX} ${fy} ${midX} ${fy + dy} V ${ty - dy} Q ${midX} ${ty} ${midX + dx} ${ty} H ${ex}`;
+  const dc: Pt = { x: (sx + midX - dx) / 2, y: fy };
+  const pre  = `M ${sx} ${fy} H ${dc.x - DOT_R}`;
+  const post = `M ${dc.x + DOT_R} ${fy} H ${midX - dx} Q ${midX} ${fy} ${midX} ${fy + dy} V ${ty - dy} Q ${midX} ${ty} ${midX + dx} ${ty} H ${ex}`;
   const postDotMid: Pt = { x: midX, y: (fy + ty) / 2 };
   return { path, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: true, dotCenter: dc, isVertical: false };
 }
@@ -226,6 +233,40 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
           fill="hsl(35 80% 40%)" stroke="white" strokeWidth="1.5"
           style={{ cursor: "crosshair" }}
           onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      )}
+    </g>
+  );
+}
+
+function FlowDot({ flowId, flowName, cx, cy, onClick }: {
+  flowId: string; flowName: string; cx: number; cy: number;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const label = flowName;
+  const estW = Math.max(72, label.length * 6 + 16);
+  const FLOW_R = 13;
+  return (
+    <g onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+       className="cursor-pointer"
+       style={{ filter: hov ? "drop-shadow(0 2px 4px rgba(99,102,241,.4))" : undefined }}>
+      <circle cx={cx} cy={cy} r={FLOW_R + 2} fill="white" onClick={onClick} />
+      <circle cx={cx} cy={cy} r={FLOW_R} fill="#6366F1" stroke="#4338CA" strokeWidth="1.5" onClick={onClick} />
+      <foreignObject x={cx - 6} y={cy - 6} width={12} height={12} style={{ pointerEvents: "none" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
+          <svg viewBox="0 0 24 24" width={9} height={9} fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+            <path d={LINK_ICON_PATH} />
+          </svg>
+        </div>
+      </foreignObject>
+      {hov && (
+        <g style={{ pointerEvents: "none" }}>
+          <rect x={cx - estW / 2} y={cy - FLOW_R - 20} width={estW} height={14}
+            rx="4" fill="#1e293b" fillOpacity={0.88} />
+          <text x={cx} y={cy - FLOW_R - 13} textAnchor="middle" fontSize="8" fill="white" fontWeight="500">
+            {label.length > 24 ? label.slice(0, 23) + "…" : label}
+          </text>
+        </g>
       )}
     </g>
   );
@@ -290,10 +331,12 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
   const x = cx - STEP_W / 2, y = cy - STEP_H / 2;
   const label = step.label.length > 18 ? step.label.slice(0, 17) + "…" : step.label;
 
-  const fill   = viewerMode ? "#EFF6FF" : "white";
-  const stroke = viewerMode ? "#3B82F6" : (hov ? cfg.stroke : "#cbd5e1");
-  const sw     = viewerMode ? 1.5 : (hov ? 2 : 1.5);
-  const txtFill = viewerMode ? "#1D4ED8" : "#1e293b";
+  const isOptional = step.type === "optional";
+  const fill    = viewerMode ? (isOptional ? "#FFF7ED" : "#EFF6FF") : "white";
+  const stroke  = viewerMode ? (isOptional ? "#F97316" : "#3B82F6") : (hov ? cfg.stroke : "#cbd5e1");
+  const sw      = viewerMode ? 1.5 : (hov ? 2 : 1.5);
+  const dashArr = isOptional ? "6 3" : undefined;
+  const txtFill = viewerMode ? (isOptional ? "#C2410C" : "#1D4ED8") : "#1e293b";
 
   return (
     <g style={{ opacity: isDragging ? 0.3 : 1 }}
@@ -304,7 +347,7 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
           rx="10" fill="none" stroke={viewerMode ? "#3B82F6" : cfg.stroke} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
       )}
       <rect x={x} y={y} width={STEP_W} height={STEP_H} rx="8" fill={fill}
-        stroke={stroke} strokeWidth={sw}
+        stroke={stroke} strokeWidth={sw} strokeDasharray={dashArr}
         style={{ cursor: "pointer", filter: hov ? "drop-shadow(0 2px 6px rgba(0,0,0,.1))" : undefined }}
         onMouseDown={onStepMouseDown} onClick={onClick} />
       {!viewerMode && <rect x={x} y={y} width={4} height={STEP_H} rx="2" fill={cfg.stroke} style={{ pointerEvents: "none" }} />}
@@ -321,23 +364,23 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
       {isPipelineStep(step) && (
         <g style={{ pointerEvents: "none" }}>
           <rect
-            x={cx + STEP_W / 2 - 4 - 44}
+            x={cx + STEP_W / 2 - 3 - 30}
             y={cy - STEP_H / 2 + 3}
-            width={44}
-            height={12}
-            rx="3"
-            fill="#F1F5F9"
-            stroke="#CBD5E1"
+            width={30}
+            height={9}
+            rx="2.5"
+            fill="#FFF1EE"
+            stroke="#FF7A59"
             strokeWidth="0.5"
           />
           <text
-            x={cx + STEP_W / 2 - 4 - 22}
-            y={cy - STEP_H / 2 + 3 + 6}
+            x={cx + STEP_W / 2 - 3 - 15}
+            y={cy - STEP_H / 2 + 3 + 4.5}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize="8"
+            fontSize="6"
             fontWeight="600"
-            fill="#475569"
+            fill="#C45200"
             style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
           >
             Pipeline
@@ -650,6 +693,12 @@ interface ProcessCanvasProps {
   onDeleteStep?: (stepId: string) => void;
   onPlaceStagedStep?: (step: ProcessStep, team: string, column: number, row: number) => void;
   onInsertRowAfter?: (team: string, afterRow: number) => void;
+  onInsertMoveStep?: (stepId: string, team: string, column: number, afterRow: number) => void;
+  onInsertAddStep?: (team: string, afterRow: number, column: number, type?: ProcessStep["type"]) => void;
+  flows?: import("@/lib/types").Flow[];
+  flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
+  onAttachFlow?: (flowId: string, fromStepId: string, toStepId: string) => void;
+  onFlowClick?: (flowId: string) => void;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -664,6 +713,11 @@ export function ProcessCanvas({
   onAddConnection, onDeleteConnection,
   onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
   onParkStep, onDeleteStep, onPlaceStagedStep, onInsertRowAfter,
+  onInsertMoveStep, onInsertAddStep,
+  flows = [] as import("@/lib/types").Flow[],
+  flowLinks = {} as Record<string, { fromStepId: string; toStepId: string }>,
+  onAttachFlow,
+  onFlowClick,
 }: ProcessCanvasProps) {
   const viewerMode = displayStyle === "viewer";
   const svgRef = useRef<SVGSVGElement>(null);
@@ -840,7 +894,7 @@ export function ProcessCanvas({
   // Snap y → {team, row}, allowing one new row beyond current max.
   // preferredTeam: when dragging a step, keep it in its own lane even if the
   // cursor strays into the extension zone below that lane.
-  function nearestTeamRow(y: number): { team: string; row: number } {
+  function nearestTeamRow(y: number, isEventDrag = false): { team: string; row: number } {
     // Find the lane the cursor is currently in
     let best = visibleTeams[0];
     for (const team of visibleTeams) {
@@ -848,16 +902,19 @@ export function ProcessCanvas({
     }
     const laneStart = laneStarts[best];
     const lh        = laneHeightFn(best, steps);
-    const maxR      = maxRowInLane(best, steps);
+    const maxR      = isEventDrag
+      ? maxRowInLaneFull(best, steps)   // events: can occupy any row including event rows
+      : maxRowInLane(best, steps);      // tasks: snap to task rows only
 
     // Bottom 35% of the lane = insert a new row
     if (y >= laneStart + lh - ROW_H * 0.35) {
       return { team: best, row: maxR + 1 };
     }
 
-    // Otherwise snap to the nearest existing row
-    const row = Math.max(0, Math.floor((y - laneStart) / ROW_H));
-    return { team: best, row: Math.min(row, maxR) };
+    // Snap to the nearest half-row (0, 0.5, 1, 1.5, …)
+    const rawRow = (y - laneStart - ROW_H / 2) / ROW_H;
+    const halfRow = Math.max(0, Math.round(rawRow * 2) / 2);
+    return { team: best, row: Math.min(halfRow, maxR) };
   }
 
   // Global mouseup: detect drag-to-right-of-SVG to park step in staging area.
@@ -933,19 +990,30 @@ export function ProcessCanvas({
     }
     if (drawingBranch) setDrawingBranch(d => d ? { ...d, curX: pt.x, curY: pt.y } : null);
 
-    // Separator hover: only in viewer-style mode, only when not interacting
-    if (viewerMode && onInsertRowAfter && !dragging && !drawing && !drawingBranch) {
+    // Separator hover: viewer-style mode (static hover) OR active drag anywhere
+    const canInsert = viewerMode && (onInsertRowAfter || onInsertMoveStep || onInsertAddStep);
+    const isDraggingStep = !!(dragging && !drawing && !drawingBranch);
+    if (canInsert && (!dragging || isDraggingStep)) {
+      // Don't show separator when cursor is over an existing step node
+      const overStep = steps.some(s => {
+        const scx = colX[s.column] ?? 0;
+        const scy = stepCY(s, laneStarts);
+        const hw = isEvent(s) ? EVT_R + 4 : isDecision(s) ? DECISION_H + 4 : STEP_W / 2 + 4;
+        const hh = isEvent(s) ? EVT_R + 4 : isDecision(s) ? DECISION_H + 4 : STEP_H / 2 + 4;
+        return Math.abs(pt.x - scx) <= hw && Math.abs(pt.y - scy) <= hh;
+      });
+      if (overStep) { setHoverSep(null); return; }
+
       const SNAP = 14;
       let found = false;
       for (const team of visibleTeams) {
         const startY = laneStarts[team] ?? 0;
         const maxR = maxRowInLane(team, steps);
+        const laneHasSteps = steps.some(s => s.team === team);
         for (let r = 0; r <= maxR; r++) {
           const lineY = startY + (r + 1) * ROW_H;
           if (Math.abs(pt.y - lineY) < SNAP) {
-            const hasAbove = steps.some(s => s.team === team && (s.row ?? 0) === r);
-            const hasBelow = steps.some(s => s.team === team && (s.row ?? 0) === r + 1);
-            if (hasAbove && hasBelow) { setHoverSep({ team, afterRow: r }); found = true; break; }
+            if (laneHasSteps) { setHoverSep({ team, afterRow: r }); found = true; break; }
           }
         }
         if (found) break;
@@ -981,15 +1049,16 @@ export function ProcessCanvas({
 
     if (dragging) {
       if (dragging.moved) {
-        const { team, row } = nearestTeamRow(dragging.curY);
-        const draggingStepData = steps.find(s => s.id === dragging.stepId);
-        // Events can land on any existing row but cannot create new rows (cap at maxRow).
-        // This lets them move into Sales rows 1-4 while keeping Marketing events at row 0
-        // (Marketing has no regular steps so maxRowInLane = 0).
-        const effectiveRow = draggingStepData && isEvent(draggingStepData)
-          ? Math.min(row, maxRowInLane(team, steps))
-          : row;
-        onMoveStep?.(dragging.stepId, team, nearestCol(dragging.curX), effectiveRow);
+        const col = nearestCol(dragging.curX);
+        if (hoverSep && onInsertMoveStep) {
+          // Drop on a divider line → insert between rows
+          onInsertMoveStep(dragging.stepId, hoverSep.team, col, hoverSep.afterRow);
+          setHoverSep(null);
+        } else {
+          const draggingStepData = steps.find(s => s.id === dragging.stepId);
+          const { team, row } = nearestTeamRow(dragging.curY, !!draggingStepData && isEvent(draggingStepData));
+          onMoveStep?.(dragging.stepId, team, col, row);
+        }
       }
       setDragging(null);
     }
@@ -998,10 +1067,8 @@ export function ProcessCanvas({
   const draggingStep = dragging ? steps.find(s => s.id === dragging.stepId) : null;
   const dragTarget = dragging?.moved
     ? (() => {
-        const { col: _col, ...teamRow } = { col: nearestCol(dragging.curX), ...nearestTeamRow(dragging.curY) };
-        const effectiveRow = draggingStep && isEvent(draggingStep)
-          ? Math.min(teamRow.row, maxRowInLane(teamRow.team, steps))
-          : teamRow.row;
+        const { col: _col, ...teamRow } = { col: nearestCol(dragging.curX), ...nearestTeamRow(dragging.curY, !!draggingStep && isEvent(draggingStep)) };
+        const effectiveRow = teamRow.row;
         return { col: _col, team: teamRow.team, row: effectiveRow };
       })()
     : null;
@@ -1043,16 +1110,29 @@ export function ProcessCanvas({
             prev?.col === col && prev.team === team && prev.row === row ? prev : { col, team, row }
           );
         }}
-        onDragLeave={() => setNewStepDrag(null)}
+        onDragLeave={() => { setNewStepDrag(null); setHoverSep(null); }}
         onDrop={e => {
           if (readOnly) return;
           e.preventDefault();
           const pt  = clientToSvg(e.clientX, e.clientY);
           const col = nearestCol(pt.x);
-          const { team, row } = nearestTeamRow(pt.y);
           setNewStepDrag(null);
 
           const stepType = e.dataTransfer.getData("newStep") as ProcessStep["type"] | "";
+
+          // Divider-drop: insert between rows
+          if (hoverSep) {
+            setHoverSep(null);
+            if (stepType && onInsertAddStep) {
+              onInsertAddStep(hoverSep.team, hoverSep.afterRow, col, stepType as ProcessStep["type"]);
+            } else if (stepType) {
+              // fallback: place at the row below the divider
+              onAddStep?.(hoverSep.team, col, hoverSep.afterRow + 1, stepType as ProcessStep["type"]);
+            }
+            return;
+          }
+
+          const { team, row } = nearestTeamRow(pt.y);
           if (stepType) {
             onAddStep?.(team, col, row, stepType);
             return;
@@ -1105,18 +1185,19 @@ export function ProcessCanvas({
                   <rect x={0} y={startY} width={LANE_HDR_W} height={lh} fill={laneAccent} fillOpacity={0.1} />
                   <line x1={LANE_HDR_W} y1={startY} x2={LANE_HDR_W} y2={startY + lh} stroke="#E2E8F0" strokeWidth="0.5" />
                   <foreignObject
-                    x={0} y={startY} width={LANE_HDR_W} height={lh}
-                    onClick={onRenameLane ? () => onRenameLane(team) : undefined}
-                    style={{ cursor: onRenameLane ? "text" : undefined }}>
-                    <div style={{
-                      width: "100%", height: "100%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      padding: "6px 4px", textAlign: "center",
-                      fontSize: "9px", fontWeight: "700", letterSpacing: "0.6px",
-                      textTransform: "uppercase", color: laneAccent,
-                      lineHeight: 1.3, wordBreak: "break-word", overflowWrap: "break-word",
-                      fontFamily: "IBM Plex Sans, system-ui, sans-serif", userSelect: "none",
-                    }}>
+                    x={0} y={startY} width={LANE_HDR_W} height={lh}>
+                    <div
+                      onClick={onRenameLane ? () => onRenameLane(team) : undefined}
+                      style={{
+                        width: "100%", height: "100%",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        padding: "6px 4px", textAlign: "center",
+                        fontSize: "9px", fontWeight: "700", letterSpacing: "0.6px",
+                        textTransform: "uppercase", color: laneAccent,
+                        lineHeight: 1.3, wordBreak: "break-word", overflowWrap: "break-word",
+                        fontFamily: "IBM Plex Sans, system-ui, sans-serif", userSelect: "none",
+                        cursor: onRenameLane ? "text" : undefined,
+                      }}>
                       {cfg.label}
                     </div>
                   </foreignObject>
@@ -1259,6 +1340,12 @@ export function ProcessCanvas({
                 onDragLeave={() => setHoveredConn(null)}
                 onDrop={e => {
                   e.preventDefault();
+                  const flowId = e.dataTransfer.getData("flowId");
+                  if (flowId && conn.fromStepId && conn.toStepId) {
+                    onAttachFlow?.(flowId, conn.fromStepId, conn.toStepId);
+                    setHoveredConn(null);
+                    return;
+                  }
                   const autoId = e.dataTransfer.getData("automationId");
                   if (autoId) onAttachAutomation?.(autoId, conn.fromStepId, conn.toStepId);
                   setHoveredConn(null);
@@ -1286,6 +1373,30 @@ export function ProcessCanvas({
                   curX: pos.x + DOT_R, curY: pos.y,
                 });
               }} />
+          ));
+        })}
+
+        {/* ── Flow dots on connections ── */}
+        {stepConnections.flatMap(conn => {
+          const from = steps.find(s => s.id === conn.fromStepId);
+          const to   = steps.find(s => s.id === conn.toStepId);
+          if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
+          const connFlows = Object.entries(flowLinks)
+            .filter(([, link]) => link.fromStepId === conn.fromStepId && link.toStepId === conn.toStepId)
+            .map(([flowId]) => flows.find(f => f.id === flowId))
+            .filter(Boolean) as import("@/lib/types").Flow[];
+          if (!connFlows.length) return [];
+          const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
+          const flowDotCenter = { x: arrow.dotCenter.x, y: arrow.dotCenter.y - 24 };
+          return connFlows.map((flow, i) => (
+            <FlowDot
+              key={flow.id}
+              flowId={flow.id}
+              flowName={flow.naam}
+              cx={flowDotCenter.x + i * 28}
+              cy={flowDotCenter.y}
+              onClick={(e) => { e.stopPropagation(); onFlowClick?.(flow.id); }}
+            />
           ));
         })}
 
@@ -1473,11 +1584,15 @@ export function ProcessCanvas({
             <g opacity={0.65} style={{ pointerEvents: "none" }}>
               {/* Ghost card following cursor */}
               <rect x={gx - STEP_W / 2} y={gy - STEP_H / 2} width={STEP_W} height={STEP_H}
-                rx="8" fill={viewerMode ? "#EFF6FF" : "white"} stroke={viewerMode ? "#3B82F6" : getLaneConfig(step.team, customLanes).stroke} strokeWidth="2" />
+                rx="8"
+                fill={viewerMode ? (step.type === "optional" ? "#FFF7ED" : "#EFF6FF") : "white"}
+                stroke={viewerMode ? (step.type === "optional" ? "#F97316" : "#3B82F6") : getLaneConfig(step.team, customLanes).stroke}
+                strokeWidth="2"
+                strokeDasharray={step.type === "optional" ? "6 3" : undefined} />
               {!viewerMode && <rect x={gx - STEP_W / 2} y={gy - STEP_H / 2} width={4} height={STEP_H}
                 rx="2" fill={getLaneConfig(step.team, customLanes).stroke} />}
               <text x={viewerMode ? gx : gx + 4} y={gy} textAnchor="middle" dominantBaseline="middle"
-                fontSize="9" fontWeight="500" fill={viewerMode ? "#1D4ED8" : "#1e293b"}
+                fontSize="9" fontWeight="500" fill={viewerMode ? (step.type === "optional" ? "#C2410C" : "#1D4ED8") : "#1e293b"}
                 style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
                 {step.label.length > 18 ? step.label.slice(0, 17) + "…" : step.label}
               </text>
