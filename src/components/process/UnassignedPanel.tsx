@@ -1,131 +1,159 @@
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Zap, GripVertical, CheckCircle2, ArrowRight, ChevronDown } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, GitMerge, Zap, X } from "lucide-react";
 import type { Automation, ProcessStep } from "@/data/processData";
-import { TEAM_CONFIG } from "@/data/processData";
+import type { Flow } from "@/lib/types";
 
 interface UnassignedPanelProps {
   automations: Automation[];
+  flows: Flow[];
+  flowLinks: Record<string, { fromStepId: string; toStepId: string }>;
   steps: ProcessStep[];
-  onAutomationClick: (a: Automation) => void;
+  onAutomationClick: (auto: Automation) => void;
+  onFlowClick: (flowId: string) => void;
 }
 
-export function UnassignedPanel({ automations, steps, onAutomationClick }: UnassignedPanelProps) {
-  const [assignedOpen, setAssignedOpen] = useState(false);
-  const assigned   = automations.filter(a => a.fromStepId && a.toStepId);
-  const unassigned = automations.filter(a => !a.fromStepId || !a.toStepId);
+export function UnassignedPanel({
+  automations,
+  flows,
+  flowLinks,
+  steps,
+  onAutomationClick,
+  onFlowClick,
+}: UnassignedPanelProps) {
+  const [openGekoppeld, setOpenGekoppeld] = useState(true);
+  const [openProcessreizen, setOpenProcessreizen] = useState(false);
+  const [openAutomations, setOpenAutomations] = useState(false);
 
-  function stepLabel(id?: string) {
-    if (!id) return "—";
-    const s = steps.find(x => x.id === id);
-    return s ? s.label : id;
-  }
-
-  function handleDragStart(e: React.DragEvent, auto: Automation) {
-    e.dataTransfer.setData("automationId", auto.id);
-    e.dataTransfer.effectAllowed = "move";
-  }
+  const linkedAutos = automations.filter(a => a.fromStepId && a.toStepId);
+  const linkedFlowIds = Object.keys(flowLinks);
+  const linkedFlows = flows.filter(f => linkedFlowIds.includes(f.id));
+  const unlinkedAutos = automations.filter(a => !a.fromStepId || !a.toStepId);
+  const totalLinked = linkedAutos.length + linkedFlows.length;
 
   return (
-    <div className="w-72 shrink-0 border-l border-border bg-card flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden text-sm">
 
-      {/* ── Gekoppeld header (collapsible) ─────────────────────────────── */}
-      <button
-        onClick={() => setAssignedOpen(o => !o)}
-        className="w-full px-4 py-3 border-b border-border flex items-center gap-2 hover:bg-secondary/50 transition-colors"
-      >
-        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-        <span className="text-sm font-semibold">Gekoppeld</span>
-        <Badge variant="secondary" className="ml-auto text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
-          {assigned.length}
-        </Badge>
-        <ChevronDown
-          className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${assignedOpen ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {/* ── Gekoppeld list ──────────────────────────────────────────────── */}
-      {assignedOpen && (
-        <div className="overflow-y-auto divide-y divide-border border-b border-border" style={{ maxHeight: 240 }}>
-          {assigned.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-4 px-4">
-              Nog geen automations gekoppeld.
-            </p>
-          )}
-          {assigned.map(auto => {
-            const cfg = TEAM_CONFIG[auto.team];
-            return (
-              <div
-                key={auto.id}
-                onClick={() => onAutomationClick(auto)}
-                className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-secondary/50 transition-colors"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0 mt-1"
-                  style={{ background: cfg.stroke }}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground truncate">{auto.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {auto.tool} · {auto.goal.length > 30 ? auto.goal.slice(0, 30) + "…" : auto.goal}
-                  </p>
-                  <div className="flex items-center gap-1 mt-1 text-[11px] text-muted-foreground">
-                    <span className="truncate max-w-[80px]">{stepLabel(auto.fromStepId)}</span>
-                    <ArrowRight className="h-2.5 w-2.5 shrink-0" />
-                    <span className="truncate max-w-[80px]">{stepLabel(auto.toStepId)}</span>
-                  </div>
-                </div>
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Niet-gekoppeld header ───────────────────────────────────────── */}
-      <div className="px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <Zap className="h-4 w-4 text-amber-500" />
-          <span className="text-sm font-semibold">Niet-gekoppeld</span>
-          <Badge variant="secondary" className="ml-auto text-xs">
-            {unassigned.length}
-          </Badge>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">
-          Sleep een automation naar een pijl op de flow
-        </p>
-      </div>
-
-      {/* ── Niet-gekoppeld list ─────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto divide-y divide-border">
-        {unassigned.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-8 px-4">
-            Alle automations zijn gekoppeld.
-          </p>
+      {/* SECTION 1: Gekoppeld */}
+      <div className="shrink-0 border-b border-border">
+        <button
+          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+          onClick={() => setOpenGekoppeld(v => !v)}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+          <span className="flex-1 text-left">Gekoppeld</span>
+          <span className="rounded-full bg-emerald-100 text-emerald-700 px-1.5 py-0.5 text-[10px] font-bold">{totalLinked}</span>
+          {openGekoppeld ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        </button>
+        {openGekoppeld && (
+          <div className="px-2 pb-2 flex flex-col gap-1" style={{ maxHeight: 240, overflowY: "auto" }}>
+            {totalLinked === 0 && (
+              <p className="text-[11px] text-slate-400 text-center py-3">Nog niets gekoppeld</p>
+            )}
+            {linkedFlows.map(flow => {
+              const link = flowLinks[flow.id];
+              const fromStep = steps.find(s => s.id === link?.fromStepId);
+              const toStep   = steps.find(s => s.id === link?.toStepId);
+              return (
+                <button key={flow.id}
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-indigo-50 text-left w-full transition-colors"
+                  onClick={() => onFlowClick(flow.id)}>
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
+                  <span className="flex-1 min-w-0">
+                    <span className="text-[11px] font-medium text-slate-700 block truncate">{flow.naam}</span>
+                    {fromStep && toStep && (
+                      <span className="text-[10px] text-slate-400 block truncate">{fromStep.label} → {toStep.label}</span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+            {linkedAutos.map(auto => {
+              const fromStep = steps.find(s => s.id === auto.fromStepId);
+              const toStep   = steps.find(s => s.id === auto.toStepId);
+              return (
+                <button key={auto.id}
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-amber-50 text-left w-full transition-colors"
+                  onClick={() => onAutomationClick(auto)}>
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                  <span className="flex-1 min-w-0">
+                    <span className="text-[11px] font-medium text-slate-700 block truncate">{auto.name}</span>
+                    {fromStep && toStep && (
+                      <span className="text-[10px] text-slate-400 block truncate">{fromStep.label} → {toStep.label}</span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
-        {unassigned.map(auto => {
-          const cfg = TEAM_CONFIG[auto.team];
-          return (
-            <div
-              key={auto.id}
-              draggable
-              onDragStart={e => handleDragStart(e, auto)}
-              onClick={() => onAutomationClick(auto)}
-              className="flex items-center gap-3 px-4 py-3 cursor-grab active:cursor-grabbing hover:bg-secondary/50 transition-colors group"
-            >
-              <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0 group-hover:text-muted-foreground/70 transition-colors" />
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cfg.stroke }} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground truncate">{auto.name}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {auto.tool} · {auto.goal.length > 36 ? auto.goal.slice(0, 36) + "…" : auto.goal}
-                </p>
-              </div>
-              <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-            </div>
-          );
-        })}
       </div>
+
+      {/* SECTION 2: Procesreizen */}
+      <div className="shrink-0 border-b border-border">
+        <button
+          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+          onClick={() => setOpenProcessreizen(v => !v)}
+        >
+          <GitMerge className="h-3.5 w-3.5 text-indigo-500" />
+          <span className="flex-1 text-left">Procesreizen</span>
+          <span className="rounded-full bg-indigo-100 text-indigo-700 px-1.5 py-0.5 text-[10px] font-bold">{flows.length}</span>
+          {openProcessreizen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        </button>
+        {openProcessreizen && (
+          <div className="px-2 pb-2 flex flex-col gap-1" style={{ maxHeight: 200, overflowY: "auto" }}>
+            <p className="text-[10px] text-slate-400 px-1 pb-1 shrink-0">Sleep naar een pijl op de flow</p>
+            {flows.length === 0 && (
+              <p className="text-[11px] text-slate-400 text-center py-3">Geen procesreizen</p>
+            )}
+            {flows.map(flow => (
+              <div key={flow.id}
+                draggable
+                onDragStart={e => { e.dataTransfer.setData("flowId", flow.id); e.dataTransfer.effectAllowed = "move"; }}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-indigo-50 cursor-grab active:cursor-grabbing transition-colors">
+                <span className="text-slate-400 shrink-0 select-none">⠿</span>
+                <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                <span className="flex-1 min-w-0">
+                  <span className="text-[11px] font-medium text-slate-700 block truncate">{flow.naam}</span>
+                  <span className="text-[10px] text-slate-400">{flow.automationIds.length} automations</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* SECTION 3: Losse automations */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <button
+          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shrink-0"
+          onClick={() => setOpenAutomations(v => !v)}
+        >
+          <Zap className="h-3.5 w-3.5 text-amber-500" />
+          <span className="flex-1 text-left">Losse automations</span>
+          <span className="rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[10px] font-bold">{unlinkedAutos.length}</span>
+          {openAutomations ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        </button>
+        {openAutomations && (
+          <div className="flex-1 overflow-auto px-2 pb-2 flex flex-col gap-1">
+            <p className="text-[10px] text-slate-400 px-1 pb-1 shrink-0">Sleep naar een pijl op de flow</p>
+            {unlinkedAutos.map(auto => (
+              <div key={auto.id}
+                draggable
+                onDragStart={e => { e.dataTransfer.setData("automationId", auto.id); e.dataTransfer.effectAllowed = "move"; }}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-amber-50 cursor-grab active:cursor-grabbing transition-colors">
+                <span className="text-slate-400 shrink-0 select-none">⠿</span>
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "hsl(45 95% 55%)" }} />
+                <span className="flex-1 min-w-0">
+                  <span className="text-[11px] font-medium text-slate-700 block truncate">{auto.name}</span>
+                  <span className="text-[10px] text-slate-400 block truncate">{auto.tool}{auto.goal ? ` · ${auto.goal.slice(0, 30)}` : ""}</span>
+                </span>
+                <Zap className="h-3 w-3 text-amber-400 shrink-0" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
