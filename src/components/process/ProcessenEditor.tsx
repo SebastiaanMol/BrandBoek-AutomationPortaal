@@ -41,6 +41,7 @@ import {
   upsertCustomLaneConfig,
 } from "@/data/processData";
 import { useAutomatiseringen } from "@/lib/queryHooks/automations";
+import { useFlows } from "@/lib/queryHooks/flows";
 import { usePipelines } from "@/lib/queryHooks/pipelines";
 import { useProcessState } from "@/lib/queryHooks/processState";
 import type { Automatisering, KlantFase } from "@/lib/types";
@@ -99,6 +100,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [dismissedRenames, setDismissedRenames] = useState<Set<string>>(new Set());
   const [activeLanes, setActiveLanes]           = useState<string[]>([...TEAM_ORDER]);
   const [customLanes, setCustomLanes]           = useState<CustomLane[]>([]);
+  const [flowLinks, setFlowLinks]               = useState<Record<string, { fromStepId: string; toStepId: string }>>({});
   const [newLaneDialogOpen, setNewLaneDialogOpen] = useState(false);
   const [newLaneName, setNewLaneName]             = useState("");
   const [renameLaneKey, setRenameLaneKey]         = useState<string | null>(null);
@@ -106,6 +108,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
   const { data: allPipelines = [] } = usePipelines();
   const pipelines = allPipelines.filter(p => p.isActive);
+  const { data: flows = [] } = useFlows();
   const [confirmSwitch, setConfirmSwitch] = useState(false);
   const [pendingPipelineId, setPendingPipelineId] = useState<string | null>(null);
 
@@ -173,6 +176,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     } else {
       setActiveLanes(buildLaneKeys(restoredCustom));
     }
+    if (savedState.flowLinks) {
+      setFlowLinks(savedState.flowLinks as Record<string, { fromStepId: string; toStepId: string }>);
+    }
     setIsDirty(false);
   }, [savedState, stateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -210,7 +216,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     try {
       await saveProcessState(
         pipelineId,
-        buildSavedProcessState(state, parkedSteps, activeLanes, customLanes),
+        buildSavedProcessState({ ...state, flowLinks }, parkedSteps, activeLanes, customLanes),
       );
       setSaved(state);
       savedParkedStepsRef.current = parkedSteps;
@@ -226,6 +232,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   function handleReset() {
     setState(prev => restoreSavedProcessState(prev, saved));
     setParkedSteps(savedParkedStepsRef.current);
+    setFlowLinks(savedState?.flowLinks ? (savedState.flowLinks as Record<string, { fromStepId: string; toStepId: string }>) : {});
     setIsDirty(false);
     toast.info("Teruggezet naar opgeslagen versie");
   }
@@ -467,6 +474,22 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     toast.success("Automation losgekoppeld");
   }
 
+  function handleAttachFlow(flowId: string, fromStepId: string, toStepId: string) {
+    setFlowLinks(prev => ({ ...prev, [flowId]: { fromStepId, toStepId } }));
+    setIsDirty(true);
+    toast.success("Procesreis gekoppeld");
+  }
+
+  function handleDetachFlow(flowId: string) {
+    setFlowLinks(prev => {
+      const next = { ...prev };
+      delete next[flowId];
+      return next;
+    });
+    setIsDirty(true);
+    toast.success("Procesreis losgekoppeld");
+  }
+
   // ── Staging area handlers ─────────────────────────────────────────────────
   function handleParkStep(stepId: string) {
     // Quick bail: avoid marking dirty if the step is no longer on the canvas
@@ -579,6 +602,40 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     setRenameLaneName("");
     setIsDirty(true);
     toast.success("Swimlane hernoemd");
+  }
+
+  // Move an existing step to a half-row position (0.5, 1.5, …) — no rows shift
+  function handleInsertMoveStep(stepId: string, team: string, col: number, afterRow: number) {
+    const halfRow = afterRow + 0.5;
+    setState(prev => ({
+      ...prev,
+      steps: prev.steps.map(x =>
+        x.id === stepId ? { ...x, team, column: col, row: halfRow } : x
+      ),
+    }));
+    setIsDirty(true);
+  }
+
+  // Add a new step at a half-row position (0.5, 1.5, …) — no rows shift
+  function handleInsertAddStep(team: string, afterRow: number, col: number, type?: ProcessStep["type"]) {
+    const halfRow = afterRow + 0.5;
+    const isEventType = type === "start" || type === "end" || type === "terminate" || type === "send" || type === "receive";
+    if (isEventType) {
+      setState(prev => ({
+        ...prev,
+        steps: [...prev.steps, {
+          id: `ev-${type}-${Date.now()}`,
+          label: type === "start" ? "Start" : "Einde",
+          team, column: col, row: halfRow, type,
+        }],
+      }));
+      setIsDirty(true);
+    } else {
+      // Open StepDialog pre-filled at the half-row position
+      setStepDefaults({ team, column: col, row: halfRow, type: type ?? "task" });
+      setEditingStep(null);
+      setStepDialogOpen(true);
+    }
   }
 
   function handleInsertRowAfter(team: string, afterRow: number) {
@@ -956,9 +1013,15 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 automations={state.automations}
                 activeLanes={activeLanes}
                 customLanes={customLanes}
+                flows={flows}
+                flowLinks={flowLinks}
+                onAttachFlow={handleAttachFlow}
+                onFlowClick={() => {}}
                 displayStyle={displayStyle}
                 onRenameLane={displayStyle === "viewer" ? handleOpenRenameLane : undefined}
                 onInsertRowAfter={displayStyle === "viewer" ? handleInsertRowAfter : undefined}
+                onInsertMoveStep={displayStyle === "viewer" ? handleInsertMoveStep : undefined}
+                onInsertAddStep={displayStyle === "viewer" ? handleInsertAddStep : undefined}
                 onStepClick={handleStepClick}
                 onAutomationClick={handleAutoClick}
                 onAddConnection={handleAddConnection}
@@ -1041,8 +1104,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
             {rightTab === "automations" ? (
               <UnassignedPanel
                 automations={state.automations}
+                flows={flows}
+                flowLinks={flowLinks}
                 steps={state.steps}
                 onAutomationClick={handleAutoClick}
+                onFlowClick={handleDetachFlow}
               />
             ) : (
               <StepStagingPanel
