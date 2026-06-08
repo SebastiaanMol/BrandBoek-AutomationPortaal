@@ -8,12 +8,13 @@ export interface SavedProcessState {
   parkedSteps: unknown[];
   activeLanes?: string[];
   customLanes?: unknown[];
+  flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
 }
 
 export async function fetchProcessState(pipelineId: string): Promise<SavedProcessState | null> {
   const { data, error } = await supabase
     .from("process_state")
-    .select("steps, connections, auto_links, parked_steps, active_lanes, custom_lanes")
+    .select("steps, connections, auto_links, parked_steps, active_lanes, custom_lanes, flow_links")
     .eq("id", pipelineId)
     .maybeSingle();
 
@@ -27,6 +28,7 @@ export async function fetchProcessState(pipelineId: string): Promise<SavedProces
     parkedSteps: (data.parked_steps ?? []) as unknown[],
     activeLanes: (data.active_lanes ?? undefined) as string[] | undefined,
     customLanes: (data.custom_lanes ?? undefined) as unknown[] | undefined,
+    flowLinks: (data.flow_links ?? {}) as Record<string, { fromStepId: string; toStepId: string }>,
   };
 }
 
@@ -42,6 +44,7 @@ export async function saveProcessState(pipelineId: string, state: SavedProcessSt
         parked_steps: state.parkedSteps as unknown as Json,
         active_lanes: (state.activeLanes ?? null) as unknown as Json,
         custom_lanes: (state.customLanes ?? null) as unknown as Json,
+        flow_links: (state.flowLinks ?? {}) as unknown as Json,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" }

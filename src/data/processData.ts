@@ -27,7 +27,7 @@ export interface ProcessStep {
   column: number;
   row?: number;          // vertical row within lane (0 = top, 1 = second, …)
   description?: string;
-  type?: "task" | "start" | "end" | "decision" | "terminate" | "send" | "receive" | "and";
+  type?: "task" | "optional" | "start" | "end" | "decision" | "terminate" | "send" | "receive" | "and";
 }
 
 export interface Automation {
@@ -55,6 +55,7 @@ export interface ProcessState {
   automations: Automation[];
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
   customLanes?: CustomLane[];
+  flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
 }
 
 export const TEAM_CONFIG: Record<TeamKey, {

@@ -1,4 +1,4 @@
-import type { CustomLane, ProcessState, ProcessStep } from "@/data/processData";
+import type { Automation, Connection, CustomLane, ProcessState, ProcessStep } from "@/data/processData";
 import type { SavedProcessState } from "@/lib/storage/processState";
 
 export function buildSavedProcessState(
@@ -24,6 +24,7 @@ export function buildSavedProcessState(
     parkedSteps,
     activeLanes,
     customLanes,
+    flowLinks: state.flowLinks ?? {},
   };
 }
 
@@ -47,5 +48,19 @@ export function restoreSavedProcessState(
           toStepId: undefined,
         };
     }),
+  };
+}
+
+export function buildProcessStateFromSaved(
+  saved: SavedProcessState,
+  automations: Automation[],
+): ProcessState {
+  return {
+    steps: saved.steps as ProcessStep[],
+    connections: saved.connections as Connection[],
+    automations,
+    activeLanes: saved.activeLanes,
+    customLanes: saved.customLanes as CustomLane[] | undefined,
+    flowLinks: saved.flowLinks ?? {},
   };
 }
