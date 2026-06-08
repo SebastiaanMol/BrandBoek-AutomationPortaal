@@ -199,6 +199,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
   // UI state
   const [selectedAuto, setSelectedAuto] = useState<Automation | null>(null);
+  const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
   const [editingStep, setEditingStep]   = useState<ProcessStep | null>(null);
   const [stepDialogOpen, setStepDialogOpen] = useState(false);
   const [stepDefaults, setStepDefaults] = useState<{ team?: string; column?: number; row?: number; type?: ProcessStep["type"] }>({});
@@ -1016,7 +1017,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 flows={flows}
                 flowLinks={flowLinks}
                 onAttachFlow={handleAttachFlow}
-                onFlowClick={() => {}}
+                onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
                 displayStyle={displayStyle}
                 onRenameLane={displayStyle === "viewer" ? handleOpenRenameLane : undefined}
                 onInsertRowAfter={displayStyle === "viewer" ? handleInsertRowAfter : undefined}
@@ -1052,7 +1053,63 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         </div>
 
         {/* Right panels */}
-        {selectedAuto ? (
+        {selectedFlowId ? (
+          (() => {
+            const flow = flows.find(f => f.id === selectedFlowId);
+            if (!flow) return null;
+            return (
+              <div className="w-72 border-l border-border bg-card flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+                  <span className="text-sm font-semibold text-slate-800">Procesreis</span>
+                  <button onClick={() => setSelectedFlowId(null)}
+                    className="text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-auto p-4 space-y-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Naam</p>
+                    <p className="text-sm font-semibold text-slate-800">{flow.naam}</p>
+                  </div>
+                  {flow.beschrijving && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Beschrijving</p>
+                      <p className="text-sm text-slate-600">{flow.beschrijving}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Automations</p>
+                    <p className="text-sm text-slate-600">{flow.automationIds.length} onderdelen</p>
+                  </div>
+                  {flow.systemen?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Systemen</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {flow.systemen.map(s => (
+                          <span key={s} className="rounded-full bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 text-[11px] font-semibold">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="pt-2">
+                    <a href={`/flows/${flow.id}`}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700 transition-colors">
+                      Bekijk volledige procesreis →
+                    </a>
+                  </div>
+                  {flowLinks[flow.id] && (
+                    <div className="pt-2 border-t border-border">
+                      <button onClick={() => { handleDetachFlow(flow.id); setSelectedFlowId(null); }}
+                        className="text-xs text-destructive hover:text-destructive/80 font-medium">
+                        Loskoppelen van canvas
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()
+        ) : selectedAuto ? (
           <AutomationDetailPanel
             automation={selectedAuto}
             fullData={dbAutomations?.find(a => a.id === selectedAuto?.id)}
