@@ -17,12 +17,14 @@ import Processen from "./pages/Processen";
 import Imports from "./pages/Imports";
 import Systems from "./pages/Systems";
 import Owners from "./pages/Owners";
+import SystemenEnEigenaren from "./pages/SystemenEnEigenaren";
 import Brandy from "./pages/Brandy";
 import Flows from "./pages/Flows";
 import FlowDetail from "./pages/FlowDetail";
 import FlowSuggestionDetail from "./pages/FlowSuggestionDetail";
 import ProcessJourneyReview from "./pages/ProcessJourneyReview";
 import GitLabEndpointCheck from "./pages/GitLabEndpointCheck";
+import Procesviewer from "./pages/Procesviewer";
 import Pipelines from "./pages/Pipelines";
 import PipelineDetail from "./pages/PipelineDetail";
 import RuntimeExplorer from "./pages/RuntimeExplorer";
@@ -55,7 +57,9 @@ function ProtectedRoutes() {
         <Route path="/gitlab-endpoint-check" element={<GitLabEndpointCheck />} />
         <Route path="/instellingen" element={<Instellingen />} />
         <Route path="/processen" element={<Processen />} />
+        <Route path="/procesviewer" element={<Procesviewer />} />
         <Route path="/imports" element={<Imports />} />
+        <Route path="/systemen-eigenaren" element={<SystemenEnEigenaren />} />
         <Route path="/systems" element={<Systems />} />
         <Route path="/owners" element={<Owners />} />
         <Route path="/brandy" element={<Brandy />} />

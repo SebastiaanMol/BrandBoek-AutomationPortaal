@@ -10,9 +10,9 @@ const LANE_LABEL_W = 80;
 const ROW_H        = 100;
 const STEP_W       = 140;
 const STEP_H       = 52;
-const GATEWAY_SIZE = 15;   // half-size for the diamond (30px total)
+const GATEWAY_SIZE = 22;   // half-size for the diamond (44px total)
 const EVT_R        = 16;
-const COL_W        = 160;
+const COL_W        = 220;
 const EDGE_PAD     = STEP_W / 2 + 16;
 const MIN_ZOOM     = 0.25;
 const MAX_ZOOM     = 2.0;
@@ -125,6 +125,16 @@ function nodeLeftX(step: ProcessStep, colMap: Map<number, number>): number {
   if (isEvent(step)) return cx - EVT_R;
   if (isDecision(step)) return cx - GATEWAY_SIZE;
   return cx - STEP_W / 2;
+}
+function nodeBottomY(step: ProcessStep, cy: number): number {
+  if (isEvent(step)) return cy + EVT_R;
+  if (isDecision(step)) return cy + GATEWAY_SIZE;
+  return cy + STEP_H / 2;
+}
+function nodeTopY(step: ProcessStep, cy: number): number {
+  if (isEvent(step)) return cy - EVT_R;
+  if (isDecision(step)) return cy - GATEWAY_SIZE;
+  return cy - STEP_H / 2;
 }
 
 // ── Automation dot position ──────────────────────────────────────────────────
@@ -589,14 +599,31 @@ function ConnectorLine({
   const markerId = color === COLOR_END ? "pvah-end" : color === COLOR_OPTIONAL ? "pvah-opt" : "pvah-main";
   const dashed = from.type === "decision";
 
-  const fx = nodeRightX(from, colMap);
   const fy = stepCy(from, laneStarts);
-  const tx = nodeLeftX(to, colMap);
-  const ty = stepCy(to, laneStarts);
+  const ty = stepCy(to,   laneStarts);
 
-  const d = buildArrowPath(fx, fy, tx, ty);
-  const midX = (fx + tx) / 2;
-  const midY = (fy + ty) / 2;
+  const fromCx = stepCx(from, colMap);
+  const toCx   = stepCx(to,   colMap);
+  const isGwTarget = to.type === "decision" || to.type === "and";
+
+  let fx: number, tx: number, d: string, midX: number, midY: number;
+  // Same column → straight vertical using node-type-aware exit/entry points
+  if (from.column === to.column) {
+    fx = fromCx; tx = toCx;
+    const down   = fy < ty;
+    const startY = down ? nodeBottomY(from, fy) : nodeTopY(from, fy);
+    const endY   = down ? nodeTopY(to, ty)      : nodeBottomY(to, ty);
+    d    = `M ${fx} ${startY} L ${tx} ${endY}`;
+    midX = fx;
+    midY = (startY + endY) / 2;
+  } else {
+    // Standard routing: exit right/left of source, enter left/right of target
+    fx = nodeRightX(from, colMap);
+    tx = nodeLeftX(to, colMap);
+    d = buildArrowPath(fx, fy, tx, ty);
+    midX = (fx + tx) / 2;
+    midY = (fy + ty) / 2;
+  }
 
   return (
     <g>
@@ -783,23 +810,23 @@ function BpmnNode({
       {isPipelineStep(step) && (
         <g style={{ pointerEvents: "none" }}>
           <rect
-            x={cx + STEP_W / 2 - 4 - 44}
+            x={cx + STEP_W / 2 - 3 - 32}
             y={cy - STEP_H / 2 + 3}
-            width={44}
-            height={13}
-            rx="3"
-            fill="#F1F5F9"
-            stroke="#CBD5E1"
+            width={32}
+            height={10}
+            rx="2.5"
+            fill="#FFF1EE"
+            stroke="#FF7A59"
             strokeWidth="0.5"
           />
           <text
-            x={cx + STEP_W / 2 - 4 - 22}
-            y={cy - STEP_H / 2 + 3 + 6.5}
+            x={cx + STEP_W / 2 - 3 - 16}
+            y={cy - STEP_H / 2 + 3 + 5}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize="8"
+            fontSize="6"
             fontWeight="600"
-            fill="#475569"
+            fill="#C45200"
             style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
           >
             Pipeline

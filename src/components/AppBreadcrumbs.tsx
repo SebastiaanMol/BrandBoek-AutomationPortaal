@@ -18,7 +18,8 @@ interface AppCrumb {
 
 export function AppBreadcrumbs(): React.ReactNode {
   const location = useLocation();
-  const crumbs = buildAppBreadcrumbs(location.pathname);
+  const searchParams = new URLSearchParams(location.search);
+  const crumbs = buildAppBreadcrumbs(location.pathname, searchParams);
 
   return (
     <Breadcrumb className="min-w-0">
@@ -50,7 +51,7 @@ export function AppBreadcrumbs(): React.ReactNode {
   );
 }
 
-function buildAppBreadcrumbs(pathname: string): AppCrumb[] {
+function buildAppBreadcrumbs(pathname: string, searchParams: URLSearchParams): AppCrumb[] {
   if (pathname === "/") return [{ label: "Dashboard" }];
 
   if (pathname === "/alle") return withDashboard({ label: "Automations" });
@@ -88,12 +89,21 @@ function buildAppBreadcrumbs(pathname: string): AppCrumb[] {
   );
 
   if (pathname === "/processen") return withDashboard({ label: "Processes" });
+  if (pathname === "/procesviewer") return withDashboard({ label: "Procesviewer" });
   if (pathname === "/analyse") return withDashboard({ label: "Analysis" });
   if (pathname === "/gitlab-endpoint-check") return withDashboard(
     { label: "Analysis", href: "/analyse" },
     { label: "GitLab endpoint check" },
   );
   if (pathname === "/imports") return withDashboard({ label: "Imports" });
+  if (pathname === "/systemen-eigenaren") {
+    const system = searchParams.get("system");
+    const owner  = searchParams.get("owner");
+    const base   = { label: "Systemen & Eigenaren", href: "/systemen-eigenaren" };
+    if (system) return withDashboard(base, { label: system });
+    if (owner)  return withDashboard(base, { label: owner });
+    return withDashboard({ label: "Systemen & Eigenaren" });
+  }
   if (pathname === "/systems") return withDashboard({ label: "Systems" });
   if (pathname === "/owners") return withDashboard({ label: "Owners" });
   if (pathname === "/brandy") return withDashboard({ label: "Brandy" });

@@ -1334,7 +1334,7 @@ export function ProcessCanvas({
               <path d={arrow.path} stroke="transparent" strokeWidth="22" fill="none" className="cursor-pointer"
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
-                onClick={() => { if (hasAuto) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
+                onClick={() => { setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
                 onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }}
                 onDragOver={e => { e.preventDefault(); setHoveredConn(conn.id); }}
                 onDragLeave={() => setHoveredConn(null)}
@@ -1386,15 +1386,21 @@ export function ProcessCanvas({
             .map(([flowId]) => flows.find(f => f.id === flowId))
             .filter(Boolean) as import("@/lib/types").Flow[];
           if (!connFlows.length) return [];
-          const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
-          const flowDotCenter = { x: arrow.dotCenter.x, y: arrow.dotCenter.y - 24 };
+          // Geometric centre: midpoint between source exit and target entry.
+          // This point lies on the actual path for horizontal, vertical and orthogonal routes.
+          const fx = colX[from.column], fy = stepCY(from, laneStarts);
+          const tx = colX[to.column],   ty = stepCY(to,   laneStarts);
+          const sx = edgeRight(from, fx), ex = edgeLeft(to, tx);
+          const centerX = (sx + ex) / 2;
+          const centerY = (fy + ty) / 2;
+          const vertical = from.column === to.column; // purely vertical connection
           return connFlows.map((flow, i) => (
             <FlowDot
               key={flow.id}
               flowId={flow.id}
               flowName={flow.naam}
-              cx={flowDotCenter.x + i * 28}
-              cy={flowDotCenter.y}
+              cx={centerX + (vertical ? 0 : i * 28)}
+              cy={centerY + (vertical ? i * 28 : 0)}
               onClick={(e) => { e.stopPropagation(); onFlowClick?.(flow.id); }}
             />
           ));

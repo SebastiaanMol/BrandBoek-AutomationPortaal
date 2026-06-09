@@ -12,12 +12,12 @@ import {
   LogOut,
   Settings,
   Download,
-  Server,
   Users,
   Sparkles,
   PanelLeftClose,
   PanelLeftOpen,
   Layers2,
+  Workflow,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -41,14 +41,14 @@ const navGroups: NavGroup[] = [
   {
     title: "Systems & People",
     items: [
-      { title: "Systems", url: "/systems", icon: Server },
-      { title: "Owners", url: "/owners", icon: Users },
+      { title: "Systemen & Eigenaren", url: "/systemen-eigenaren", icon: Users },
     ],
   },
   {
     title: "Analysis",
     items: [
       { title: "Processes", url: "/processen", icon: GitBranch },
+      { title: "Procesviewer", url: "/procesviewer", icon: Workflow },
       { title: "Procesreis", url: "/flows", icon: GitMerge },
       { title: "Pipelines", url: "/pipelines", icon: Layers2 },
       { title: "Analysis", url: "/analyse", icon: BarChart3 },
@@ -223,6 +223,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <main className={`flex-1 w-full ${
+          location.pathname === "/procesviewer" ||
           location.pathname === "/processen" ||
           location.pathname === "/brandy" ||
           location.pathname === "/flows" ||
