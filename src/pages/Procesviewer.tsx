@@ -147,6 +147,7 @@ export default function Procesviewer(): React.ReactNode {
           <div className="flex items-center gap-1">
             <input
               ref={renameInputRef}
+              aria-label="Pipelinenaam"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={handleRenameKeyDown}
@@ -172,11 +173,12 @@ export default function Procesviewer(): React.ReactNode {
           </div>
         ) : selectedPipeline ? (
           /* Selected: name text (click to rename if custom) + chevron to switch */
-          <div className={`flex items-center rounded-md border border-input bg-background text-sm ${mode === "edit" ? "opacity-60 pointer-events-none" : ""}`}>
+          <div className={`flex items-center rounded-md border border-input bg-background text-sm ${mode === "edit" ? "opacity-60" : ""}`}>
             {isCustomPipeline ? (
               <button
                 onClick={startRename}
-                className="h-8 max-w-[180px] truncate px-3 text-left leading-none text-foreground hover:text-foreground cursor-text"
+                disabled={mode === "edit"}
+                className="h-8 max-w-[180px] truncate px-3 text-left leading-none text-foreground hover:text-foreground cursor-text disabled:cursor-not-allowed disabled:text-muted-foreground"
                 title="Klik om naam te wijzigen"
               >
                 {selectedPipeline.naam}
@@ -193,7 +195,8 @@ export default function Procesviewer(): React.ReactNode {
               <DropdownMenuTrigger asChild>
                 <button
                   aria-label="Pipeline kiezen"
-                  className="flex h-8 w-7 items-center justify-center border-l border-input text-muted-foreground hover:bg-secondary hover:text-foreground rounded-r-md"
+                  disabled={mode === "edit"}
+                  className="flex h-8 w-7 items-center justify-center border-l border-input text-muted-foreground hover:bg-secondary hover:text-foreground rounded-r-md disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                 >
                   <ChevronDown className="h-3.5 w-3.5" />
                 </button>
