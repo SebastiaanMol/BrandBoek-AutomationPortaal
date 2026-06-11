@@ -316,28 +316,28 @@ function AutomationSummaryCard({
       onClick={() => onSelectAuto(automation.id)}
       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-amber-300 hover:bg-amber-50"
     >
-      <div className="flex items-start gap-2.5">
+      <span className="flex items-start gap-2.5">
         <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100">
           <Zap className="h-3.5 w-3.5 text-amber-600" />
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-slate-800">{name}</p>
-          <div className="mt-1 flex flex-wrap gap-1">
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold text-slate-800">{name}</span>
+          <span className="mt-1 flex flex-wrap gap-1">
             <Badge>{direction}</Badge>
             {source && <Badge>{db ? `Bron: ${source}` : source}</Badge>}
             {db?.status && <Badge tone={db.status.toLowerCase() === "actief" ? "green" : "neutral"}>{db.status}</Badge>}
             {db?.categorie && <Badge tone="blue">{db.categorie}</Badge>}
-          </div>
-          {db?.trigger && <p className="mt-2 text-[11px] leading-4 text-slate-500">{db.trigger}</p>}
-          {goal && <p className="mt-1 text-[11px] leading-4 text-slate-600">{goal}</p>}
-          {db?.owner && <p className="mt-1 text-[11px] leading-4 text-slate-500">{db.owner}</p>}
+          </span>
+          {db?.trigger && <span className="mt-2 block text-[11px] leading-4 text-slate-500">{db.trigger}</span>}
+          {goal && <span className="mt-1 block text-[11px] leading-4 text-slate-600">{goal}</span>}
+          {db?.owner && <span className="mt-1 block text-[11px] leading-4 text-slate-500">{db.owner}</span>}
           {systems.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
+            <span className="mt-2 flex flex-wrap gap-1">
               {systems.map((system) => <Badge key={system}>{system}</Badge>)}
-            </div>
+            </span>
           )}
-        </div>
-      </div>
+        </span>
+      </span>
     </button>
   );
 }

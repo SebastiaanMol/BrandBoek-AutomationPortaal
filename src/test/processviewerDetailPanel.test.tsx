@@ -130,7 +130,9 @@ describe("ProcessviewerDetailPanel", () => {
 
     expect(screen.getByText("Gekoppelde automations")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Betalingsregeling workflow/i })).toBeInTheDocument();
+    expect(screen.getByText("Betalingsregeling workflow")).toBeInTheDocument();
     expect(screen.getByText("Loopt na deze taak")).toBeInTheDocument();
+    expect(screen.getByText("Bron: HubSpot")).toBeInTheDocument();
     expect(screen.getByText("HubSpot")).toBeInTheDocument();
     expect(screen.getByText("Actief")).toBeInTheDocument();
     expect(screen.getByText("HubSpot Workflow")).toBeInTheDocument();
@@ -146,6 +148,7 @@ describe("ProcessviewerDetailPanel", () => {
     });
 
     expect(screen.getByRole("button", { name: /Betalingsregeling workflow/i })).toBeInTheDocument();
+    expect(screen.getByText("Betalingsregeling workflow")).toBeInTheDocument();
     expect(screen.getByText("hubspot")).toBeInTheDocument();
     expect(screen.getByText("Maak automatisch opvolging aan")).toBeInTheDocument();
   });
