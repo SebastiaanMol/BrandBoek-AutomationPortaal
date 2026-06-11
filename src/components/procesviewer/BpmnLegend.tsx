@@ -140,6 +140,7 @@ export function BpmnLegend({ lanes, symbols = DEFAULT_SYMBOLS }: BpmnLegendProps
             </div>
             <button
               onClick={() => setOpen(false)}
+              aria-label="Legenda sluiten"
               className="text-slate-400 hover:text-slate-600 transition-colors"
               style={{ pointerEvents: "auto" }}
             >
