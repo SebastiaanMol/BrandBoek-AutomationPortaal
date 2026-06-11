@@ -64,6 +64,29 @@ describe("ProcessviewerDetailPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("renders incoming and outgoing route context for a selected task", () => {
+    renderPanel();
+
+    expect(screen.getByText("Route")).toBeInTheDocument();
+    expect(screen.getByText("Inkomend")).toBeInTheDocument();
+    expect(screen.getByText("Start")).toBeInTheDocument();
+    expect(screen.getByText("Hoofdroute")).toBeInTheDocument();
+    expect(screen.getByText("Uitgaand")).toBeInTheDocument();
+    expect(screen.getByText("1e herinnering")).toBeInTheDocument();
+    expect(screen.getByText("Klant reageert niet")).toBeInTheDocument();
+    expect(screen.getByText("Correctie / optioneel")).toBeInTheDocument();
+  });
+
+  it("renders useful empty route states when a task has no routes", () => {
+    renderPanel({
+      selectedStepId: "task-betaalregeling",
+      connections: [],
+    });
+
+    expect(screen.getByText("Geen inkomende routes")).toBeInTheDocument();
+    expect(screen.getByText("Geen uitgaande routes")).toBeInTheDocument();
+  });
+
   it("does not render when there is no selected step or automation", () => {
     renderPanel({ selectedStepId: null, selectedAutoId: null });
 
