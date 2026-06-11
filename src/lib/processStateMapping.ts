@@ -1,5 +1,85 @@
-import type { Automation, Connection, CustomLane, ProcessState, ProcessStep } from "@/data/processData";
+import type { Automation, Connection, CustomLane, ProcessAttachment, ProcessState, ProcessStep } from "@/data/processData";
+import { filterFlowLinksForSteps } from "@/lib/processFlowLinks";
 import type { SavedProcessState } from "@/lib/storage/processState";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseAttachment(value: unknown): ProcessAttachment | null {
+  if (!isRecord(value)) return null;
+
+  const { id, type, label, description, attachedTo, offset } = value;
+  if (typeof id !== "string") return null;
+  if (type !== "annotation" && type !== "dataObject" && type !== "dataStore") return null;
+  if (typeof label !== "string") return null;
+  if (description !== undefined && typeof description !== "string") return null;
+  if (!isRecord(attachedTo)) return null;
+  if (attachedTo.kind !== "step" && attachedTo.kind !== "connection") return null;
+  if (typeof attachedTo.id !== "string") return null;
+
+  const attachment: ProcessAttachment = {
+    id,
+    type,
+    label,
+    attachedTo: {
+      kind: attachedTo.kind,
+      id: attachedTo.id,
+    },
+  };
+
+  if (description !== undefined) {
+    attachment.description = description;
+  }
+
+  if (offset !== undefined) {
+    if (!isRecord(offset) || typeof offset.x !== "number" || typeof offset.y !== "number") {
+      return null;
+    }
+    attachment.offset = { x: offset.x, y: offset.y };
+  }
+
+  return attachment;
+}
+
+function parseFlowLinks(value: unknown): Record<string, { fromStepId: string; toStepId: string }> {
+  if (!isRecord(value)) return {};
+
+  return Object.entries(value).reduce<Record<string, { fromStepId: string; toStepId: string }>>(
+    (flowLinks, [id, link]) => {
+      if (!isRecord(link)) return flowLinks;
+      if (typeof link.fromStepId !== "string" || typeof link.toStepId !== "string") {
+        return flowLinks;
+      }
+
+      flowLinks[id] = {
+        fromStepId: link.fromStepId,
+        toStepId: link.toStepId,
+      };
+      return flowLinks;
+    },
+    {},
+  );
+}
+
+function validAttachments(state: {
+  steps: ProcessStep[];
+  connections: Connection[];
+  attachments?: unknown;
+}): ProcessAttachment[] {
+  const stepIds = new Set(state.steps.map((step) => step.id));
+  const connectionIds = new Set(state.connections.map((connection) => connection.id));
+  const attachments = Array.isArray(state.attachments) ? state.attachments : [];
+
+  return attachments.flatMap((value) => {
+    const attachment = parseAttachment(value);
+    if (!attachment) return [];
+    const targetExists = attachment.attachedTo.kind === "step"
+      ? stepIds.has(attachment.attachedTo.id)
+      : connectionIds.has(attachment.attachedTo.id);
+    return targetExists ? [attachment] : [];
+  });
+}
 
 export function buildSavedProcessState(
   state: ProcessState,
@@ -7,6 +87,7 @@ export function buildSavedProcessState(
   activeLanes: string[],
   customLanes: CustomLane[],
 ): SavedProcessState {
+  const targetSteps = [...state.steps, ...parkedSteps];
   const autoLinks: SavedProcessState["autoLinks"] = {};
   state.automations.forEach((automation) => {
     if (automation.fromStepId && automation.toStepId) {
@@ -24,14 +105,17 @@ export function buildSavedProcessState(
     parkedSteps,
     activeLanes,
     customLanes,
-    flowLinks: state.flowLinks ?? {},
+    flowLinks: filterFlowLinksForSteps(state.flowLinks, state.steps.map((step) => step.id)),
+    attachments: validAttachments({ ...state, steps: targetSteps }),
   };
 }
 
 export function restoreSavedProcessState(
   current: ProcessState,
   saved: ProcessState,
+  parkedSteps: ProcessStep[] = [],
 ): ProcessState {
+  const targetSteps = [...saved.steps, ...parkedSteps];
   return {
     ...saved,
     automations: current.automations.map((automation) => {
@@ -48,6 +132,7 @@ export function restoreSavedProcessState(
           toStepId: undefined,
         };
     }),
+    attachments: validAttachments({ ...saved, steps: targetSteps }),
   };
 }
 
@@ -55,12 +140,17 @@ export function buildProcessStateFromSaved(
   saved: SavedProcessState,
   automations: Automation[],
 ): ProcessState {
+  const steps = saved.steps as ProcessStep[];
+  const parkedSteps = saved.parkedSteps as ProcessStep[];
+  const connections = saved.connections as Connection[];
+
   return {
-    steps: saved.steps as ProcessStep[],
-    connections: saved.connections as Connection[],
+    steps,
+    connections,
     automations,
     activeLanes: saved.activeLanes,
     customLanes: saved.customLanes as CustomLane[] | undefined,
-    flowLinks: saved.flowLinks ?? {},
+    flowLinks: filterFlowLinksForSteps(parseFlowLinks(saved.flowLinks), steps.map((step) => step.id)),
+    attachments: validAttachments({ steps: [...steps, ...parkedSteps], connections, attachments: saved.attachments }),
   };
 }

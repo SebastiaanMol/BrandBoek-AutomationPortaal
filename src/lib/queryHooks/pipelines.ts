@@ -3,6 +3,7 @@ import {
   createCustomPipeline,
   deleteCustomPipeline,
   fetchPipelines,
+  renameCustomPipeline,
   setPipelineActive,
   triggerDescribePipeline,
   triggerHubSpotPipelinesSync,
@@ -55,6 +56,15 @@ export function useUpdateCustomPipeline() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: { pipelineId: string } & CustomPipelineInput) => updateCustomPipeline(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pipelines"] }),
+  });
+}
+
+export function useRenameCustomPipeline() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pipelineId, naam }: { pipelineId: string; naam: string }) =>
+      renameCustomPipeline(pipelineId, naam),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pipelines"] }),
   });
 }

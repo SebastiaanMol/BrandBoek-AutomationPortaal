@@ -27,7 +27,7 @@ export interface ProcessStep {
   column: number;
   row?: number;          // vertical row within lane (0 = top, 1 = second, …)
   description?: string;
-  type?: "task" | "optional" | "start" | "end" | "decision" | "terminate" | "send" | "receive" | "and";
+  type?: "task" | "optional" | "start" | "end" | "timer" | "decision" | "terminate" | "send" | "receive" | "and";
 }
 
 export interface Automation {
@@ -41,18 +41,47 @@ export interface Automation {
   toStepId?: string;    // step this automation sits ON (for dot position)
 }
 
+export type ConnectionRouteType = "main" | "optional" | "end";
+export type ConnectionSide = "top" | "right" | "bottom" | "left";
+
+export interface ConnectionWaypoint {
+  x: number;
+  y: number;
+}
+
 export interface Connection {
   id: string;
   fromStepId?: string;        // step-to-step edge
   fromAutomationId?: string;  // branch edge (automation → step)
   toStepId: string;
   label?: string;             // text label on the edge
+  routeType?: ConnectionRouteType;
+  fromSide?: ConnectionSide;
+  toSide?: ConnectionSide;
+  waypoints?: ConnectionWaypoint[];
+  manual?: boolean;
+}
+
+export type ProcessAttachmentType = "annotation" | "dataObject" | "dataStore";
+
+export type ProcessAttachmentTarget =
+  | { kind: "step"; id: string }
+  | { kind: "connection"; id: string };
+
+export interface ProcessAttachment {
+  id: string;
+  type: ProcessAttachmentType;
+  label: string;
+  description?: string;
+  attachedTo: ProcessAttachmentTarget;
+  offset?: { x: number; y: number };
 }
 
 export interface ProcessState {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
+  attachments?: ProcessAttachment[];
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
   customLanes?: CustomLane[];
   flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;

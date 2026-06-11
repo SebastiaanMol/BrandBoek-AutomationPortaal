@@ -108,6 +108,18 @@ export async function createCustomPipeline(input: CustomPipelineInput): Promise<
   return mapPipelineRow(data as unknown as PipelineRow);
 }
 
+export async function renameCustomPipeline(
+  pipelineId: string,
+  naam: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("pipelines")
+    .update({ naam: naam.trim(), updated_at: new Date().toISOString() })
+    .eq("pipeline_id", pipelineId)
+    .eq("source", "custom");
+  if (error) throw toFriendlyDbError(error);
+}
+
 export async function updateCustomPipeline(
   input: { pipelineId: string } & CustomPipelineInput,
 ): Promise<void> {
