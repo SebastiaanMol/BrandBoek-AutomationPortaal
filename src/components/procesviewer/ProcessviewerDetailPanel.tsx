@@ -39,12 +39,11 @@ export function ProcessviewerDetailPanel({
   const isVisible = !!(selectedAutoId || selectedStepId);
   if (!isVisible) return null;
 
-  // ── Automation detail view ────────────────────────────────────────────────
   if (selectedAutoId) {
     const db = dbAutomations.find((a) => a.id === selectedAutoId);
     const canvas = canvasAutomations.find((a) => a.id === selectedAutoId);
     const fromStep = canvas?.fromStepId ? steps.find((s) => s.id === canvas.fromStepId) : null;
-    const toStep   = canvas?.toStepId   ? steps.find((s) => s.id === canvas.toStepId)   : null;
+    const toStep = canvas?.toStepId ? steps.find((s) => s.id === canvas.toStepId) : null;
 
     return (
       <Panel eyebrow="Automation" onClose={onClose}>
@@ -63,17 +62,17 @@ export function ProcessviewerDetailPanel({
         {db && (
           <div className="mt-4 flex flex-wrap gap-1.5">
             {db.source && <Badge>{sourceLabel(db.source)}</Badge>}
-            {db.status && <Badge tone={db.status === "actief" ? "green" : "neutral"}>{db.status}</Badge>}
+            {db.status && <Badge tone={db.status.toLowerCase() === "actief" ? "green" : "neutral"}>{db.status}</Badge>}
             {db.categorie && <Badge tone="blue">{db.categorie}</Badge>}
           </div>
         )}
 
         {(fromStep || toStep) && (
           <div className="mt-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Koppeling</p>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Koppeling</p>
             <div className="flex items-center gap-2 text-xs text-slate-600">
               {fromStep && <StepChip label={fromStep.label} />}
-              {fromStep && toStep && <span className="text-slate-400">→</span>}
+              {fromStep && toStep && <span className="text-slate-400">-&gt;</span>}
               {toStep && <StepChip label={toStep.label} />}
             </div>
           </div>
@@ -81,21 +80,21 @@ export function ProcessviewerDetailPanel({
 
         {db?.doel && (
           <div className="mt-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Doel</p>
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Doel</p>
             <p className="text-xs leading-5 text-slate-600">{db.doel}</p>
           </div>
         )}
 
         {db?.trigger && (
           <div className="mt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Trigger</p>
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Trigger</p>
             <p className="text-xs leading-5 text-slate-600">{db.trigger}</p>
           </div>
         )}
 
         {db?.systemen && db.systemen.length > 0 && (
           <div className="mt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Systemen</p>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Systemen</p>
             <div className="flex flex-wrap gap-1">
               {db.systemen.map((s) => <Badge key={s}>{s}</Badge>)}
             </div>
@@ -106,7 +105,7 @@ export function ProcessviewerDetailPanel({
           <div className="mt-5">
             <Link
               to={`/automations/${db.id}`}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700"
             >
               <ExternalLink className="h-3.5 w-3.5" />
               Bekijk volledige automation
@@ -117,7 +116,6 @@ export function ProcessviewerDetailPanel({
     );
   }
 
-  // ── Step detail view ──────────────────────────────────────────────────────
   const step = steps.find((s) => s.id === selectedStepId);
   if (!step) return null;
 
@@ -125,8 +123,8 @@ export function ProcessviewerDetailPanel({
 
   const incomingRoutes = connections.filter((connection) => connection.toStepId === step.id && !!connection.fromStepId);
   const outgoingRoutes = connections.filter((connection) => connection.fromStepId === step.id);
-  const linked = canvasAutomations.filter(
-    (a) => a.fromStepId === step.id || a.toStepId === step.id,
+  const linkedAutomations = canvasAutomations.filter(
+    (automation) => automation.fromStepId === step.id || automation.toStepId === step.id,
   );
   const lane = getLaneConfig(step.team, customLanes);
 
@@ -162,45 +160,30 @@ export function ProcessviewerDetailPanel({
         </div>
       </Section>
 
-      {linked.length > 0 ? (
-        <div className="mt-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-            Gekoppelde automations ({linked.length})
-          </p>
+      <Section title="Gekoppelde automations">
+        {linkedAutomations.length > 0 ? (
           <ul className="flex flex-col gap-1.5">
-            {linked.map((auto) => {
-              const db = dbAutomations.find((a) => a.id === auto.id);
-              const isFrom = auto.fromStepId === step.id;
+            {linkedAutomations.map((automation) => {
+              const db = dbAutomations.find((item) => item.id === automation.id);
               return (
-                <li key={auto.id}>
-                  <button
-                    onClick={() => onSelectAuto(auto.id)}
-                    className="w-full flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-amber-300 hover:bg-amber-50 transition-colors"
-                  >
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100">
-                      <Zap className="h-3.5 w-3.5 text-amber-600" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-800 truncate">{auto.name}</p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        {isFrom ? "Loopt ná deze stap" : "Loopt vóór deze stap"}
-                        {db?.source ? ` · ${sourceLabel(db.source)}` : ""}
-                      </p>
-                    </div>
-                  </button>
+                <li key={automation.id}>
+                  <AutomationSummaryCard
+                    automation={automation}
+                    db={db}
+                    stepId={step.id}
+                    onSelectAuto={onSelectAuto}
+                  />
                 </li>
               );
             })}
           </ul>
-        </div>
-      ) : (
-        <EmptyState>Geen automations gekoppeld aan deze stap.</EmptyState>
-      )}
+        ) : (
+          <EmptyState>Geen automations gekoppeld aan deze taak</EmptyState>
+        )}
+      </Section>
     </Panel>
   );
 }
-
-// ── Shared sub-components ─────────────────────────────────────────────────────
 
 function Panel({
   children,
@@ -310,6 +293,55 @@ function RouteList({
   );
 }
 
+function AutomationSummaryCard({
+  automation,
+  db,
+  onSelectAuto,
+  stepId,
+}: {
+  automation: Automation;
+  db?: Automatisering;
+  onSelectAuto: (id: string) => void;
+  stepId: string;
+}): React.ReactNode {
+  const name = db?.naam ?? automation.name;
+  const source = db?.source ? sourceLabel(db.source) : automation.tool;
+  const direction = automation.fromStepId === stepId ? "Loopt na deze taak" : "Loopt voor deze taak";
+  const goal = db?.doel || automation.goal;
+  const systems = db?.systemen ?? [];
+
+  return (
+    <button
+      aria-label={`Open automation ${name}`}
+      onClick={() => onSelectAuto(automation.id)}
+      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-amber-300 hover:bg-amber-50"
+    >
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100">
+          <Zap className="h-3.5 w-3.5 text-amber-600" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-semibold text-slate-800">{name}</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            <Badge>{direction}</Badge>
+            {source && <Badge>{db ? `Bron: ${source}` : source}</Badge>}
+            {db?.status && <Badge tone={db.status.toLowerCase() === "actief" ? "green" : "neutral"}>{db.status}</Badge>}
+            {db?.categorie && <Badge tone="blue">{db.categorie}</Badge>}
+          </div>
+          {db?.trigger && <p className="mt-2 text-[11px] leading-4 text-slate-500">{db.trigger}</p>}
+          {goal && <p className="mt-1 text-[11px] leading-4 text-slate-600">{goal}</p>}
+          {db?.owner && <p className="mt-1 text-[11px] leading-4 text-slate-500">{db.owner}</p>}
+          {systems.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {systems.map((system) => <Badge key={system}>{system}</Badge>)}
+            </div>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function Badge({
   children,
   tone = "neutral",
@@ -320,8 +352,8 @@ function Badge({
   style?: React.CSSProperties;
 }): React.ReactNode {
   const cls =
-    tone === "green"   ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-    tone === "blue"    ? "bg-blue-50 text-blue-700 border-blue-200" :
+    tone === "green" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    tone === "blue" ? "bg-blue-50 text-blue-700 border-blue-200" :
     "bg-slate-100 text-slate-600 border-slate-200";
   return (
     <span
@@ -343,8 +375,8 @@ function StepChip({ label }: { label: string }): React.ReactNode {
 
 function sourceLabel(source: string): string {
   if (source === "hubspot") return "HubSpot";
-  if (source === "zapier")  return "Zapier";
-  if (source === "gitlab")  return "GitLab";
+  if (source === "zapier") return "Zapier";
+  if (source === "gitlab") return "GitLab";
   if (source === "typeform") return "Typeform";
   return source;
 }
@@ -356,8 +388,8 @@ function routeTypeLabel(routeType?: Connection["routeType"]): string {
 }
 
 function stepTypeLabel(type?: string): string {
-  if (type === "start")    return "Start event";
-  if (type === "end")      return "Eind event";
+  if (type === "start") return "Start event";
+  if (type === "end") return "Eind event";
   if (type === "decision") return "Gateway";
   if (type === "optional") return "Optionele taak";
   return "Taak";
