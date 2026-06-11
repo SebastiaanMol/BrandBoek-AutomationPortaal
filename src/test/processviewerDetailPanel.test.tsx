@@ -164,6 +164,38 @@ describe("ProcessviewerDetailPanel", () => {
     expect(onSelectAuto).toHaveBeenCalledWith("auto-1");
   });
 
+  it("renders automation detail mode in the same sticky panel shell", () => {
+    renderPanel({
+      selectedStepId: null,
+      selectedAutoId: "auto-1",
+      canvasAutomations: linkedCanvasAutomations,
+      dbAutomations: linkedDbAutomations,
+    });
+
+    expect(screen.getByRole("complementary", { name: "Automation detailmenu" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Betalingsregeling workflow" })).toBeInTheDocument();
+    expect(screen.getByText("Koppeling")).toBeInTheDocument();
+    expect(screen.getByText("Betalingsregeling")).toBeInTheDocument();
+    expect(screen.getByText("1e herinnering")).toBeInTheDocument();
+    expect(screen.getByText("Doel")).toBeInTheDocument();
+    expect(screen.getByText("Trigger")).toBeInTheDocument();
+    expect(screen.getByText("Laatst geverifieerd")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Bekijk volledige automation" })).toHaveAttribute("href", "/automations/auto-1");
+  });
+
+  it("renders automation detail fallback when the database record is missing", () => {
+    renderPanel({
+      selectedStepId: null,
+      selectedAutoId: "auto-1",
+      canvasAutomations: linkedCanvasAutomations,
+      dbAutomations: [],
+    });
+
+    expect(screen.getByRole("heading", { name: "Betalingsregeling workflow" })).toBeInTheDocument();
+    expect(screen.getByText("Maak automatisch opvolging aan")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Bekijk volledige automation" })).not.toBeInTheDocument();
+  });
+
   it("renders task-linked attachments with labels and descriptions", () => {
     renderPanel({
       attachments: [

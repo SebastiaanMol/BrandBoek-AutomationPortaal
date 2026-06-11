@@ -44,6 +44,10 @@ export function ProcessviewerDetailPanel({
     const canvas = canvasAutomations.find((a) => a.id === selectedAutoId);
     const fromStep = canvas?.fromStepId ? steps.find((s) => s.id === canvas.fromStepId) : null;
     const toStep = canvas?.toStepId ? steps.find((s) => s.id === canvas.toStepId) : null;
+    const title = db?.naam ?? canvas?.name ?? "Onbekende automation";
+    const source = db?.source ? sourceLabel(db.source) : canvas?.tool;
+    const goal = db?.doel || canvas?.goal;
+    const verifiedDate = formatDate(db?.laatstGeverifieerd);
 
     return (
       <Panel eyebrow="Automation" onClose={onClose}>
@@ -54,52 +58,60 @@ export function ProcessviewerDetailPanel({
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Automation</p>
             <h3 className="mt-0.5 text-sm font-bold leading-snug text-slate-900">
-              {db?.naam ?? canvas?.name ?? "Onbekend"}
+              {title}
             </h3>
           </div>
         </div>
 
-        {db && (
+        {(source || db?.status || db?.categorie) && (
           <div className="mt-4 flex flex-wrap gap-1.5">
-            {db.source && <Badge>{sourceLabel(db.source)}</Badge>}
-            {db.status && <Badge tone={db.status.toLowerCase() === "actief" ? "green" : "neutral"}>{db.status}</Badge>}
-            {db.categorie && <Badge tone="blue">{db.categorie}</Badge>}
+            {source && <Badge>{source}</Badge>}
+            {db?.status && <Badge tone={db.status.toLowerCase() === "actief" ? "green" : "neutral"}>{db.status}</Badge>}
+            {db?.categorie && <Badge tone="blue">{db.categorie}</Badge>}
           </div>
         )}
 
-        {(fromStep || toStep) && (
-          <div className="mt-4">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Koppeling</p>
+        <Section title="Koppeling">
+          {fromStep || toStep ? (
             <div className="flex items-center gap-2 text-xs text-slate-600">
               {fromStep && <StepChip label={fromStep.label} />}
               {fromStep && toStep && <span className="text-slate-400">-&gt;</span>}
               {toStep && <StepChip label={toStep.label} />}
             </div>
-          </div>
-        )}
+          ) : (
+            <EmptyState>Geen proceskoppeling bekend.</EmptyState>
+          )}
+        </Section>
 
-        {db?.doel && (
-          <div className="mt-4">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Doel</p>
-            <p className="text-xs leading-5 text-slate-600">{db.doel}</p>
-          </div>
-        )}
+        <Section title="Doel">
+          {goal ? <DetailText>{goal}</DetailText> : <EmptyState>Geen doel beschikbaar.</EmptyState>}
+        </Section>
 
-        {db?.trigger && (
-          <div className="mt-3">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Trigger</p>
-            <p className="text-xs leading-5 text-slate-600">{db.trigger}</p>
-          </div>
-        )}
+        <Section title="Trigger">
+          {db?.trigger ? <DetailText>{db.trigger}</DetailText> : <EmptyState>Geen trigger beschikbaar.</EmptyState>}
+        </Section>
 
-        {db?.systemen && db.systemen.length > 0 && (
-          <div className="mt-3">
-            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Systemen</p>
+        <Section title="Systemen en eigenaar">
+          {db?.systemen && db.systemen.length > 0 ? (
             <div className="flex flex-wrap gap-1">
               {db.systemen.map((s) => <Badge key={s}>{s}</Badge>)}
             </div>
-          </div>
-        )}
+          ) : (
+            <EmptyState>Geen systemen bekend.</EmptyState>
+          )}
+          {db?.owner && <p className="mt-2 text-xs leading-5 text-slate-600">Eigenaar: {db.owner}</p>}
+        </Section>
+
+        <Section title="Verificatie">
+          {verifiedDate ? (
+            <div>
+              <p className="text-[11px] font-semibold text-slate-700">Laatst geverifieerd</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">{verifiedDate}</p>
+            </div>
+          ) : (
+            <EmptyState>Geen verificatiedatum beschikbaar.</EmptyState>
+          )}
+        </Section>
 
         {db && (
           <div className="mt-5">
@@ -198,6 +210,19 @@ export function ProcessviewerDetailPanel({
       </Section>
     </Panel>
   );
+}
+
+function formatDate(value?: string | null): string | null {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat("nl-NL", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 function Panel({
