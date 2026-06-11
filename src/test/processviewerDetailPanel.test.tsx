@@ -164,6 +164,52 @@ describe("ProcessviewerDetailPanel", () => {
     expect(onSelectAuto).toHaveBeenCalledWith("auto-1");
   });
 
+  it("renders task-linked attachments with labels and descriptions", () => {
+    renderPanel({
+      attachments: [
+        {
+          id: "att-note",
+          type: "annotation",
+          label: "Bel eerst klant",
+          description: "Gebruik deze stap alleen bij openstaande facturen.",
+          attachedTo: { kind: "step", id: "task-betaalregeling" },
+        },
+        {
+          id: "att-store",
+          type: "dataStore",
+          label: "HubSpot deal",
+          attachedTo: { kind: "step", id: "task-betaalregeling" },
+        },
+        {
+          id: "att-other",
+          type: "dataObject",
+          label: "Niet zichtbaar",
+          attachedTo: { kind: "step", id: "task-herinnering" },
+        },
+      ],
+    });
+
+    expect(screen.getByText("Bijlagen")).toBeInTheDocument();
+    expect(screen.getByText("Bel eerst klant")).toBeInTheDocument();
+    expect(screen.getByText("Notitie")).toBeInTheDocument();
+    expect(screen.getByText("Gebruik deze stap alleen bij openstaande facturen.")).toBeInTheDocument();
+    expect(screen.getByText("HubSpot deal")).toBeInTheDocument();
+    expect(screen.getByText("Databron")).toBeInTheDocument();
+    expect(screen.queryByText("Niet zichtbaar")).not.toBeInTheDocument();
+  });
+
+  it("renders empty states for missing description, automations, and attachments", () => {
+    renderPanel({
+      selectedStepId: "task-herinnering",
+      canvasAutomations: [],
+      attachments: [],
+    });
+
+    expect(screen.getByText("Geen beschrijving beschikbaar.")).toBeInTheDocument();
+    expect(screen.getByText("Geen automations gekoppeld aan deze taak")).toBeInTheDocument();
+    expect(screen.getByText("Geen bijlagen gekoppeld aan deze taak")).toBeInTheDocument();
+  });
+
   it("does not render when there is no selected step or automation", () => {
     renderPanel({ selectedStepId: null, selectedAutoId: null });
 

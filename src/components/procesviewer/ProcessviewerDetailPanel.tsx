@@ -119,12 +119,13 @@ export function ProcessviewerDetailPanel({
   const step = steps.find((s) => s.id === selectedStepId);
   if (!step) return null;
 
-  void attachments;
-
   const incomingRoutes = connections.filter((connection) => connection.toStepId === step.id && !!connection.fromStepId);
   const outgoingRoutes = connections.filter((connection) => connection.fromStepId === step.id);
   const linkedAutomations = canvasAutomations.filter(
     (automation) => automation.fromStepId === step.id || automation.toStepId === step.id,
+  );
+  const taskAttachments = attachments.filter(
+    (attachment) => attachment.attachedTo.kind === "step" && attachment.attachedTo.id === step.id,
   );
   const lane = getLaneConfig(step.team, customLanes);
 
@@ -179,6 +180,20 @@ export function ProcessviewerDetailPanel({
           </ul>
         ) : (
           <EmptyState>Geen automations gekoppeld aan deze taak</EmptyState>
+        )}
+      </Section>
+
+      <Section title="Bijlagen">
+        {taskAttachments.length > 0 ? (
+          <ul className="flex flex-col gap-1.5">
+            {taskAttachments.map((attachment) => (
+              <li key={attachment.id}>
+                <AttachmentCard attachment={attachment} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState>Geen bijlagen gekoppeld aan deze taak</EmptyState>
         )}
       </Section>
     </Panel>
@@ -342,6 +357,20 @@ function AutomationSummaryCard({
   );
 }
 
+function AttachmentCard({ attachment }: { attachment: ProcessAttachment }): React.ReactNode {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 text-xs font-semibold leading-5 text-slate-800">{attachment.label}</p>
+        <Badge>{attachmentTypeLabel(attachment.type)}</Badge>
+      </div>
+      {attachment.description && (
+        <p className="mt-1 text-[11px] leading-4 text-slate-500">{attachment.description}</p>
+      )}
+    </div>
+  );
+}
+
 function Badge({
   children,
   tone = "neutral",
@@ -385,6 +414,13 @@ function routeTypeLabel(routeType?: Connection["routeType"]): string {
   if (routeType === "optional") return "Correctie / optioneel";
   if (routeType === "end") return "Uitzondering / einde";
   return "Hoofdroute";
+}
+
+function attachmentTypeLabel(type: ProcessAttachment["type"]): string {
+  if (type === "annotation") return "Notitie";
+  if (type === "dataObject") return "Data/document";
+  if (type === "dataStore") return "Databron";
+  return type;
 }
 
 function stepTypeLabel(type?: string): string {
