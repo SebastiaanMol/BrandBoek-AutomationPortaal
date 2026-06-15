@@ -189,17 +189,32 @@ describe("ProcessCanvas manual connections in edit mode", () => {
       },
     ];
 
-    render(
+    const updateWaypoints = vi.fn();
+    const { rerender } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        onUpdateConnectionWaypoints={updateWaypoints}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Handmatige hoofdroute route"));
+
+    expect(screen.getAllByRole("button", { name: /Sleep knikpunt/ })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /Knikpunt toevoegen/ }).length).toBeGreaterThan(0);
+
+    rerender(
       <ProcessCanvas
         steps={steps}
         connections={connections}
         automations={[]}
         activeLanes={["sales"]}
         readOnly
+        onUpdateConnectionWaypoints={updateWaypoints}
       />,
     );
-
-    fireEvent.click(screen.getByLabelText("Handmatige hoofdroute route"));
 
     expect(screen.queryByRole("button", { name: /Sleep knikpunt/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Knikpunt toevoegen/ })).not.toBeInTheDocument();
@@ -321,6 +336,8 @@ describe("ProcessCanvas manual connections in edit mode", () => {
 
     const handles = screen.getAllByRole("button", { name: /Sleep knikpunt/ });
     expect(handles).toHaveLength(2);
+    expect(handles.map(handle => handle.getAttribute("cx"))).toEqual(["280", "340"]);
+    expect(handles.map(handle => handle.getAttribute("cy"))).toEqual(["86", "114"]);
     expect(screen.getAllByRole("button", { name: /Knikpunt toevoegen/ })).toHaveLength(3);
   });
 
