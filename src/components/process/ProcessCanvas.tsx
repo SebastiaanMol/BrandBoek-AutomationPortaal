@@ -1,5 +1,16 @@
 import { useRef, useMemo, useState, useCallback, useEffect } from "react";
-import type { ProcessStep, Connection, Automation, CustomLane } from "@/data/processData";
+import type {
+  ProcessStep,
+  Connection,
+  Automation,
+  CustomLane,
+  ConnectionRouteType,
+  ConnectionSide,
+  ConnectionWaypoint,
+  ProcessAttachment,
+  ProcessAttachmentTarget,
+  ProcessAttachmentType,
+} from "@/data/processData";
 import {
   buildLaneKeys,
   filterValidActiveLanes,
@@ -16,7 +27,7 @@ const ROW_H        = 88;    // height of one row within a swimlane  (110 × 0.80
 const LANE_HDR_W   = 106;   // (132 × 0.80)
 const STEP_W       = 122;   // (152 × 0.80)
 const STEP_H       = 42;    // (52 × 0.80)
-const DECISION_H   = 36;    // half-diagonal of decision diamond
+const DECISION_H   = 29;    // half-diagonal of decision diamond
 const BASE_COL_W   = 198;   // (248 × 0.80)
 const EVT_COL_W    = BASE_COL_W; // same width as task cols — prevents narrow snap zone causing drift to wrong column
 const DOT_R        = 11;    // (14 × 0.80)
@@ -30,6 +41,18 @@ const ROUTE_OPTIONAL = "#ea580c";
 const ROUTE_END    = "#dc2626";
 const PHASE_BAR_BG = "#0759d6";
 const GRID_SIZE    = 28;
+const CANVAS_LEGEND_H = 44;
+const PORT_DROP_RADIUS = GRID_SIZE / 2;
+const MICRO_BEND_TOLERANCE = 6;
+const ATTACHMENT_W = 86;
+const ATTACHMENT_H = 44;
+const STEP_ATTACHMENT_DEFAULT_OFFSET = { x: 72, y: 24 };
+const CONNECTION_ATTACHMENT_DEFAULT_OFFSET = { x: 16, y: 34 };
+const ADD_ATTACHMENT_CONTROLS: { type: ProcessAttachmentType; label: string }[] = [
+  { type: "annotation", label: "Notitie toevoegen" },
+  { type: "dataObject", label: "Data/document toevoegen" },
+  { type: "dataStore", label: "Databron toevoegen" },
+];
 
 // Viewer-mode lane accent colours (spec)
 const VIEWER_LANE_COLORS: Record<string, string> = {
@@ -43,10 +66,11 @@ const VIEWER_LANE_COLORS: Record<string, string> = {
 
 interface Pt { x: number; y: number }
 interface ArrowData { path: string; preDotPath: string; postDotPath: string; postDotMid: Pt; postDotMidVertical: boolean; dotCenter: Pt; isVertical: boolean }
+interface BendInsertionTarget { point: Pt; insertIndex: number }
 
 function isEvent(step: ProcessStep) {
   return step.type === "start" || step.type === "end"
-    || step.type === "terminate" || step.type === "send" || step.type === "receive";
+    || step.type === "timer" || step.type === "terminate" || step.type === "send" || step.type === "receive";
 }
 
 function isDecision(step: ProcessStep) {
@@ -135,54 +159,641 @@ function edgeLeft (s: ProcessStep, cx: number) { return cx - (isEvent(s) ? EVT_R
 function edgeDown (s: ProcessStep, cy: number) { return cy + (isEvent(s) ? EVT_R : isDecision(s) ? DECISION_H : STEP_H / 2); }
 function edgeUp   (s: ProcessStep, cy: number) { return cy - (isEvent(s) ? EVT_R : isDecision(s) ? DECISION_H : STEP_H / 2); }
 
+const CONNECTION_SIDES: ConnectionSide[] = ["top", "right", "bottom", "left"];
+
+function sideLabel(side: ConnectionSide): string {
+  if (side === "top") return "boven";
+  if (side === "bottom") return "onder";
+  if (side === "left") return "links";
+  return "";
+}
+
+function portAriaLabel(label: string, side: ConnectionSide): string {
+  const suffix = sideLabel(side);
+  return suffix ? `Verbindingspoort ${label} ${suffix}` : `Verbindingspoort ${label}`;
+}
+
+function connectionPoint(
+  step: ProcessStep,
+  side: ConnectionSide,
+  colX: number[],
+  laneStarts: Record<string, number>,
+): Pt {
+  const cx = colX[step.column];
+  const cy = stepCY(step, laneStarts);
+  if (side === "top") return { x: cx, y: edgeUp(step, cy) };
+  if (side === "bottom") return { x: cx, y: edgeDown(step, cy) };
+  if (side === "left") return { x: edgeLeft(step, cx), y: cy };
+  return { x: edgeRight(step, cx), y: cy };
+}
+
+function defaultConnectionSide(step: ProcessStep, other: ProcessStep, role: "from" | "to"): ConnectionSide {
+  if (step.column < other.column) return "right";
+  if (step.column > other.column) return "left";
+  const stepY = stepRow(step);
+  const otherY = stepRow(other);
+  if (stepY < otherY) return "bottom";
+  if (stepY > otherY) return "top";
+  return role === "from" ? "right" : "left";
+}
+
+function nearestConnectionSide(
+  step: ProcessStep,
+  point: Pt,
+  colX: number[],
+  laneStarts: Record<string, number>,
+): ConnectionSide {
+  let best: ConnectionSide = "right";
+  let bestDistance = Infinity;
+  for (const side of CONNECTION_SIDES) {
+    const port = connectionPoint(step, side, colX, laneStarts);
+    const distance = Math.hypot(point.x - port.x, point.y - port.y);
+    if (distance < bestDistance) {
+      best = side;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function connectionSideForDrop(
+  source: ProcessStep,
+  target: ProcessStep,
+  point: Pt,
+  colX: number[],
+  laneStarts: Record<string, number>,
+): ConnectionSide {
+  const nearestSide = nearestConnectionSide(target, point, colX, laneStarts);
+  const nearestPort = connectionPoint(target, nearestSide, colX, laneStarts);
+  const isExplicitSideDrop = Math.hypot(point.x - nearestPort.x, point.y - nearestPort.y) <= GRID_SIZE / 2;
+  return isExplicitSideDrop ? nearestSide : defaultConnectionSide(target, source, "to");
+}
+
+function pointInsideStepBody(
+  step: ProcessStep,
+  point: Pt,
+  colX: number[],
+  laneStarts: Record<string, number>,
+): boolean {
+  const scx = colX[step.column] ?? 0;
+  const scy = stepCY(step, laneStarts);
+  if (isEvent(step)) return Math.hypot(point.x - scx, point.y - scy) <= EVT_R * 1.5;
+  return Math.abs(point.x - scx) <= STEP_W / 2 && Math.abs(point.y - scy) <= STEP_H / 2;
+}
+
+function findPortDropTarget(
+  steps: ProcessStep[],
+  point: Pt,
+  colX: number[],
+  laneStarts: Record<string, number>,
+  excludeStepId?: string,
+): { step: ProcessStep; side: ConnectionSide } | null {
+  let best: { step: ProcessStep; side: ConnectionSide; distance: number } | null = null;
+
+  for (const step of steps) {
+    if (step.id === excludeStepId || colX[step.column] === undefined) continue;
+    for (const side of CONNECTION_SIDES) {
+      const port = connectionPoint(step, side, colX, laneStarts);
+      const distance = Math.hypot(point.x - port.x, point.y - port.y);
+      if (distance <= PORT_DROP_RADIUS && (!best || distance < best.distance)) {
+        best = { step, side, distance };
+      }
+    }
+  }
+
+  return best ? { step: best.step, side: best.side } : null;
+}
+
+function findStepBodyDropTarget(
+  steps: ProcessStep[],
+  point: Pt,
+  colX: number[],
+  laneStarts: Record<string, number>,
+  excludeStepId?: string,
+): ProcessStep | undefined {
+  return steps.find(step =>
+    step.id !== excludeStepId && pointInsideStepBody(step, point, colX, laneStarts),
+  );
+}
+
+function snapValueToRoutingGrid(value: number): number {
+  const unit = GRID_SIZE / 2;
+  return Math.round(value / unit) * unit;
+}
+
+function snapPointToRoutingGrid(point: Pt): Pt {
+  return {
+    x: snapValueToRoutingGrid(point.x),
+    y: snapValueToRoutingGrid(point.y),
+  };
+}
+
 function buildArrow(
   from: ProcessStep,
   to: ProcessStep,
   colX: number[],
   laneStarts: Record<string, number>,
   midXOffset = 0,
+  fromSide?: ConnectionSide,
+  toSide?: ConnectionSide,
 ): ArrowData {
-  const fx = colX[from.column], fy = stepCY(from, laneStarts);
-  const tx = colX[to.column],   ty = stepCY(to, laneStarts);
+  const sourceSide = fromSide ?? defaultConnectionSide(from, to, "from");
+  const targetSide = toSide ?? defaultConnectionSide(to, from, "to");
+  const start = connectionPoint(from, sourceSide, colX, laneStarts);
+  const end = connectionPoint(to, targetSide, colX, laneStarts);
 
-  // Same column → straight vertical
-  if (from.column === to.column) {
-    const down = fy < ty;
-    const sy = down ? edgeDown(from, fy) : edgeUp(from, fy);
-    const ey = down ? edgeUp(to, ty)     : edgeDown(to, ty);
-    const dc: Pt = { x: fx, y: (sy + ey) / 2 };
-    const pre  = down ? `M ${fx} ${sy} L ${fx} ${dc.y - DOT_R}` : `M ${fx} ${sy} L ${fx} ${dc.y + DOT_R}`;
-    const post = down ? `M ${fx} ${dc.y + DOT_R} L ${fx} ${ey}` : `M ${fx} ${dc.y - DOT_R} L ${fx} ${ey}`;
-    const postDotMid: Pt = { x: fx, y: down ? (dc.y + DOT_R + ey) / 2 : (dc.y - DOT_R + ey) / 2 };
-    return { path: `M ${fx} ${sy} L ${tx} ${ey}`, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: true, dotCenter: dc, isVertical: true };
+  if (Math.abs(start.x - end.x) < 4 || Math.abs(start.y - end.y) < 4) {
+    return arrowDataFromPoints([start, end]);
   }
 
-  // All other connections — same formula as the viewer:
-  // H to midpoint → Q corner → V → Q corner → H to target
-  const ltr = from.column < to.column;
-  const sx = ltr ? edgeRight(from, fx) : edgeLeft(from, fx);
-  const ex = ltr ? edgeLeft(to, tx)   : edgeRight(to, tx);
-
-  const midX = (sx + ex) / 2 + midXOffset;
-  const r = 10;
-  const dy = ty > fy ? r : -r;
-  const dx = ltr ? r : -r;
-
-  if (Math.abs(fy - ty) < 4) {
-    // Truly horizontal: straight line
-    const dc: Pt = { x: (sx + ex) / 2, y: fy };
-    const pre  = `M ${sx} ${fy} H ${dc.x - DOT_R}`;
-    const post = `M ${dc.x + DOT_R} ${fy} H ${ex}`;
-    const postDotMid: Pt = { x: (dc.x + DOT_R + ex) / 2, y: fy };
-    return { path: `M ${sx} ${fy} H ${ex}`, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: false, dotCenter: dc, isVertical: false };
+  if (firstRoutingAxis(sourceSide, targetSide, from, to) === "y") {
+    const midY = (start.y + end.y) / 2;
+    return arrowDataFromPoints([
+      start,
+      { x: start.x, y: midY },
+      { x: end.x, y: midY },
+      end,
+    ]);
   }
 
-  const path = `M ${sx} ${fy} H ${midX - dx} Q ${midX} ${fy} ${midX} ${fy + dy} V ${ty - dy} Q ${midX} ${ty} ${midX + dx} ${ty} H ${ex}`;
-  const dc: Pt = { x: (sx + midX - dx) / 2, y: fy };
-  const pre  = `M ${sx} ${fy} H ${dc.x - DOT_R}`;
-  const post = `M ${dc.x + DOT_R} ${fy} H ${midX - dx} Q ${midX} ${fy} ${midX} ${fy + dy} V ${ty - dy} Q ${midX} ${ty} ${midX + dx} ${ty} H ${ex}`;
-  const postDotMid: Pt = { x: midX, y: (fy + ty) / 2 };
-  return { path, preDotPath: pre, postDotPath: post, postDotMid, postDotMidVertical: true, dotCenter: dc, isVertical: false };
+  const midX = (start.x + end.x) / 2 + midXOffset;
+  return arrowDataFromPoints([
+    start,
+    { x: midX, y: start.y },
+    { x: midX, y: end.y },
+    end,
+  ]);
+}
+function cleanWaypoints(points?: ConnectionWaypoint[]): ConnectionWaypoint[] {
+  return points?.filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)) ?? [];
+}
+
+function pushPoint(points: Pt[], point: Pt) {
+  const previous = points[points.length - 1];
+  if (!previous || previous.x !== point.x || previous.y !== point.y) points.push(point);
+}
+
+function buildOrthogonalPoints(
+  start: Pt,
+  end: Pt,
+  waypoints: ConnectionWaypoint[],
+  firstAxis: "x" | "y",
+  lastAxis: "x" | "y" = firstAxis,
+): Pt[] {
+  const points: Pt[] = [start];
+  let current = start;
+
+  for (const waypoint of waypoints) {
+    if (firstAxis === "x") {
+      pushPoint(points, { x: waypoint.x, y: current.y });
+      pushPoint(points, { x: waypoint.x, y: waypoint.y });
+    } else {
+      pushPoint(points, { x: current.x, y: waypoint.y });
+      pushPoint(points, { x: waypoint.x, y: waypoint.y });
+    }
+    current = points[points.length - 1];
+  }
+
+  current = points[points.length - 1];
+  if (lastAxis === "x") {
+    pushPoint(points, { x: current.x, y: end.y });
+    pushPoint(points, end);
+  } else {
+    pushPoint(points, { x: end.x, y: current.y });
+    pushPoint(points, end);
+  }
+
+  return points;
+}
+
+function snapWaypointToRouteAxis(
+  waypoint: ConnectionWaypoint,
+  start: Pt,
+  end: Pt,
+): ConnectionWaypoint {
+  return {
+    x: Math.abs(waypoint.x - start.x) <= MICRO_BEND_TOLERANCE
+      ? start.x
+      : Math.abs(waypoint.x - end.x) <= MICRO_BEND_TOLERANCE
+        ? end.x
+        : waypoint.x,
+    y: Math.abs(waypoint.y - start.y) <= MICRO_BEND_TOLERANCE
+      ? start.y
+      : Math.abs(waypoint.y - end.y) <= MICRO_BEND_TOLERANCE
+        ? end.y
+        : waypoint.y,
+  };
+}
+
+function shouldStraightenVerticalRoute(sourceSide: ConnectionSide, targetSide: ConnectionSide, start: Pt, end: Pt): boolean {
+  return (sourceSide === "top" || sourceSide === "bottom")
+    && (targetSide === "top" || targetSide === "bottom")
+    && Math.abs(start.x - end.x) <= MICRO_BEND_TOLERANCE;
+}
+
+function normalizeWaypointsForRoute(
+  waypoints: ConnectionWaypoint[],
+  sourceSide: ConnectionSide,
+  targetSide: ConnectionSide,
+  start: Pt,
+  end: Pt,
+): ConnectionWaypoint[] {
+  if (shouldStraightenVerticalRoute(sourceSide, targetSide, start, end)) {
+    return waypoints.map((waypoint) => ({ ...waypoint, x: start.x }));
+  }
+  return waypoints.map(waypoint => snapWaypointToRouteAxis(waypoint, start, end));
+}
+
+function buildPathFromPoints(points: Pt[]): string {
+  return points.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x} ${point.y}`;
+    const previous = points[index - 1];
+    if (point.y === previous.y) return `${path} H ${point.x}`;
+    if (point.x === previous.x) return `${path} V ${point.y}`;
+    return `${path} L ${point.x} ${point.y}`;
+  }, "");
+}
+
+function midpointOnPoints(points: Pt[]): Pt {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) return points[0];
+
+  const segments = points.slice(1).map((point, index) => ({
+    from: points[index],
+    to: point,
+    length: Math.abs(point.x - points[index].x) + Math.abs(point.y - points[index].y),
+  }));
+  const total = segments.reduce((sum, segment) => sum + segment.length, 0);
+  if (total <= 0) return points[Math.floor(points.length / 2)];
+
+  let cursor = 0;
+  const halfway = total / 2;
+  for (const segment of segments) {
+    if (cursor + segment.length >= halfway) {
+      const remaining = halfway - cursor;
+      const directionX = Math.sign(segment.to.x - segment.from.x);
+      const directionY = Math.sign(segment.to.y - segment.from.y);
+      return {
+        x: segment.from.x + directionX * remaining,
+        y: segment.from.y + directionY * remaining,
+      };
+    }
+    cursor += segment.length;
+  }
+
+  return points[points.length - 1];
+}
+
+function routeLength(points: Pt[]): number {
+  return points.slice(1).reduce((sum, point, index) => {
+    const previous = points[index];
+    return sum + Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
+  }, 0);
+}
+
+function pointAtRouteDistance(points: Pt[], distance: number): Pt {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) return points[0];
+
+  const total = routeLength(points);
+  const target = Math.max(0, Math.min(distance, total));
+  let cursor = 0;
+
+  for (let index = 1; index < points.length; index++) {
+    const from = points[index - 1];
+    const to = points[index];
+    const length = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+    if (length <= 0) continue;
+
+    if (cursor + length >= target) {
+      const remaining = target - cursor;
+      return {
+        x: from.x + Math.sign(to.x - from.x) * remaining,
+        y: from.y + Math.sign(to.y - from.y) * remaining,
+      };
+    }
+    cursor += length;
+  }
+
+  return points[points.length - 1];
+}
+
+function sliceRoutePoints(points: Pt[], startDistance: number, endDistance: number): Pt[] {
+  if (points.length <= 1) return points;
+  const total = routeLength(points);
+  const start = Math.max(0, Math.min(startDistance, total));
+  const end = Math.max(start, Math.min(endDistance, total));
+  const result: Pt[] = [pointAtRouteDistance(points, start)];
+  let cursor = 0;
+
+  for (let index = 1; index < points.length; index++) {
+    const to = points[index];
+    const from = points[index - 1];
+    const length = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+    const segmentEnd = cursor + length;
+    if (length > 0 && segmentEnd > start && segmentEnd < end) {
+      pushPoint(result, to);
+    }
+    cursor = segmentEnd;
+  }
+
+  pushPoint(result, pointAtRouteDistance(points, end));
+  return result;
+}
+
+function arrowDataFromPoints(points: Pt[]): ArrowData {
+  const path = buildPathFromPoints(points);
+  const mid = midpointOnPoints(points);
+  const total = routeLength(points);
+  const preDotPath = total > DOT_R * 2
+    ? buildPathFromPoints(sliceRoutePoints(points, 0, total / 2 - DOT_R))
+    : path;
+  const postDotPoints = total > DOT_R * 2
+    ? sliceRoutePoints(points, total / 2 + DOT_R, total)
+    : points;
+  const postDotPath = buildPathFromPoints(postDotPoints);
+  return {
+    path,
+    preDotPath,
+    postDotPath,
+    postDotMid: midpointOnPoints(postDotPoints),
+    postDotMidVertical: false,
+    dotCenter: mid,
+    isVertical: points.every(point => point.x === points[0]?.x),
+  };
+}
+
+function firstRoutingAxis(sourceSide: ConnectionSide, targetSide: ConnectionSide, from: ProcessStep, to: ProcessStep): "x" | "y" {
+  if (sourceSide === "top" || sourceSide === "bottom") return "y";
+  if (sourceSide === "left" || sourceSide === "right") return "x";
+  if (targetSide === "top" || targetSide === "bottom") return "x";
+  if (targetSide === "left" || targetSide === "right") return "y";
+  return from.column === to.column ? "y" : "x";
+}
+
+function targetRoutingAxis(targetSide: ConnectionSide): "x" | "y" {
+  return targetSide === "left" || targetSide === "right" ? "x" : "y";
+}
+
+function buildWaypointArrow(
+  from: ProcessStep,
+  to: ProcessStep,
+  waypoints: ConnectionWaypoint[],
+  colX: number[],
+  laneStarts: Record<string, number>,
+  fromSide?: ConnectionSide,
+  toSide?: ConnectionSide,
+): ArrowData {
+  const sourceSide = fromSide ?? defaultConnectionSide(from, to, "from");
+  const targetSide = toSide ?? defaultConnectionSide(to, from, "to");
+  const start = connectionPoint(from, sourceSide, colX, laneStarts);
+  const end = connectionPoint(to, targetSide, colX, laneStarts);
+  const normalizedWaypoints = normalizeWaypointsForRoute(waypoints, sourceSide, targetSide, start, end);
+  const points = buildOrthogonalPoints(
+    start,
+    end,
+    normalizedWaypoints,
+    firstRoutingAxis(sourceSide, targetSide, from, to),
+    targetRoutingAxis(targetSide),
+  );
+  return arrowDataFromPoints(points);
+}
+
+function buildConnectionArrow(
+  conn: Connection,
+  from: ProcessStep,
+  to: ProcessStep,
+  colX: number[],
+  laneStarts: Record<string, number>,
+  midXOffset = 0,
+): ArrowData {
+  const manualWaypoints = editableWaypointsForConnection(conn, from, to, colX, laneStarts);
+  return manualWaypoints.length
+    ? buildWaypointArrow(from, to, manualWaypoints, colX, laneStarts, conn.fromSide, conn.toSide)
+    : buildArrow(from, to, colX, laneStarts, midXOffset, conn.fromSide, conn.toSide);
+}
+
+function defaultWaypointForConnection(
+  from: ProcessStep,
+  to: ProcessStep,
+  colX: number[],
+  laneStarts: Record<string, number>,
+  fromSide?: ConnectionSide,
+  toSide?: ConnectionSide,
+): ConnectionWaypoint {
+  const sourceSide = fromSide ?? defaultConnectionSide(from, to, "from");
+  const targetSide = toSide ?? defaultConnectionSide(to, from, "to");
+  const start = connectionPoint(from, sourceSide, colX, laneStarts);
+  const end = connectionPoint(to, targetSide, colX, laneStarts);
+  return snapPointToRoutingGrid({ x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 });
+}
+
+function defaultWaypointsForConnection(
+  from: ProcessStep,
+  to: ProcessStep,
+  colX: number[],
+  laneStarts: Record<string, number>,
+  fromSide?: ConnectionSide,
+  toSide?: ConnectionSide,
+): ConnectionWaypoint[] {
+  const sourceSide = fromSide ?? defaultConnectionSide(from, to, "from");
+  const targetSide = toSide ?? defaultConnectionSide(to, from, "to");
+  const start = connectionPoint(from, sourceSide, colX, laneStarts);
+  const end = connectionPoint(to, targetSide, colX, laneStarts);
+  const axis = firstRoutingAxis(sourceSide, targetSide, from, to);
+
+  if (axis === "y") {
+    return [
+      snapPointToRoutingGrid({ x: start.x, y: start.y + (end.y - start.y) * 0.25 }),
+      snapPointToRoutingGrid({ x: start.x + (end.x - start.x) * 0.5, y: start.y + (end.y - start.y) * 0.5 }),
+      snapPointToRoutingGrid({ x: end.x, y: start.y + (end.y - start.y) * 0.75 }),
+    ];
+  }
+
+  return [
+    snapPointToRoutingGrid({ x: start.x + (end.x - start.x) * 0.25, y: start.y }),
+    snapPointToRoutingGrid({ x: start.x + (end.x - start.x) * 0.5, y: start.y + (end.y - start.y) * 0.5 }),
+    snapPointToRoutingGrid({ x: start.x + (end.x - start.x) * 0.75, y: end.y }),
+  ];
+}
+
+function defaultWaypointsForNewManualConnection(
+  from: ProcessStep,
+  to: ProcessStep,
+  colX: number[],
+  laneStarts: Record<string, number>,
+  fromSide: ConnectionSide,
+  toSide: ConnectionSide,
+): ConnectionWaypoint[] {
+  return defaultWaypointsForConnection(from, to, colX, laneStarts, fromSide, toSide);
+}
+
+function expandSingleWaypointForConnection(
+  from: ProcessStep,
+  to: ProcessStep,
+  waypoint: ConnectionWaypoint,
+  colX: number[],
+  laneStarts: Record<string, number>,
+  fromSide?: ConnectionSide,
+  toSide?: ConnectionSide,
+): ConnectionWaypoint[] {
+  const sourceSide = fromSide ?? defaultConnectionSide(from, to, "from");
+  const targetSide = toSide ?? defaultConnectionSide(to, from, "to");
+  const start = connectionPoint(from, sourceSide, colX, laneStarts);
+  const end = connectionPoint(to, targetSide, colX, laneStarts);
+  const axis = firstRoutingAxis(sourceSide, targetSide, from, to);
+
+  if (axis === "y") {
+    const sameReturnX = Math.abs(start.x - end.x) < 4 && Math.abs(waypoint.x - start.x) > 4;
+    return sameReturnX
+      ? [
+          snapPointToRoutingGrid({ x: start.x, y: waypoint.y - GRID_SIZE }),
+          waypoint,
+          snapPointToRoutingGrid({ x: end.x, y: waypoint.y + GRID_SIZE }),
+        ]
+      : [
+          snapPointToRoutingGrid({ x: start.x + (waypoint.x - start.x) / 2, y: waypoint.y }),
+          waypoint,
+          snapPointToRoutingGrid({ x: waypoint.x + (end.x - waypoint.x) / 2, y: waypoint.y }),
+        ];
+  }
+
+  const sameReturnY = Math.abs(start.y - end.y) < 4 && Math.abs(waypoint.y - start.y) > 4;
+  return sameReturnY
+    ? [
+        snapPointToRoutingGrid({ x: waypoint.x - GRID_SIZE, y: start.y }),
+        waypoint,
+        snapPointToRoutingGrid({ x: waypoint.x + GRID_SIZE, y: end.y }),
+      ]
+    : [
+        snapPointToRoutingGrid({ x: waypoint.x, y: start.y + (waypoint.y - start.y) / 2 }),
+        waypoint,
+        snapPointToRoutingGrid({ x: waypoint.x, y: waypoint.y + (end.y - waypoint.y) / 2 }),
+      ];
+}
+
+function editableWaypointsForConnection(
+  conn: Connection,
+  from: ProcessStep,
+  to: ProcessStep,
+  colX: number[],
+  laneStarts: Record<string, number>,
+): ConnectionWaypoint[] {
+  const waypoints = cleanWaypoints(conn.waypoints);
+  if (!conn.manual) return waypoints;
+  if (waypoints.length === 0) return defaultWaypointsForConnection(from, to, colX, laneStarts, conn.fromSide, conn.toSide);
+  if (waypoints.length === 1) {
+    return expandSingleWaypointForConnection(from, to, waypoints[0], colX, laneStarts, conn.fromSide, conn.toSide);
+  }
+  return waypoints;
+}
+
+function resolveRouteType(conn: Connection, from: ProcessStep, to: ProcessStep): ConnectionRouteType {
+  if (conn.routeType) return conn.routeType;
+  if (to.type === "end" || to.type === "terminate") return "end";
+  if (from.type === "decision") return "optional";
+  return "main";
+}
+
+function routeLabel(type: ConnectionRouteType, manual?: boolean): string {
+  if (!manual) {
+    if (type === "end") return "Uitzondering of einde route";
+    if (type === "optional") return "Correctie of optionele route";
+    return "Hoofdproces route";
+  }
+  const label =
+    type === "end" ? "uitzondering/einde" :
+    type === "optional" ? "correctie/optioneel" :
+    "hoofdroute";
+  return `${manual ? "Handmatige " : ""}${label} route`;
+}
+
+function routeStroke(type: ConnectionRouteType, hovered: boolean): string {
+  if (type === "end") return ROUTE_END;
+  if (type === "optional") return ROUTE_OPTIONAL;
+  return hovered ? ROUTE_HOVER : ROUTE_MAIN;
+}
+
+function routeMarker(type: ConnectionRouteType): string {
+  if (type === "end") return "ah-end";
+  if (type === "optional") return "ah-branch";
+  return "ah-main";
+}
+
+function attachmentAriaLabel(attachment: ProcessAttachment): string {
+  if (attachment.type === "annotation") return `BPMN notitie ${attachment.label}`;
+  if (attachment.type === "dataObject") return `BPMN data/document ${attachment.label}`;
+  return `BPMN databron ${attachment.label}`;
+}
+
+function attachmentDefaultOffset(attachment: ProcessAttachment): Pt {
+  return attachment.attachedTo.kind === "step"
+    ? STEP_ATTACHMENT_DEFAULT_OFFSET
+    : CONNECTION_ATTACHMENT_DEFAULT_OFFSET;
+}
+
+function attachmentAnchorForStep(
+  step: ProcessStep,
+  colX: number[],
+  laneStarts: Record<string, number>,
+): Pt | null {
+  const cx = colX[step.column];
+  if (cx === undefined) return null;
+  const cy = stepCY(step, laneStarts);
+  return {
+    x: edgeRight(step, cx),
+    y: edgeUp(step, cy) + 8,
+  };
+}
+
+function renderAttachmentShape(attachment: ProcessAttachment, x: number, y: number) {
+  if (attachment.type === "annotation") {
+    return (
+      <>
+        <rect x={x} y={y} width={ATTACHMENT_W} height={ATTACHMENT_H} rx={3}
+          fill="#fff7ed" stroke="#94a3b8" strokeWidth={1.4} />
+        <line x1={x + 10} y1={y + 14} x2={x + ATTACHMENT_W - 10} y2={y + 14}
+          stroke="#cbd5e1" strokeWidth={1} />
+        <line x1={x + 10} y1={y + 24} x2={x + ATTACHMENT_W - 18} y2={y + 24}
+          stroke="#cbd5e1" strokeWidth={1} />
+      </>
+    );
+  }
+
+  if (attachment.type === "dataObject") {
+    const fold = 12;
+    return (
+      <>
+        <path
+          d={`M ${x} ${y} H ${x + ATTACHMENT_W - fold} L ${x + ATTACHMENT_W} ${y + fold} V ${y + ATTACHMENT_H} H ${x} Z`}
+          fill="#f8fafc"
+          stroke="#64748b"
+          strokeWidth={1.4}
+        />
+        <path
+          d={`M ${x + ATTACHMENT_W - fold} ${y} V ${y + fold} H ${x + ATTACHMENT_W}`}
+          fill="none"
+          stroke="#64748b"
+          strokeWidth={1.1}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <path
+        d={`M ${x} ${y + 9} C ${x} ${y + 3} ${x + ATTACHMENT_W} ${y + 3} ${x + ATTACHMENT_W} ${y + 9} V ${y + ATTACHMENT_H - 9} C ${x + ATTACHMENT_W} ${y + ATTACHMENT_H - 3} ${x} ${y + ATTACHMENT_H - 3} ${x} ${y + ATTACHMENT_H - 9} Z`}
+        fill="#eff6ff"
+        stroke="#64748b"
+        strokeWidth={1.4}
+      />
+      <ellipse cx={x + ATTACHMENT_W / 2} cy={y + 9} rx={ATTACHMENT_W / 2} ry={8}
+        fill="#dbeafe" stroke="#64748b" strokeWidth={1.4} />
+      <path d={`M ${x} ${y + ATTACHMENT_H - 9} C ${x} ${y + ATTACHMENT_H - 3} ${x + ATTACHMENT_W} ${y + ATTACHMENT_H - 3} ${x + ATTACHMENT_W} ${y + ATTACHMENT_H - 9}`}
+        fill="none" stroke="#64748b" strokeWidth={1.1} />
+    </>
+  );
 }
 
 function dotPositions(center: Pt, n: number): Pt[] {
@@ -192,12 +803,81 @@ function dotPositions(center: Pt, n: number): Pt[] {
   }));
 }
 
+function bendTarget(point: Pt, insertIndex: number): BendInsertionTarget {
+  return { point: snapPointToRoutingGrid(point), insertIndex };
+}
+
+function buildBendInsertionTargets(waypoints: ConnectionWaypoint[], fallback: Pt): BendInsertionTarget[] {
+  if (!waypoints.length) {
+    return [
+      bendTarget(fallback, 0),
+    ];
+  }
+
+  const first = waypoints[0];
+  const last = waypoints[waypoints.length - 1];
+
+  if (waypoints.length === 1) {
+    return [
+      bendTarget({ x: first.x - GRID_SIZE, y: first.y }, 0),
+      bendTarget({ x: first.x + GRID_SIZE, y: first.y }, 1),
+    ];
+  }
+
+  const middleInsertIndex = Math.ceil(waypoints.length / 2);
+  const beforeMiddle = waypoints[middleInsertIndex - 1];
+  const afterMiddle = waypoints[middleInsertIndex] ?? beforeMiddle;
+
+  return [
+    bendTarget({ x: first.x, y: first.y - GRID_SIZE }, 0),
+    bendTarget({
+      x: (beforeMiddle.x + afterMiddle.x) / 2,
+      y: (beforeMiddle.y + afterMiddle.y) / 2,
+    }, middleInsertIndex),
+    bendTarget({ x: last.x + GRID_SIZE, y: last.y }, waypoints.length),
+  ];
+}
+
+function ConnectionPortHandles({
+  label,
+  ports,
+  fill,
+  onPortMouseDown,
+}: {
+  label: string;
+  ports: Record<ConnectionSide, Pt>;
+  fill: string;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
+}) {
+  if (!onPortMouseDown) return null;
+  return (
+    <>
+      {CONNECTION_SIDES.map(side => (
+        <circle
+          key={side}
+          cx={ports[side].x}
+          cy={ports[side].y}
+          r={5}
+          role="button"
+          aria-label={portAriaLabel(label, side)}
+          tabIndex={0}
+          fill={fill}
+          stroke="white"
+          strokeWidth="1.5"
+          style={{ cursor: "crosshair" }}
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e, side); }}
+        />
+      ))}
+    </>
+  );
+}
+
 // ── AutomationDot ─────────────────────────────────────────────────────────────
 
 function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
   auto: Automation; cx: number; cy: number;
   onClick: (e: React.MouseEvent) => void;
-  onPortMouseDown: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
   const label = auto.name;
@@ -232,7 +912,7 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
         <circle cx={cx + DOT_R} cy={cy} r={5}
           fill="hsl(35 80% 40%)" stroke="white" strokeWidth="1.5"
           style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+          onMouseDown={e => { e.stopPropagation(); onPortMouseDown?.(e); }} />
       )}
     </g>
   );
@@ -278,7 +958,7 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onMouseDown?: (e: React.MouseEvent) => void;
-  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
@@ -304,11 +984,18 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {isStart ? "Start" : "Einde"}
       </text>
-      {hov && onPortMouseDown && (
-        <circle cx={cx + EVT_R} cy={cy} r={5}
-          fill={stroke} stroke="white" strokeWidth="1.5"
-          style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      {hov && (
+        <ConnectionPortHandles
+          label={step.label}
+          fill={stroke}
+          ports={{
+            top: { x: cx, y: cy - EVT_R },
+            right: { x: cx + EVT_R, y: cy },
+            bottom: { x: cx, y: cy + EVT_R },
+            left: { x: cx - EVT_R, y: cy },
+          }}
+          onPortMouseDown={onPortMouseDown}
+        />
       )}
     </g>
   );
@@ -320,7 +1007,7 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick?: () => void;
-  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onStepMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   customLanes?: CustomLane[];
@@ -356,11 +1043,17 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
-      {onPortMouseDown && (
-        <circle cx={x + STEP_W} cy={cy} r={5} fill={viewerMode ? "#3B82F6" : cfg.stroke} stroke="white" strokeWidth="1.5"
-          style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
-      )}
+      <ConnectionPortHandles
+        label={step.label}
+        fill={viewerMode ? "#3B82F6" : cfg.stroke}
+        ports={{
+          top: { x: cx, y },
+          right: { x: x + STEP_W, y: cy },
+          bottom: { x: cx, y: y + STEP_H },
+          left: { x, y: cy },
+        }}
+        onPortMouseDown={onPortMouseDown}
+      />
       {isPipelineStep(step) && (
         <g style={{ pointerEvents: "none" }}>
           <rect
@@ -397,7 +1090,7 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick?: () => void;
-  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onStepMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   customLanes?: CustomLane[];
@@ -440,11 +1133,17 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
-      {onPortMouseDown && (
-        <circle cx={cx + h} cy={cy} r={5} fill={viewerMode ? "#3B82F6" : cfg.stroke} stroke="white" strokeWidth="1.5"
-          style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
-      )}
+      <ConnectionPortHandles
+        label={step.label}
+        fill={viewerMode ? "#3B82F6" : cfg.stroke}
+        ports={{
+          top: { x: cx, y: cy - h },
+          right: { x: cx + h, y: cy },
+          bottom: { x: cx, y: cy + h },
+          left: { x: cx - h, y: cy },
+        }}
+        onPortMouseDown={onPortMouseDown}
+      />
     </g>
   );
 }
@@ -457,7 +1156,7 @@ function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMo
   customLanes?: CustomLane[];
   onMouseDown?: (e: React.MouseEvent) => void;
   onClick?: () => void;
-  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
@@ -481,11 +1180,18 @@ function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMo
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
-      {hov && onPortMouseDown && (
-        <circle cx={cx + EVT_R} cy={cy} r={5}
-          fill={str} stroke="white" strokeWidth="1.5"
-          style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      {hov && (
+        <ConnectionPortHandles
+          label={step.label}
+          fill={str}
+          ports={{
+            top: { x: cx, y: cy - EVT_R },
+            right: { x: cx + EVT_R, y: cy },
+            bottom: { x: cx, y: cy + EVT_R },
+            left: { x: cx - EVT_R, y: cy },
+          }}
+          onPortMouseDown={onPortMouseDown}
+        />
       )}
     </g>
   );
@@ -499,7 +1205,7 @@ function SendCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDo
   customLanes?: CustomLane[];
   onMouseDown?: (e: React.MouseEvent) => void;
   onClick?: () => void;
-  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
@@ -526,11 +1232,18 @@ function SendCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDo
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
-      {hov && onPortMouseDown && (
-        <circle cx={cx + EVT_R} cy={cy} r={5}
-          fill={str} stroke="white" strokeWidth="1.5"
-          style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      {hov && (
+        <ConnectionPortHandles
+          label={step.label}
+          fill={str}
+          ports={{
+            top: { x: cx, y: cy - EVT_R },
+            right: { x: cx + EVT_R, y: cy },
+            bottom: { x: cx, y: cy + EVT_R },
+            left: { x: cx - EVT_R, y: cy },
+          }}
+          onPortMouseDown={onPortMouseDown}
+        />
       )}
     </g>
   );
@@ -544,7 +1257,7 @@ function ReceiveCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMous
   customLanes?: CustomLane[];
   onMouseDown?: (e: React.MouseEvent) => void;
   onClick?: () => void;
-  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
@@ -571,11 +1284,77 @@ function ReceiveCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMous
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
-      {hov && onPortMouseDown && (
-        <circle cx={cx + EVT_R} cy={cy} r={5}
-          fill={str} stroke="white" strokeWidth="1.5"
-          style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
+      {hov && (
+        <ConnectionPortHandles
+          label={step.label}
+          fill={str}
+          ports={{
+            top: { x: cx, y: cy - EVT_R },
+            right: { x: cx + EVT_R, y: cy },
+            bottom: { x: cx, y: cy + EVT_R },
+            left: { x: cx - EVT_R, y: cy },
+          }}
+          onPortMouseDown={onPortMouseDown}
+        />
+      )}
+    </g>
+  );
+}
+
+// Timer / wait event
+function TimerCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onClick, onPortMouseDown, onContextMenu }: {
+  step: ProcessStep; cx: number; cy: number;
+  isDragging?: boolean; isTarget?: boolean;
+  customLanes?: CustomLane[];
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onClick?: () => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const cfg = getLaneConfig(step.team, customLanes);
+  const str = cfg.stroke;
+  const label = step.label.length > 16 ? step.label.slice(0, 15) + "…" : step.label;
+
+  return (
+    <g
+      aria-label={`BPMN timer event ${step.label}`}
+      style={{ opacity: isDragging ? 0.35 : 1, cursor: "move" }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      onMouseDown={onMouseDown}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
+      {isTarget && (
+        <circle cx={cx} cy={cy} r={EVT_R + 6}
+          fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
+      )}
+      <circle cx={cx} cy={cy} r={EVT_R} fill="white" stroke={str} strokeWidth="1.5"
+        style={{ filter: hov ? `drop-shadow(0 2px 8px ${str}88)` : undefined }} />
+      <circle cx={cx} cy={cy} r={EVT_R * 0.46} fill="none" stroke={str} strokeWidth="1.4"
+        style={{ pointerEvents: "none" }} />
+      <line x1={cx} y1={cy} x2={cx} y2={cy - EVT_R * 0.28}
+        stroke={str} strokeWidth="1.4" strokeLinecap="round" style={{ pointerEvents: "none" }} />
+      <line x1={cx} y1={cy} x2={cx + EVT_R * 0.32} y2={cy}
+        stroke={str} strokeWidth="1.4" strokeLinecap="round" style={{ pointerEvents: "none" }} />
+      <text x={cx} y={cy + EVT_R + 10} textAnchor="middle" dominantBaseline="middle"
+        fontSize="8" fontWeight="600" fill={str}
+        style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+        {label}
+      </text>
+      {hov && (
+        <ConnectionPortHandles
+          label={step.label}
+          fill={str}
+          ports={{
+            top: { x: cx, y: cy - EVT_R },
+            right: { x: cx + EVT_R, y: cy },
+            bottom: { x: cx, y: cy + EVT_R },
+            left: { x: cx - EVT_R, y: cy },
+          }}
+          onPortMouseDown={onPortMouseDown}
+        />
       )}
     </g>
   );
@@ -587,7 +1366,7 @@ function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDo
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
   onClick?: () => void;
-  onPortMouseDown?: (e: React.MouseEvent) => void;
+  onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onStepMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   customLanes?: CustomLane[];
@@ -625,11 +1404,17 @@ function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDo
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
         {label}
       </text>
-      {onPortMouseDown && (
-        <circle cx={cx + h} cy={cy} r={5} fill={cfg.stroke} stroke="white" strokeWidth="1.5"
-          style={{ cursor: "crosshair" }}
-          onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e); }} />
-      )}
+      <ConnectionPortHandles
+        label={step.label}
+        fill={cfg.stroke}
+        ports={{
+          top: { x: cx, y: cy - h },
+          right: { x: cx + h, y: cy },
+          bottom: { x: cx, y: cy + h },
+          left: { x: cx - h, y: cy },
+        }}
+        onPortMouseDown={onPortMouseDown}
+      />
     </g>
   );
 }
@@ -675,20 +1460,36 @@ interface ProcessCanvasProps {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
+  attachments?: ProcessAttachment[];
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
   customLanes?: CustomLane[];
   readOnly?: boolean;
   displayStyle?: "viewer";
+  showLegend?: boolean;
+  selectedRouteType?: ConnectionRouteType;
   onRenameLane?: (laneKey: string) => void;
   onStepClick?: (s: ProcessStep) => void;
   onAutomationClick?: (a: Automation) => void;
-  onAddConnection?: (fromId: string, toId: string) => void;
+  onAttachmentClick?: (attachment: ProcessAttachment) => void;
+  onMoveAttachment?: (attachmentId: string, offset: { x: number; y: number }) => void;
+  onUpdateAttachment?: (attachmentId: string, patch: Partial<Pick<ProcessAttachment, "label" | "description">>) => void;
+  onDeleteAttachment?: (attachmentId: string) => void;
+  onAddAttachment?: (type: ProcessAttachmentType, target: ProcessAttachmentTarget) => void;
+  onAddConnection?: (
+    fromId: string,
+    toId: string,
+    routeType?: ConnectionRouteType,
+    fromSide?: ConnectionSide,
+    toSide?: ConnectionSide,
+    waypoints?: ConnectionWaypoint[],
+  ) => void;
   onDeleteConnection?: (id: string) => void;
   onMoveStep?: (stepId: string, newTeam: string, newColumn: number, newRow: number) => void;
   onAttachAutomation?: (autoId: string, fromStepId: string, toStepId: string) => void;
   onAddStep?: (team: string, column: number, row: number, type?: ProcessStep["type"]) => void;
   onAddBranch?: (automationId: string, toStepId: string) => void;
   onUpdateConnectionLabel?: (connId: string, label: string) => void;
+  onUpdateConnectionWaypoints?: (connId: string, waypoints: ConnectionWaypoint[]) => void;
   onParkStep?: (stepId: string) => void;
   onDeleteStep?: (stepId: string) => void;
   onPlaceStagedStep?: (step: ProcessStep, team: string, column: number, row: number) => void;
@@ -705,13 +1506,21 @@ interface ProcessCanvasProps {
 
 export function ProcessCanvas({
   steps, connections, automations,
+  attachments = [],
   activeLanes, customLanes,
   readOnly = false,
   displayStyle,
+  showLegend = true,
+  selectedRouteType = "main",
   onRenameLane,
-  onStepClick, onAutomationClick,
+  onStepClick, onAutomationClick, onAttachmentClick,
+  onMoveAttachment,
+  onUpdateAttachment,
+  onDeleteAttachment,
+  onAddAttachment,
   onAddConnection, onDeleteConnection,
   onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
+  onUpdateConnectionWaypoints,
   onParkStep, onDeleteStep, onPlaceStagedStep, onInsertRowAfter,
   onInsertMoveStep, onInsertAddStep,
   flows = [] as import("@/lib/types").Flow[],
@@ -750,8 +1559,9 @@ export function ProcessCanvas({
 
   // Interaction state
   const [hoveredConn, setHoveredConn] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<{
-    fromId: string; fromX: number; fromY: number; curX: number; curY: number;
+    fromId: string; fromSide: ConnectionSide; fromX: number; fromY: number; curX: number; curY: number;
   } | null>(null);
   const [dragging, setDragging] = useState<{
     stepId: string; startX: number; startY: number; curX: number; curY: number; moved: boolean;
@@ -768,15 +1578,23 @@ export function ProcessCanvas({
   const [contextMenu, setContextMenu] = useState<
     | { type: "conn"; connId: string; x: number; y: number }
     | { type: "step"; stepId: string; x: number; y: number }
+    | { type: "attachment"; attachmentId: string; x: number; y: number }
     | null
   >(null);
   const [editingLabel, setEditingLabel] = useState<{
     connId: string; x: number; y: number; value: string;
   } | null>(null);
+  const [editingAttachmentId, setEditingAttachmentId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const panningRef = useRef<{ startX: number; scrollLeft: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [hoverSep, setHoverSep] = useState<{ team: string; afterRow: number } | null>(null);
+  const waypointDragRef = useRef<{ connectionId: string; waypointIndex: number } | null>(null);
+  const attachmentDragRef = useRef<{
+    attachmentId: string;
+    startPoint: Pt;
+    startOffset: Pt;
+  } | null>(null);
 
   // Step-to-step connections only (not branch edges)
   const stepConnections = useMemo(
@@ -824,13 +1642,42 @@ export function ProcessCanvas({
       if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) continue;
       const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
       if (!connAutos.length) continue;
-      const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
+      const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
       dotPositions(arrow.dotCenter, connAutos.length).forEach((pos, i) => {
         map.set(connAutos[i].id, pos);
       });
     }
     return map;
   }, [steps, stepConnections, automations, colX, laneStarts, connOffsets]);
+
+  const attachmentPlacements = useMemo(() => {
+    return attachments.flatMap((attachment) => {
+      let anchor: Pt | null = null;
+
+      if (attachment.attachedTo.kind === "step") {
+        const step = steps.find(s => s.id === attachment.attachedTo.id);
+        if (step) anchor = attachmentAnchorForStep(step, colX, laneStarts);
+      } else {
+        const conn = stepConnections.find(c => c.id === attachment.attachedTo.id);
+        const from = conn ? steps.find(s => s.id === conn.fromStepId) : undefined;
+        const to = conn ? steps.find(s => s.id === conn.toStepId) : undefined;
+        if (conn && from && to && colX[from.column] !== undefined && colX[to.column] !== undefined) {
+          anchor = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0).dotCenter;
+        }
+      }
+
+      if (!anchor) return [];
+      const offset = attachment.offset ?? attachmentDefaultOffset(attachment);
+      return [{
+        attachment,
+        anchor,
+        origin: {
+          x: anchor.x + offset.x,
+          y: anchor.y + offset.y,
+        },
+      }];
+    });
+  }, [attachments, steps, stepConnections, colX, laneStarts, connOffsets]);
 
   const clientToSvg = useCallback((clientX: number, clientY: number): Pt => {
     const svg = svgRef.current;
@@ -846,12 +1693,68 @@ export function ProcessCanvas({
     return clientToSvg(e.clientX, e.clientY);
   }, [clientToSvg]);
 
+  useEffect(() => {
+    function onGlobalMove(e: MouseEvent) {
+      const drag = attachmentDragRef.current;
+      if (!drag) return;
+      if (readOnly || !onMoveAttachment) {
+        attachmentDragRef.current = null;
+        return;
+      }
+
+      const pt = clientToSvg(e.clientX, e.clientY);
+      onMoveAttachment(drag.attachmentId, {
+        x: drag.startOffset.x + pt.x - drag.startPoint.x,
+        y: drag.startOffset.y + pt.y - drag.startPoint.y,
+      });
+    }
+
+    function onGlobalUp() {
+      attachmentDragRef.current = null;
+    }
+
+    window.addEventListener("mousemove", onGlobalMove);
+    window.addEventListener("mouseup", onGlobalUp);
+    return () => {
+      window.removeEventListener("mousemove", onGlobalMove);
+      window.removeEventListener("mouseup", onGlobalUp);
+    };
+  }, [clientToSvg, onMoveAttachment, readOnly]);
+
+  useEffect(() => {
+    function onGlobalMove(e: MouseEvent) {
+      const drag = waypointDragRef.current;
+      if (readOnly || !drag || !onUpdateConnectionWaypoints) return;
+      const connection = connections.find(c => c.id === drag.connectionId);
+      if (!connection) return;
+      const from = steps.find(s => s.id === connection.fromStepId);
+      const to = steps.find(s => s.id === connection.toStepId);
+      if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return;
+      const waypoints = [...editableWaypointsForConnection(connection, from, to, colX, laneStarts)];
+      if (drag.waypointIndex >= waypoints.length) return;
+      waypoints[drag.waypointIndex] = snapPointToRoutingGrid(clientToSvg(e.clientX, e.clientY));
+      onUpdateConnectionWaypoints(drag.connectionId, waypoints);
+    }
+
+    function onGlobalUp() {
+      waypointDragRef.current = null;
+    }
+
+    window.addEventListener("mousemove", onGlobalMove);
+    window.addEventListener("mouseup", onGlobalUp);
+    return () => {
+      window.removeEventListener("mousemove", onGlobalMove);
+      window.removeEventListener("mouseup", onGlobalUp);
+    };
+  }, [clientToSvg, colX, connections, laneStarts, onUpdateConnectionWaypoints, readOnly, steps]);
+
   // Cancel drawing/dragging if mouse released outside the SVG
   useEffect(() => {
     function onGlobalUp() {
       setDragging(null);
       setDrawing(null);
       setDrawingBranch(null);
+      waypointDragRef.current = null;
     }
     window.addEventListener("mouseup", onGlobalUp);
     return () => window.removeEventListener("mouseup", onGlobalUp);
@@ -930,12 +1833,14 @@ export function ProcessCanvas({
           setDragging(null);
           setDrawing(null);
           setDrawingBranch(null);
+          waypointDragRef.current = null;
           return;
         }
       }
       setDragging(null);
       setDrawing(null);
       setDrawingBranch(null);
+      waypointDragRef.current = null;
     }
     window.addEventListener("mouseup", onGlobalUp);
     return () => window.removeEventListener("mouseup", onGlobalUp);
@@ -964,13 +1869,31 @@ export function ProcessCanvas({
   }, []);
 
   // Mouse handlers
-  function handlePortMouseDown(e: React.MouseEvent, step: ProcessStep) {
+  function handleAttachmentMouseDown(e: React.MouseEvent, attachment: ProcessAttachment) {
+    if (readOnly || !onMoveAttachment || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    attachmentDragRef.current = {
+      attachmentId: attachment.id,
+      startPoint: toSvg(e),
+      startOffset: attachment.offset ?? attachmentDefaultOffset(attachment),
+    };
+  }
+
+  function handlePortMouseDown(e: React.MouseEvent, step: ProcessStep, side: ConnectionSide = "right") {
     if (readOnly) return;
     e.stopPropagation();
     const pt  = toSvg(e);
-    const scx = colX[step.column] ?? 0;
-    const portX = scx + (isEvent(step) ? EVT_R : isDecision(step) ? DECISION_H : STEP_W / 2);
-    setDrawing({ fromId: step.id, fromX: portX, fromY: stepCY(step, laneStarts), curX: pt.x, curY: pt.y });
+    const port = connectionPoint(step, side, colX, laneStarts);
+    setDrawing({
+      fromId: step.id,
+      fromSide: side,
+      fromX: port.x,
+      fromY: port.y,
+      curX: pt.x,
+      curY: pt.y,
+    });
   }
 
   function handleStepMouseDown(e: React.MouseEvent, step: ProcessStep) {
@@ -978,6 +1901,11 @@ export function ProcessCanvas({
     if (e.button !== 0) return;
     const pt = toSvg(e);
     setDragging({ stepId: step.id, startX: pt.x, startY: pt.y, curX: pt.x, curY: pt.y, moved: false });
+  }
+
+  function selectStep(step: ProcessStep) {
+    if (!readOnly) setSelectedConnectionId(null);
+    onStepClick?.(step);
   }
 
   function handleMouseMove(e: React.MouseEvent) {
@@ -1028,22 +1956,29 @@ export function ProcessCanvas({
     const pt = toSvg(e);
 
     if (drawing) {
-      const target = steps.find(s => {
-        const scx = colX[s.column] ?? 0, scy = stepCY(s, laneStarts);
-        if (isEvent(s)) return Math.hypot(pt.x - scx, pt.y - scy) <= EVT_R * 1.5 && s.id !== drawing.fromId;
-        return Math.abs(pt.x - scx) <= STEP_W / 2 && Math.abs(pt.y - scy) <= STEP_H / 2 && s.id !== drawing.fromId;
-      });
-      if (target) onAddConnection?.(drawing.fromId, target.id);
+      if (!readOnly) {
+        const portDrop = findPortDropTarget(steps, pt, colX, laneStarts, drawing.fromId);
+        const target = portDrop?.step ?? findStepBodyDropTarget(steps, pt, colX, laneStarts, drawing.fromId);
+        if (target) {
+          const source = steps.find(s => s.id === drawing.fromId);
+          const targetSide = portDrop?.side ?? (source
+            ? connectionSideForDrop(source, target, pt, colX, laneStarts)
+            : nearestConnectionSide(target, pt, colX, laneStarts));
+          const waypoints = source
+            ? defaultWaypointsForNewManualConnection(source, target, colX, laneStarts, drawing.fromSide, targetSide)
+            : undefined;
+          onAddConnection?.(drawing.fromId, target.id, selectedRouteType, drawing.fromSide, targetSide, waypoints);
+        }
+      }
       setDrawing(null);
     }
 
     if (drawingBranch) {
-      const target = steps.find(s => {
-        const scx = colX[s.column] ?? 0, scy = stepCY(s, laneStarts);
-        if (isEvent(s)) return Math.hypot(pt.x - scx, pt.y - scy) <= EVT_R * 1.5;
-        return Math.abs(pt.x - scx) <= STEP_W / 2 && Math.abs(pt.y - scy) <= STEP_H / 2;
-      });
-      if (target) onAddBranch?.(drawingBranch.automationId, target.id);
+      if (!readOnly) {
+        const portDrop = findPortDropTarget(steps, pt, colX, laneStarts);
+        const target = portDrop?.step ?? findStepBodyDropTarget(steps, pt, colX, laneStarts);
+        if (target) onAddBranch?.(drawingBranch.automationId, target.id);
+      }
       setDrawingBranch(null);
     }
 
@@ -1076,7 +2011,8 @@ export function ProcessCanvas({
   // Show extension zone when cursor is targeting a new row
   const extensionTeam = dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, steps)
     ? dragTarget.team : null;
-  const effectiveSvgHeight = svgHeight + (extensionTeam ? ROW_H : 0);
+  const legendReserve = showLegend ? CANVAS_LEGEND_H : 0;
+  const effectiveSvgHeight = svgHeight + (extensionTeam ? ROW_H : 0) + legendReserve;
 
   const gridStyle = viewerMode ? {
     background: "#F8FAFC",
@@ -1084,13 +2020,78 @@ export function ProcessCanvas({
     backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
   } : {};
 
+  function renderRowSeparatorInsertIndicator() {
+    if (!hoverSep || !viewerMode) return null;
+
+    const lineY = (laneStarts[hoverSep.team] ?? 0) + (hoverSep.afterRow + 1) * ROW_H;
+    const pillW = 80;
+    const midX  = (LANE_HDR_W + svgWidth) / 2;
+    return (
+      <g
+        data-testid="row-separator-insert-indicator"
+        style={{ cursor: "copy" }}
+        onMouseDown={e => e.stopPropagation()}
+        onDoubleClick={e => {
+          e.stopPropagation();
+          onInsertRowAfter?.(hoverSep.team, hoverSep.afterRow);
+          setHoverSep(null);
+        }}
+      >
+        <line
+          x1={LANE_HDR_W}
+          y1={lineY}
+          x2={svgWidth}
+          y2={lineY}
+          stroke="#3B82F6"
+          strokeWidth={18}
+          opacity={0}
+          style={{ pointerEvents: "stroke" }}
+        />
+        <line
+          x1={LANE_HDR_W}
+          y1={lineY}
+          x2={svgWidth}
+          y2={lineY}
+          stroke="#3B82F6"
+          strokeWidth={1.5}
+          strokeDasharray="6 4"
+          opacity={0.6}
+          style={{ pointerEvents: "none" }}
+        />
+        <rect
+          x={midX - pillW / 2}
+          y={lineY - 11}
+          width={pillW}
+          height={22}
+          rx="11"
+          fill="#3B82F6"
+        />
+        <text
+          x={midX}
+          y={lineY + 1}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize="11"
+          fontWeight="700"
+          fill="white"
+          style={{ pointerEvents: "none", userSelect: "none" }}
+        >
+          + Stap
+        </text>
+      </g>
+    );
+  }
+
   return (
     <div className="relative w-full bg-card" style={gridStyle}>
       <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-hidden w-full" style={{ height: effectiveSvgHeight }}>
         <svg ref={svgRef} width={svgWidth} height={effectiveSvgHeight}
         onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
         onMouseLeave={() => { setDrawing(null); setDrawingBranch(null); }}
-        onClick={() => setContextMenu(null)}
+        onClick={() => {
+          setContextMenu(null);
+          setEditingAttachmentId(null);
+        }}
         onMouseDown={e => {
           if (e.button !== 0 || dragging || drawing || drawingBranch) return;
           const container = scrollContainerRef.current;
@@ -1277,33 +2278,53 @@ export function ProcessCanvas({
           );
         })()}
 
+        {/* ── Row-separator insert indicator sits below routes/handles so they keep click priority ── */}
+        {renderRowSeparatorInsertIndicator()}
+
         {/* ── Connections (step-to-step only) ── */}
         {stepConnections.map(conn => {
           const from = steps.find(s => s.id === conn.fromStepId);
           const to   = steps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return null;
-          const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
+          const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           const isHov = hoveredConn === conn.id;
+          const isSelected = selectedConnectionId === conn.id;
           const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
           const hasAuto = connAutos.length > 0;
-          const isEndRoute = to.type === "end" || to.type === "terminate";
-          const mainStroke = isEndRoute ? ROUTE_END : isHov ? ROUTE_HOVER : ROUTE_MAIN;
+          const type = resolveRouteType(conn, from, to);
+          const isEndRoute = type === "end";
+          const isOptionalRoute = type === "optional";
+          const mainStroke = routeStroke(type, isHov || isSelected);
+          const markerId = routeMarker(type);
           const postStroke = isEndRoute ? ROUTE_END : ROUTE_OPTIONAL;
-          const routeLabel = isEndRoute ? "Uitzondering of einde route" : "Hoofdproces route";
+          const labelForRoute = routeLabel(type, conn.manual);
+          const splitForAutomation = hasAuto && !conn.manual && !conn.routeType;
+          const effectiveWaypoints = editableWaypointsForConnection(conn, from, to, colX, laneStarts);
+          const handleWaypoints = !readOnly && isSelected && conn.manual && onUpdateConnectionWaypoints
+            ? effectiveWaypoints
+            : [];
+          const bendInsertionTargets = !readOnly && isSelected && conn.manual && onUpdateConnectionWaypoints
+            ? buildBendInsertionTargets(effectiveWaypoints, arrow.postDotMid)
+            : [];
           const mid = arrow.postDotMid;
-          const isEditingPost = editingLabel?.connId === conn.id;
+          const isEditingPost = !readOnly && editingLabel?.connId === conn.id;
           const postLabelText = conn.label || "";
           const postEstW = Math.max(80, (postLabelText.length) * 5.5 + 16);
+          const selectConnection = () => {
+            if (readOnly) return;
+            setSelectedConnectionId(conn.id);
+            if (!conn.manual) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" });
+          };
           return (
             <g key={conn.id}>
               {/* Pre-dot segment always in gray; post-dot in amber dashed when automation sits on this connection */}
-              {hasAuto ? (
+              {splitForAutomation ? (
                 <>
                   <path d={arrow.preDotPath} stroke={mainStroke} strokeWidth="1.7" fill="none"
-                    aria-label={routeLabel}
+                    aria-label={labelForRoute}
                     strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
                   <path d={arrow.postDotPath} stroke={postStroke} strokeWidth="1.7" strokeDasharray={isEndRoute ? undefined : "5 3"} fill="none"
-                    aria-label={isEndRoute ? routeLabel : "Correctie of optionele route"}
+                    aria-label={isEndRoute ? labelForRoute : "correctie/optioneel route"}
                     markerEnd={`url(#${isEndRoute ? "ah-end" : "ah-branch"})`} opacity={0.9} style={{ pointerEvents: "none" }} />
                   {/* Label on post-dot segment — edit input when active, badge when label is set */}
                   {isEditingPost ? (
@@ -1327,18 +2348,29 @@ export function ProcessCanvas({
                 </>
               ) : (
                 <path d={arrow.path} stroke={mainStroke} strokeWidth="1.7" fill="none"
-                  aria-label={routeLabel}
-                  markerEnd={`url(#${isEndRoute ? "ah-end" : "ah-main"})`}
-                  strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
+                  aria-label={labelForRoute}
+                  markerEnd={`url(#${markerId})`}
+                  strokeDasharray={isOptionalRoute ? "5 3" : isHov ? "6 3" : undefined}
+                  onClick={readOnly ? undefined : selectConnection}
+                  style={{
+                    filter: isSelected ? `drop-shadow(0 2px 5px ${mainStroke}55)` : undefined,
+                    cursor: readOnly ? undefined : "pointer",
+                    pointerEvents: "stroke",
+                  }} />
               )}
               <path d={arrow.path} stroke="transparent" strokeWidth="22" fill="none" className="cursor-pointer"
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
-                onClick={() => { setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" }); }}
-                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }}
-                onDragOver={e => { e.preventDefault(); setHoveredConn(conn.id); }}
+                onClick={readOnly ? undefined : selectConnection}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }}
+                onDragOver={e => {
+                  if (readOnly) return;
+                  e.preventDefault();
+                  setHoveredConn(conn.id);
+                }}
                 onDragLeave={() => setHoveredConn(null)}
                 onDrop={e => {
+                  if (readOnly) return;
                   e.preventDefault();
                   const flowId = e.dataTransfer.getData("flowId");
                   if (flowId && conn.fromStepId && conn.toStepId) {
@@ -1350,6 +2382,78 @@ export function ProcessCanvas({
                   if (autoId) onAttachAutomation?.(autoId, conn.fromStepId, conn.toStepId);
                   setHoveredConn(null);
                 }} />
+              {handleWaypoints.map((point, index) => (
+                <g key={`${conn.id}-waypoint-${index}`}>
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r={10}
+                    fill="white"
+                    stroke={mainStroke}
+                    strokeWidth={1.5}
+                  />
+                  <circle
+                    role="button"
+                    aria-label={`Sleep knikpunt ${index + 1}`}
+                    tabIndex={0}
+                    cx={point.x}
+                    cy={point.y}
+                    r={5}
+                    fill={mainStroke}
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      waypointDragRef.current = { connectionId: conn.id, waypointIndex: index };
+                      setSelectedConnectionId(conn.id);
+                    }}
+                    style={{ cursor: "move" }}
+                  />
+                </g>
+              ))}
+              {bendInsertionTargets.map(({ point, insertIndex }, index) => (
+                <g key={`${conn.id}-insert-${index}`}>
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r={9}
+                    fill="white"
+                    stroke={mainStroke}
+                    strokeWidth={1.5}
+                    opacity={0.95}
+                  />
+                  <circle
+                    role="button"
+                    aria-label="Knikpunt toevoegen"
+                    tabIndex={0}
+                    cx={point.x}
+                    cy={point.y}
+                    r={5}
+                    fill="white"
+                    stroke={mainStroke}
+                    strokeWidth={1.5}
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const next = [...effectiveWaypoints];
+                      next.splice(insertIndex, 0, snapPointToRoutingGrid(point));
+                      onUpdateConnectionWaypoints?.(conn.id, next);
+                    }}
+                    style={{ cursor: "copy" }}
+                  />
+                  <text
+                    x={point.x}
+                    y={point.y + 0.5}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={8}
+                    fontWeight={700}
+                    fill={mainStroke}
+                    style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
+                  >
+                    +
+                  </text>
+                </g>
+              ))}
             </g>
           );
         })}
@@ -1361,7 +2465,7 @@ export function ProcessCanvas({
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
           const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
           if (!connAutos.length) return [];
-          const arrow = buildArrow(from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
+          const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           return dotPositions(arrow.dotCenter, connAutos.length).map((pos, i) => (
             <AutomationDot key={connAutos[i].id} auto={connAutos[i]} cx={pos.x} cy={pos.y}
               onClick={ev => { ev.stopPropagation(); onAutomationClick?.(connAutos[i]); }}
@@ -1424,7 +2528,7 @@ export function ProcessCanvas({
               <EventCircle key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
-                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
           }
@@ -1435,8 +2539,8 @@ export function ProcessCanvas({
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
-                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
-                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onClick={() => { if (!dragging?.moved) selectStep(step); }}
+                onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
           }
@@ -1447,8 +2551,8 @@ export function ProcessCanvas({
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
-                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
-                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onClick={() => { if (!dragging?.moved) selectStep(step); }}
+                onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
           }
@@ -1459,8 +2563,20 @@ export function ProcessCanvas({
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
-                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
-                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onClick={() => { if (!dragging?.moved) selectStep(step); }}
+                onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
+            );
+          }
+
+          if (step.type === "timer") {
+            return (
+              <TimerCircle key={step.id} step={step} cx={cx} cy={cy}
+                isDragging={isDrag} isTarget={isTarget}
+                customLanes={customLanes}
+                onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+                onClick={() => { if (!dragging?.moved) selectStep(step); }}
+                onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
           }
@@ -1470,8 +2586,8 @@ export function ProcessCanvas({
               <AndDiamond key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes}
-                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
-                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onClick={() => { if (!dragging?.moved) selectStep(step); }}
+                onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
                 onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
@@ -1482,8 +2598,8 @@ export function ProcessCanvas({
               <DecisionDiamond key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
                 customLanes={customLanes} viewerMode={viewerMode}
-                onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
-                onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+                onClick={() => { if (!dragging?.moved) selectStep(step); }}
+                onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
                 onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
             );
@@ -1493,33 +2609,12 @@ export function ProcessCanvas({
             <StepBox key={step.id} step={step} cx={cx} cy={cy}
               isDragging={isDrag} isTarget={isTarget}
               customLanes={customLanes} viewerMode={viewerMode}
-              onClick={() => { if (!dragging?.moved) onStepClick?.(step); }}
-              onPortMouseDown={readOnly ? undefined : e => handlePortMouseDown(e, step)}
+              onClick={() => { if (!dragging?.moved) selectStep(step); }}
+              onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
               onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
               onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
           );
         })}
-
-        {/* ── Row-separator insert indicator (viewer mode only) ── */}
-        {hoverSep && viewerMode && (() => {
-          const lineY = (laneStarts[hoverSep.team] ?? 0) + (hoverSep.afterRow + 1) * ROW_H;
-          const pillW = 80;
-          const midX  = (LANE_HDR_W + svgWidth) / 2;
-          return (
-            <g style={{ cursor: "pointer" }}
-              onMouseDown={e => e.stopPropagation()}
-              onClick={e => { e.stopPropagation(); onInsertRowAfter?.(hoverSep.team, hoverSep.afterRow); setHoverSep(null); }}>
-              <rect x={LANE_HDR_W} y={lineY - 14} width={svgWidth - LANE_HDR_W} height={28} fill="transparent" />
-              <line x1={LANE_HDR_W} y1={lineY} x2={svgWidth} y2={lineY}
-                stroke="#3B82F6" strokeWidth={1.5} strokeDasharray="6 4" opacity={0.6} style={{ pointerEvents: "none" }} />
-              <rect x={midX - pillW / 2} y={lineY - 11} width={pillW} height={22} rx="11" fill="#3B82F6" style={{ pointerEvents: "none" }} />
-              <text x={midX} y={lineY + 1} textAnchor="middle" dominantBaseline="middle"
-                fontSize="11" fontWeight="700" fill="white" style={{ pointerEvents: "none", userSelect: "none" }}>
-                + Stap
-              </text>
-            </g>
-          );
-        })()}
 
         {/* ── Drag ghost ── */}
         {dragging?.moved && (() => {
@@ -1692,15 +2787,15 @@ export function ProcessCanvas({
           // Offset label above the line so it never overlaps the path
           const labelOffsetY = labelVertical ? 0 : -12;
           const labelOffsetX = labelVertical ? 10 : 0;
-          const isEditing = editingLabel?.connId === conn.id;
+          const isEditing = !readOnly && editingLabel?.connId === conn.id;
 
           return (
             <g key={conn.id}>
               {/* Invisible wide hit area */}
               <path d={branchPath} stroke="transparent" strokeWidth="18" fill="none"
                 className="cursor-pointer"
-                onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}
-                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }} />
+                onClick={readOnly ? undefined : () => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}
+                onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }} />
               {/* Visible path */}
               <path d={branchPath} stroke={ROUTE_OPTIONAL} strokeWidth="1.7" strokeDasharray="5 3" fill="none"
                 aria-label="Correctie of optionele route"
@@ -1727,7 +2822,7 @@ export function ProcessCanvas({
                 </foreignObject>
               ) : (
                 <g className="cursor-pointer"
-                  onClick={() => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}>
+                  onClick={readOnly ? undefined : () => setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" })}>
                   <rect
                     x={mid.x - estW / 2 + labelOffsetX} y={mid.y - 7 + labelOffsetY}
                     width={estW} height={14} rx="3"
@@ -1746,18 +2841,187 @@ export function ProcessCanvas({
           );
         })}
 
+        {attachmentPlacements.map(({ attachment, anchor, origin }) => {
+          const clickable = !!onAttachmentClick || (!readOnly && !!onUpdateAttachment);
+          const draggable = !readOnly && !!onMoveAttachment;
+          const editingAttachment = !readOnly && editingAttachmentId === attachment.id && !!onUpdateAttachment;
+          const displayText = attachment.description?.trim() || attachment.label;
+          return (
+            <g key={attachment.id}>
+              <line
+                x1={anchor.x}
+                y1={anchor.y}
+                x2={origin.x}
+                y2={origin.y + ATTACHMENT_H / 2}
+                stroke="#94a3b8"
+                strokeWidth={1.2}
+                strokeDasharray="4 4"
+                style={{ pointerEvents: "none" }}
+              />
+              <g
+                aria-label={attachmentAriaLabel(attachment)}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onClick={clickable ? e => {
+                  e.stopPropagation();
+                  if (!readOnly && onUpdateAttachment) setEditingAttachmentId(attachment.id);
+                  onAttachmentClick?.(attachment);
+                } : undefined}
+                onMouseDown={draggable ? e => handleAttachmentMouseDown(e, attachment) : undefined}
+                onContextMenu={readOnly || !onDeleteAttachment ? undefined : e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({ type: "attachment", attachmentId: attachment.id, x: e.clientX, y: e.clientY });
+                }}
+                style={{
+                  cursor: draggable ? "move" : clickable ? "pointer" : "context-menu",
+                  pointerEvents: draggable || clickable || onDeleteAttachment || onUpdateAttachment ? "auto" : "none",
+                }}
+              >
+                {renderAttachmentShape(attachment, origin.x, origin.y)}
+                <text
+                  x={origin.x + ATTACHMENT_W / 2}
+                  y={origin.y + ATTACHMENT_H / 2 + 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={8}
+                  fontWeight={600}
+                  fill="#334155"
+                  style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}
+                >
+                  {displayText.length > 18 ? `${displayText.slice(0, 17)}...` : displayText}
+                </text>
+              </g>
+              {editingAttachment && (
+                <foreignObject
+                  x={origin.x + ATTACHMENT_W + 8}
+                  y={origin.y - 8}
+                  width={188}
+                  height={116}
+                  style={{ overflow: "visible" }}
+                >
+                  <div
+                    onMouseDown={event => {
+                      event.stopPropagation();
+                    }}
+                    onClick={event => {
+                      event.stopPropagation();
+                    }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      padding: 8,
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 6,
+                      background: "rgba(255,255,255,0.98)",
+                      boxShadow: "0 8px 20px rgba(15,23,42,0.16)",
+                      fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>Notitie</span>
+                      <button
+                        type="button"
+                        aria-label="Notitie editor sluiten"
+                        onClick={event => {
+                          event.stopPropagation();
+                          setEditingAttachmentId(null);
+                        }}
+                        style={{
+                          alignItems: "center",
+                          background: "#f8fafc",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: 4,
+                          color: "#334155",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          height: 20,
+                          justifyContent: "center",
+                          lineHeight: "18px",
+                          padding: 0,
+                          width: 20,
+                        }}
+                      >
+                        x
+                      </button>
+                    </div>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, fontWeight: 700, color: "#334155" }}>
+                      Titel
+                      <input
+                        aria-label="Notitie titel"
+                        value={attachment.label}
+                        onChange={event => onUpdateAttachment(attachment.id, { label: event.target.value })}
+                        style={{
+                          height: 24,
+                          border: "1px solid #cbd5e1",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          padding: "0 6px",
+                        }}
+                      />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, fontWeight: 700, color: "#334155" }}>
+                      Tekst
+                      <textarea
+                        aria-label="Notitie tekst"
+                        value={attachment.description ?? ""}
+                        onChange={event => onUpdateAttachment(attachment.id, { description: event.target.value })}
+                        rows={3}
+                        style={{
+                          border: "1px solid #cbd5e1",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          lineHeight: 1.25,
+                          padding: "5px 6px",
+                          resize: "none",
+                        }}
+                      />
+                    </label>
+                  </div>
+                </foreignObject>
+              )}
+            </g>
+          );
+        })}
+
         {/* ── Connection preview ── */}
-        {drawing && (
-          <line x1={drawing.fromX} y1={drawing.fromY} x2={drawing.curX} y2={drawing.curY}
-            stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="6 3"
-            markerEnd="url(#ah-d)" style={{ pointerEvents: "none" }} />
-        )}
+        {drawing && (() => {
+          const horizontalFirst = drawing.fromSide === "left" || drawing.fromSide === "right";
+          const previewPath = Math.abs(drawing.fromX - drawing.curX) < 4
+            ? `M ${drawing.fromX} ${drawing.fromY} V ${drawing.curY}`
+            : Math.abs(drawing.fromY - drawing.curY) < 4
+              ? `M ${drawing.fromX} ${drawing.fromY} H ${drawing.curX}`
+              : horizontalFirst
+                ? (() => {
+                    const midX = (drawing.fromX + drawing.curX) / 2;
+                    return `M ${drawing.fromX} ${drawing.fromY} H ${midX} V ${drawing.curY} H ${drawing.curX}`;
+                  })()
+                : (() => {
+                    const midY = (drawing.fromY + drawing.curY) / 2;
+                    return `M ${drawing.fromX} ${drawing.fromY} V ${midY} H ${drawing.curX} V ${drawing.curY}`;
+                  })();
+          return (
+            <path
+              aria-label="Nieuwe verbinding preview"
+              d={previewPath}
+              stroke={routeStroke(selectedRouteType, false)}
+              strokeWidth="1.5"
+              strokeDasharray={selectedRouteType === "optional" ? "6 3" : undefined}
+              fill="none"
+              markerEnd={`url(#${routeMarker(selectedRouteType)})`}
+              style={{ pointerEvents: "none" }}
+            />
+          );
+        })()}
 
         {/* ── Branch drawing preview (orthogonal) ── */}
         {drawingBranch && (() => {
           const { startX, startY, curX, curY } = drawingBranch;
           const midX = (startX + curX) / 2;
-          const previewPath = `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${curY} L ${curX} ${curY}`;
+          const previewPath = `M ${startX} ${startY} H ${midX} V ${curY} H ${curX}`;
           return (
             <path d={previewPath} stroke={ROUTE_OPTIONAL} strokeWidth="1.5" strokeDasharray="6 3" fill="none"
               markerEnd="url(#ah-branch)" style={{ pointerEvents: "none" }} />
@@ -1765,27 +3029,58 @@ export function ProcessCanvas({
         })()}
         </svg>
       </div>
-      <ProcessCanvasLegend />
+      {showLegend && <ProcessCanvasLegend />}
 
       {/* ── Context menu ── */}
-      {contextMenu && (
+      {!readOnly && contextMenu && (
         <div
           className="fixed z-50 bg-white border border-border rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onMouseLeave={() => setContextMenu(null)}
         >
           {contextMenu.type === "conn" && (
+            <>
+              {onAddAttachment && ADD_ATTACHMENT_CONTROLS.map(control => (
+                <button
+                  key={control.type}
+                  type="button"
+                  aria-label={control.label}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-secondary/50 transition-colors"
+                  onMouseDown={event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={() => {
+                    onAddAttachment(control.type, { kind: "connection", id: contextMenu.connId });
+                    setContextMenu(null);
+                  }}
+                >
+                  {control.label}
+                </button>
+              ))}
+              {onAddAttachment && onDeleteConnection && <div className="my-1 border-t border-border" />}
+              {onDeleteConnection && (
+                <button
+                  className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                  onClick={() => { onDeleteConnection?.(contextMenu.connId); setContextMenu(null); }}
+                >
+                  Verbinding verwijderen
+                </button>
+              )}
+            </>
+          )}
+          {contextMenu.type === "attachment" && (
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-              onClick={() => { onDeleteConnection?.(contextMenu.connId); setContextMenu(null); }}
+              onClick={() => { onDeleteAttachment?.(contextMenu.attachmentId); setContextMenu(null); }}
             >
-              Verbinding verwijderen
+              Artifact verwijderen
             </button>
           )}
           {contextMenu.type === "step" && (() => {
             const step = steps.find(s => s.id === contextMenu.stepId);
             const isEvt = step?.type === "start" || step?.type === "end"
-              || step?.type === "terminate" || step?.type === "send" || step?.type === "receive";
+              || step?.type === "timer" || step?.type === "terminate" || step?.type === "send" || step?.type === "receive";
             return isEvt ? (
               <button
                 className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
