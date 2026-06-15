@@ -26,8 +26,21 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ProcessCanvas } from "@/components/process/ProcessCanvas";
 import { UnassignedPanel } from "@/components/process/UnassignedPanel";
 import { AutomationDetailPanel } from "@/components/process/AutomationDetailPanel";
+import { FlowDetailPanel } from "@/components/process/FlowDetailPanel";
 import { StepDialog } from "@/components/process/StepDialog";
-import type { ProcessStep, Automation, TeamKey, ProcessState, CustomLane } from "@/data/processData";
+import type {
+  ProcessStep,
+  Automation,
+  TeamKey,
+  ProcessState,
+  CustomLane,
+  ConnectionRouteType,
+  ConnectionSide,
+  ConnectionWaypoint,
+  ProcessAttachment,
+  ProcessAttachmentTarget,
+  ProcessAttachmentType,
+} from "@/data/processData";
 import {
   buildLaneKeys,
   CUSTOM_LANE_PALETTE,
@@ -49,8 +62,10 @@ import { saveProcessState } from "@/lib/storage/processState";
 import { detectDrift } from "@/lib/processDrift";
 import { StepStagingPanel } from "@/components/process/StepStagingPanel";
 import { exportProcessCanvasPdf, exportProcessCanvasPng } from "@/lib/processExport";
-import { exportProcessBackup, importProcessBackup } from "@/lib/processBackup";
-import { buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
+import { importProcessBackup } from "@/lib/processBackup";
+import { buildProcessStateFromSaved, buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
+import { removeAttachmentsForTarget } from "@/lib/processAttachments";
+import { removeFlowLinksForConnection, removeFlowLinksForStep } from "@/lib/processFlowLinks";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
   Marketing:   "marketing",
@@ -70,6 +85,16 @@ function toCanvasAutomation(a: Automatisering, existing?: Automation): Automatio
     fromStepId: existing?.fromStepId,
     toStepId:   existing?.toStepId,
   };
+}
+
+function defaultAttachmentLabel(type: ProcessAttachmentType): string {
+  if (type === "annotation") return "Notitie";
+  if (type === "dataObject") return "Data/document";
+  return "Databron";
+}
+
+function createAttachmentId(): string {
+  return `attachment-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
 }
 
 interface ProcessenEditorProps {
@@ -105,6 +130,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [newLaneName, setNewLaneName]             = useState("");
   const [renameLaneKey, setRenameLaneKey]         = useState<string | null>(null);
   const [renameLaneName, setRenameLaneName]       = useState("");
+  const [selectedRouteType, setSelectedRouteType] = useState<ConnectionRouteType>("main");
 
   const { data: allPipelines = [] } = usePipelines();
   const pipelines = allPipelines.filter(p => p.isActive);
@@ -137,6 +163,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     setDismissedRenames(new Set());
     setActiveLanes([...TEAM_ORDER]);
     setCustomLanes([]);
+    setFlowLinks({});
     setIsDirty(false);
     setLoading(true);
   }, [pipelineId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -153,18 +180,24 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         setState(stagesState);
         setSaved(stagesState);
       }
+      setFlowLinks({});
       return;
     }
     savedLinksRef.current = savedState.autoLinks;
+    const restoredState = buildProcessStateFromSaved(savedState, []);
     setState(prev => ({
       ...prev,
-      steps:       savedState.steps       as ProcessState["steps"],
-      connections: savedState.connections as ProcessState["connections"],
+      steps:       restoredState.steps,
+      connections: restoredState.connections,
+      attachments: restoredState.attachments,
+      flowLinks:   restoredState.flowLinks,
     }));
     setSaved(s => ({
       ...s,
-      steps:       savedState.steps       as ProcessState["steps"],
-      connections: savedState.connections as ProcessState["connections"],
+      steps:       restoredState.steps,
+      connections: restoredState.connections,
+      attachments: restoredState.attachments,
+      flowLinks:   restoredState.flowLinks,
     }));
     const restoredParked = savedState.parkedSteps as ProcessStep[];
     setParkedSteps(restoredParked);
@@ -176,9 +209,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     } else {
       setActiveLanes(buildLaneKeys(restoredCustom));
     }
-    if (savedState.flowLinks) {
-      setFlowLinks(savedState.flowLinks as Record<string, { fromStepId: string; toStepId: string }>);
-    }
+    setFlowLinks(restoredState.flowLinks ?? {});
     setIsDirty(false);
   }, [savedState, stateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -215,14 +246,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   // ── Save / Reset ───────────────────────────────────────────────────────────
   async function handleSave() {
     try {
+      const savedSnapshot = { ...state, flowLinks };
+      const persistedSnapshot = buildSavedProcessState(savedSnapshot, parkedSteps, activeLanes, customLanes);
       await saveProcessState(
         pipelineId,
-        buildSavedProcessState({ ...state, flowLinks }, parkedSteps, activeLanes, customLanes),
+        persistedSnapshot,
       );
-      setSaved(state);
+      setSaved(savedSnapshot);
       savedParkedStepsRef.current = parkedSteps;
       setIsDirty(false);
       toast.success("Proceskaart opgeslagen");
+      queryClient.setQueryData(["processState", pipelineId], persistedSnapshot);
       queryClient.invalidateQueries({ queryKey: ["processState", pipelineId] });
     } catch (err) {
       console.error(err);
@@ -231,9 +265,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   }
 
   function handleReset() {
-    setState(prev => restoreSavedProcessState(prev, saved));
+    setState(prev => restoreSavedProcessState(prev, saved, savedParkedStepsRef.current));
     setParkedSteps(savedParkedStepsRef.current);
-    setFlowLinks(savedState?.flowLinks ? (savedState.flowLinks as Record<string, { fromStepId: string; toStepId: string }>) : {});
+    setFlowLinks(saved.flowLinks ?? {});
     setIsDirty(false);
     toast.info("Teruggezet naar opgeslagen versie");
   }
@@ -266,15 +300,31 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         autoLinks[a.id] = { fromStepId: a.fromStepId, toStepId: a.toStepId };
       }
     });
-    exportProcessBackup(pipeline?.naam ?? pipelineId, {
-      steps:       state.steps,
-      connections: state.connections,
-      autoLinks,
-      parkedSteps,
-      activeLanes,
-      customLanes,
-      flowLinks,
-    });
+    const backup = {
+      version: 1,
+      pipelineName: pipeline?.naam ?? pipelineId,
+      exportedAt: new Date().toISOString(),
+      state: {
+        steps:       state.steps,
+        connections: state.connections,
+        attachments: state.attachments ?? [],
+        autoLinks,
+        parkedSteps,
+        activeLanes,
+        customLanes,
+        flowLinks,
+      },
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const safe = backup.pipelineName.replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
+    a.href     = url;
+    a.download = `proces-backup-${safe}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
     toast.success("Backup gedownload als JSON");
   }
 
@@ -294,6 +344,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         ...prev,
         steps:       savedState.steps       as ProcessStep[],
         connections: savedState.connections as ProcessState["connections"],
+        attachments: savedState.attachments as ProcessState["attachments"] ?? prev.attachments ?? [],
         automations: restoredAutos,
       }));
       const restoredCustomLanes = savedState.customLanes as CustomLane[] | undefined;
@@ -302,6 +353,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         setActiveLanes(filterValidActiveLanes(savedState.activeLanes, restoredCustomLanes ?? []));
       }
       setParkedSteps(savedState.parkedSteps as ProcessStep[]);
+      setFlowLinks(savedState.flowLinks ?? {});
       setIsDirty(true);
       toast.success("Backup geladen — controleer en klik Opslaan om op te slaan");
     } catch (err) {
@@ -328,15 +380,27 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   }
 
   function handleDeleteStep(id: string) {
-    update(s => ({
-      steps: s.steps.filter(x => x.id !== id),
-      connections: s.connections.filter(c => c.fromStepId !== id && c.toStepId !== id),
-      automations: s.automations.map(a =>
-        a.fromStepId === id || a.toStepId === id
-          ? { ...a, fromStepId: undefined, toStepId: undefined }
-          : a,
-      ),
-    }));
+    setFlowLinks(prev => removeFlowLinksForStep(prev, id));
+    update(s => {
+      const removedConnections = s.connections.filter(c => c.fromStepId === id || c.toStepId === id);
+      const attachmentsWithoutStep = removeAttachmentsForTarget(s.attachments, { kind: "step", id });
+      const attachments = removedConnections.reduce(
+        (remaining, connection) => removeAttachmentsForTarget(remaining, { kind: "connection", id: connection.id }),
+        attachmentsWithoutStep,
+      );
+
+      return {
+        ...s,
+        steps: s.steps.filter(x => x.id !== id),
+        connections: s.connections.filter(c => c.fromStepId !== id && c.toStepId !== id),
+        automations: s.automations.map(a =>
+          a.fromStepId === id || a.toStepId === id
+            ? { ...a, fromStepId: undefined, toStepId: undefined }
+            : a,
+        ),
+        attachments,
+      };
+    });
     toast.success("Stap verwijderd");
   }
 
@@ -424,18 +488,36 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   }
 
   // ── Connection handlers ────────────────────────────────────────────────────
-  function handleAddConnection(fromId: string, toId: string) {
+  function handleAddConnection(
+    fromId: string,
+    toId: string,
+    routeType: ConnectionRouteType = selectedRouteType,
+    fromSide?: ConnectionSide,
+    toSide?: ConnectionSide,
+    waypoints: ConnectionWaypoint[] = [],
+  ) {
     update(s => {
       const exists = s.connections.some(c => c.fromStepId === fromId && c.toStepId === toId);
       if (exists) return s;
       return {
         ...s,
-        connections: [...s.connections, { id: `c-${Date.now()}`, fromStepId: fromId, toStepId: toId }],
+        connections: [...s.connections, {
+          id: `c-${Date.now()}`,
+          fromStepId: fromId,
+          toStepId: toId,
+          routeType,
+          fromSide,
+          toSide,
+          manual: true,
+          waypoints,
+        }],
       };
     });
   }
 
   function handleDeleteConnection(id: string) {
+    const currentConnection = state.connections.find(c => c.id === id);
+    setFlowLinks(prev => removeFlowLinksForConnection(prev, currentConnection));
     update(s => {
       const conn = s.connections.find(c => c.id === id);
       // If it's a step-to-step connection, detach any automations that sit on it
@@ -446,14 +528,64 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               : a,
           )
         : s.automations;
-      return { ...s, connections: s.connections.filter(c => c.id !== id), automations: updatedAutos };
+      return {
+        ...s,
+        connections: s.connections.filter(c => c.id !== id),
+        automations: updatedAutos,
+        attachments: removeAttachmentsForTarget(s.attachments, { kind: "connection", id }),
+      };
     });
     toast.success("Verbinding verwijderd");
   }
 
+  function handleAddAttachment(type: ProcessAttachmentType, target: ProcessAttachmentTarget) {
+    update(s => ({
+      ...s,
+      attachments: [
+        ...(s.attachments ?? []),
+        {
+          id: createAttachmentId(),
+          type,
+          label: defaultAttachmentLabel(type),
+          attachedTo: target,
+        },
+      ],
+    }));
+  }
+
   // ── Automation handlers ────────────────────────────────────────────────────
+  function handleMoveAttachment(attachmentId: string, offset: { x: number; y: number }) {
+    update(s => ({
+      ...s,
+      attachments: (s.attachments ?? []).map(attachment =>
+        attachment.id === attachmentId ? { ...attachment, offset } : attachment,
+      ),
+    }));
+  }
+
+  function handleUpdateAttachment(
+    attachmentId: string,
+    patch: Partial<Pick<ProcessAttachment, "label" | "description">>,
+  ) {
+    update(s => ({
+      ...s,
+      attachments: (s.attachments ?? []).map(attachment =>
+        attachment.id === attachmentId ? { ...attachment, ...patch } : attachment,
+      ),
+    }));
+  }
+
+  function handleDeleteAttachment(attachmentId: string) {
+    update(s => ({
+      ...s,
+      attachments: (s.attachments ?? []).filter(attachment => attachment.id !== attachmentId),
+    }));
+    toast.success("Artifact verwijderd");
+  }
+
   const handleAutoClick = useCallback((a: Automation) => {
     setSelectedAuto(a);
+    setSelectedFlowId(null);
   }, []);
 
   function handleAttach(autoId: string, fromStepId: string, toStepId: string) {
@@ -498,8 +630,14 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     if (!state.steps.some(s => s.id === stepId)) return;
     // Read the step inside the updater so the functional state is authoritative
     let capturedStep: ProcessStep | undefined;
+    setFlowLinks(prev => removeFlowLinksForStep(prev, stepId));
     update(s => {
       capturedStep = s.steps.find(x => x.id === stepId);
+      const removedConnections = s.connections.filter(c => c.fromStepId === stepId || c.toStepId === stepId);
+      const attachments = removedConnections.reduce(
+        (remaining, connection) => removeAttachmentsForTarget(remaining, { kind: "connection", id: connection.id }),
+        s.attachments ?? [],
+      );
       if (!capturedStep) return s; // concurrent removal — leave state unchanged
       return {
         ...s,
@@ -510,6 +648,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
             ? { ...a, fromStepId: undefined, toStepId: undefined }
             : a,
         ),
+        attachments,
       };
     });
     if (capturedStep) {
@@ -549,6 +688,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       // Park steps that belong to this lane before hiding it
       const stepsInLane = state.steps.filter(s => s.team === laneKey);
       if (stepsInLane.length > 0) {
+        const stepIds = new Set(stepsInLane.map(step => step.id));
+        setFlowLinks(prev => stepsInLane.reduce(
+          (links, step) => removeFlowLinksForStep(links, step.id),
+          prev,
+        ));
         update(s => ({
           ...s,
           steps: s.steps.filter(x => x.team !== laneKey),
@@ -560,6 +704,12 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               ? { ...a, fromStepId: undefined, toStepId: undefined }
               : a,
           ),
+          attachments: s.connections
+            .filter(c => stepIds.has(c.fromStepId ?? "") || stepIds.has(c.toStepId))
+            .reduce(
+              (remaining, connection) => removeAttachmentsForTarget(remaining, { kind: "connection", id: connection.id }),
+              s.attachments ?? [],
+            ),
         }));
         setParkedSteps(prev => [...prev, ...stepsInLane]);
       }
@@ -621,13 +771,13 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   // Add a new step at a half-row position (0.5, 1.5, …) — no rows shift
   function handleInsertAddStep(team: string, afterRow: number, col: number, type?: ProcessStep["type"]) {
     const halfRow = afterRow + 0.5;
-    const isEventType = type === "start" || type === "end" || type === "terminate" || type === "send" || type === "receive";
+    const isEventType = type === "start" || type === "end" || type === "timer" || type === "terminate" || type === "send" || type === "receive";
     if (isEventType) {
       setState(prev => ({
         ...prev,
         steps: [...prev.steps, {
           id: `ev-${type}-${Date.now()}`,
-          label: type === "start" ? "Start" : "Einde",
+          label: type === "start" ? "Start" : type === "timer" ? "Wachttijd" : "Einde",
           team, column: col, row: halfRow, type,
         }],
       }));
@@ -707,13 +857,20 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     update(s => ({ ...s, connections: [...s.connections, newConn] }));
     // Open detail panel for the automation
     const auto = state.automations.find(a => a.id === automationId);
-    if (auto) setSelectedAuto(auto);
+    if (auto) { setSelectedAuto(auto); setSelectedFlowId(null); }
   }
 
   function handleUpdateConnectionLabel(connId: string, label: string) {
     update(s => ({
       ...s,
       connections: s.connections.map(c => c.id === connId ? { ...c, label } : c),
+    }));
+  }
+
+  function handleUpdateConnectionWaypoints(connId: string, waypoints: ConnectionWaypoint[]) {
+    update(s => ({
+      ...s,
+      connections: s.connections.map(c => c.id === connId ? { ...c, waypoints, manual: true } : c),
     }));
   }
 
@@ -770,6 +927,29 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center rounded-md border border-border bg-background p-0.5">
+            {([
+              { routeType: "main", label: "Hoofdroute", short: "Hoofd" },
+              { routeType: "optional", label: "Correctie / optioneel", short: "Opt." },
+              { routeType: "end", label: "Uitzondering / einde", short: "Einde" },
+            ] as { routeType: ConnectionRouteType; label: string; short: string }[]).map(({ routeType, label, short }) => (
+              <button
+                key={routeType}
+                type="button"
+                aria-label={`Lijntype ${label}`}
+                title={label}
+                onClick={() => setSelectedRouteType(routeType)}
+                className={`h-7 rounded px-2 text-[11px] font-semibold transition-colors ${
+                  selectedRouteType === routeType
+                    ? "bg-slate-900 text-white"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                {short}
+              </button>
+            ))}
+          </div>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
@@ -833,6 +1013,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                     {([
                       { type: "start",     label: "Start",     icon: <><circle cx="8" cy="8" r="7" fill="#dcfce7" stroke="#16a34a" strokeWidth="1.5"/></>, direct: true },
                       { type: "end",       label: "Einde",     icon: <><circle cx="8" cy="8" r="7" fill="#fee2e2" stroke="#dc2626" strokeWidth="2"/></>, direct: true },
+                      { type: "timer",     label: "Wacht",     icon: <><circle cx="8" cy="8" r="7" fill="white" stroke="#64748b" strokeWidth="1.5"/><circle cx="8" cy="8" r="3.8" fill="none" stroke="#64748b" strokeWidth="1"/><line x1="8" y1="8" x2="8" y2="5.4" stroke="#64748b" strokeWidth="1.1" strokeLinecap="round"/><line x1="8" y1="8" x2="10.4" y2="8" stroke="#64748b" strokeWidth="1.1" strokeLinecap="round"/></>, direct: false },
                       { type: "terminate", label: "Terminate", icon: <><circle cx="8" cy="8" r="7" fill="white" stroke="#dc2626" strokeWidth="2"/><circle cx="8" cy="8" r="3.5" fill="#dc2626"/></>, direct: false },
                       { type: "send",      label: "Sturen",    icon: <><circle cx="8" cy="8" r="7" fill="white" stroke="#64748b" strokeWidth="1.5"/><rect x="3" y="5" width="10" height="7" rx="1" fill="#64748b"/><polyline points="3,5 8,9.5 13,5" stroke="white" strokeWidth="1.2" fill="none"/></>, direct: false },
                       { type: "receive",   label: "Ontv.",     icon: <><circle cx="8" cy="8" r="7" fill="white" stroke="#64748b" strokeWidth="1.5"/><rect x="3" y="5" width="10" height="7" rx="1" fill="none" stroke="#64748b" strokeWidth="1.2"/><polyline points="3,5 8,9.5 13,5" stroke="#64748b" strokeWidth="1.2" fill="none"/></>, direct: false },
@@ -1015,8 +1196,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 automations={state.automations}
                 activeLanes={activeLanes}
                 customLanes={customLanes}
+                selectedRouteType={selectedRouteType}
                 flows={flows}
                 flowLinks={flowLinks}
+                attachments={state.attachments ?? []}
                 onAttachFlow={handleAttachFlow}
                 onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
                 displayStyle={displayStyle}
@@ -1033,6 +1216,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 onAddStep={handleAddStep}
                 onAddBranch={handleAddBranch}
                 onUpdateConnectionLabel={handleUpdateConnectionLabel}
+                onUpdateConnectionWaypoints={handleUpdateConnectionWaypoints}
+                onAddAttachment={handleAddAttachment}
+                onMoveAttachment={handleMoveAttachment}
+                onUpdateAttachment={handleUpdateAttachment}
+                onDeleteAttachment={handleDeleteAttachment}
                 onParkStep={handleParkStep}
                 onDeleteStep={handleDeleteStep}
                 onPlaceStagedStep={handlePlaceStep}
@@ -1045,7 +1233,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 <p className="text-xs text-muted-foreground">
                   <span className="font-medium">Tip:</span> Sleep automations naar pijlen ·
                   Sleep stappen om te verplaatsen ·
-                  Sleep vanuit het poortje (rechts op een stap) om een verbinding te tekenen ·
+                  Sleep vanuit een poortje op een stap om een verbinding te tekenen ·
                   Dubbelklik op een pijl om te verwijderen
                 </p>
               </div>
@@ -1058,56 +1246,18 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
           (() => {
             const flow = flows.find(f => f.id === selectedFlowId);
             if (!flow) return null;
+            const link = flowLinks[flow.id];
+            const fromStep = link ? state.steps.find(s => s.id === link.fromStepId) : undefined;
+            const toStep   = link ? state.steps.find(s => s.id === link.toStepId)   : undefined;
             return (
-              <div className="w-72 border-l border-border bg-card flex flex-col">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-                  <span className="text-sm font-semibold text-slate-800">Procesreis</span>
-                  <button onClick={() => setSelectedFlowId(null)}
-                    className="text-muted-foreground hover:text-foreground">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-auto p-4 space-y-4">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Naam</p>
-                    <p className="text-sm font-semibold text-slate-800">{flow.naam}</p>
-                  </div>
-                  {flow.beschrijving && (
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Beschrijving</p>
-                      <p className="text-sm text-slate-600">{flow.beschrijving}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Automations</p>
-                    <p className="text-sm text-slate-600">{flow.automationIds.length} onderdelen</p>
-                  </div>
-                  {flow.systemen?.length > 0 && (
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Systemen</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {flow.systemen.map(s => (
-                          <span key={s} className="rounded-full bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 text-[11px] font-semibold">{s}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="pt-2">
-                    <a href={`/flows/${flow.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700 transition-colors">
-                      Bekijk volledige procesreis →
-                    </a>
-                  </div>
-                  {flowLinks[flow.id] && (
-                    <div className="pt-2 border-t border-border">
-                      <button onClick={() => { handleDetachFlow(flow.id); setSelectedFlowId(null); }}
-                        className="text-xs text-destructive hover:text-destructive/80 font-medium">
-                        Loskoppelen van canvas
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <FlowDetailPanel
+                flow={flow}
+                fromStep={fromStep}
+                toStep={toStep}
+                isAttached={!!link}
+                onClose={() => setSelectedFlowId(null)}
+                onDetach={handleDetachFlow}
+              />
             );
           })()
         ) : selectedAuto ? (
@@ -1167,6 +1317,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 steps={state.steps}
                 onAutomationClick={handleAutoClick}
                 onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
+                onDetachFlow={handleDetachFlow}
               />
             ) : (
               <StepStagingPanel
