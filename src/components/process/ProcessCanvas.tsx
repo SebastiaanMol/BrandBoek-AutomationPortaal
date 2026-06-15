@@ -681,7 +681,6 @@ function editableWaypointsForConnection(
 ): ConnectionWaypoint[] {
   const waypoints = cleanWaypoints(conn.waypoints);
   if (!conn.manual) return waypoints;
-  if (waypoints.length === 0) return defaultWaypointsForConnection(from, to, colX, laneStarts, conn.fromSide, conn.toSide);
   if (waypoints.length === 1) {
     return expandSingleWaypointForConnection(from, to, waypoints[0], colX, laneStarts, conn.fromSide, conn.toSide);
   }

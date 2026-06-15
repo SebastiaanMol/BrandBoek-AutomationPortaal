@@ -108,7 +108,11 @@ describe("ProcessCanvas manual connections in edit mode", () => {
         toStepId: "controle",
         manual: true,
         routeType: "optional",
-        waypoints: [],
+        waypoints: [
+          { x: 280, y: 42 },
+          { x: 336, y: 42 },
+          { x: 392, y: 42 },
+        ],
       },
     ];
 
@@ -140,7 +144,7 @@ describe("ProcessCanvas manual connections in edit mode", () => {
     expect(waypoints[0]).toEqual(expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }));
   });
 
-  it("shows multiple draggable bend points on a new manual route", () => {
+  it("does not synthesize draggable bend points for saved manual routes without waypoints", () => {
     const connections: Connection[] = [
       {
         id: "manual-default-bends",
@@ -164,7 +168,7 @@ describe("ProcessCanvas manual connections in edit mode", () => {
 
     fireEvent.click(screen.getByLabelText("Handmatige correctie/optioneel route"));
 
-    expect(screen.getAllByRole("button", { name: /Sleep knikpunt/ })).toHaveLength(3);
+    expect(screen.queryAllByRole("button", { name: /Sleep knikpunt/ })).toHaveLength(0);
   });
 
   it("renders saved manual waypoints as orthogonal route segments", () => {
@@ -528,6 +532,13 @@ describe("ProcessCanvas manual connections in edit mode", () => {
         expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
       ],
     );
+    const waypoints = onAddConnection.mock.calls[0][5];
+    expect(waypoints).toHaveLength(3);
+    for (const point of waypoints) {
+      expect(point.x % 14).toBe(0);
+      expect(point.y % 14).toBe(0);
+    }
+    expect(waypoints[0].x).toBe(waypoints[2].x);
   });
 
   it("snaps dragged bend points to the routing grid", () => {
