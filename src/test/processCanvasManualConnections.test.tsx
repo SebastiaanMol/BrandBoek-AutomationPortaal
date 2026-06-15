@@ -171,6 +171,40 @@ describe("ProcessCanvas manual connections in edit mode", () => {
     expect(screen.queryAllByRole("button", { name: /Sleep knikpunt/ })).toHaveLength(0);
   });
 
+  it("does not expose manual waypoint handles in read-only viewer mode", () => {
+    const connections: Connection[] = [
+      {
+        id: "manual-read-only",
+        fromStepId: "intake",
+        toStepId: "controle",
+        manual: true,
+        routeType: "main",
+        fromSide: "right",
+        toSide: "left",
+        waypoints: [
+          { x: 280, y: 42 },
+          { x: 308, y: 42 },
+          { x: 336, y: 42 },
+        ],
+      },
+    ];
+
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        readOnly
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Handmatige hoofdroute route"));
+
+    expect(screen.queryByRole("button", { name: /Sleep knikpunt/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Knikpunt toevoegen/ })).not.toBeInTheDocument();
+  });
+
   it("renders saved manual waypoints as orthogonal route segments", () => {
     const connections: Connection[] = [
       {
@@ -254,6 +288,40 @@ describe("ProcessCanvas manual connections in edit mode", () => {
     fireEvent.click(screen.getByLabelText("Handmatige hoofdroute route"));
 
     expect(screen.getAllByRole("button", { name: /Sleep knikpunt/ })).toHaveLength(3);
+  });
+
+  it("keeps existing manual waypoints instead of replacing them with default route waypoints", () => {
+    const connections: Connection[] = [
+      {
+        id: "manual-preserved",
+        fromStepId: "intake",
+        toStepId: "controle",
+        manual: true,
+        routeType: "main",
+        fromSide: "right",
+        toSide: "left",
+        waypoints: [
+          { x: 280, y: 86 },
+          { x: 340, y: 114 },
+        ],
+      },
+    ];
+
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        onUpdateConnectionWaypoints={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Handmatige hoofdroute route"));
+
+    const handles = screen.getAllByRole("button", { name: /Sleep knikpunt/ });
+    expect(handles).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /Knikpunt toevoegen/ })).toHaveLength(3);
   });
 
   it("can add another draggable bend point to a selected manual route", () => {
