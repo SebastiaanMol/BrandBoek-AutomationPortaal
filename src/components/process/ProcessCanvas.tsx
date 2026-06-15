@@ -385,10 +385,17 @@ function snapWaypointToRouteAxis(
   };
 }
 
-function shouldStraightenVerticalRoute(sourceSide: ConnectionSide, targetSide: ConnectionSide, start: Pt, end: Pt): boolean {
+function shouldStraightenVerticalRoute(
+  waypoints: ConnectionWaypoint[],
+  sourceSide: ConnectionSide,
+  targetSide: ConnectionSide,
+  start: Pt,
+  end: Pt,
+): boolean {
   return (sourceSide === "top" || sourceSide === "bottom")
     && (targetSide === "top" || targetSide === "bottom")
-    && Math.abs(start.x - end.x) <= MICRO_BEND_TOLERANCE;
+    && Math.abs(start.x - end.x) <= MICRO_BEND_TOLERANCE
+    && waypoints.every(waypoint => Math.abs(waypoint.x - start.x) <= MICRO_BEND_TOLERANCE);
 }
 
 function normalizeWaypointsForRoute(
@@ -398,7 +405,7 @@ function normalizeWaypointsForRoute(
   start: Pt,
   end: Pt,
 ): ConnectionWaypoint[] {
-  if (shouldStraightenVerticalRoute(sourceSide, targetSide, start, end)) {
+  if (shouldStraightenVerticalRoute(waypoints, sourceSide, targetSide, start, end)) {
     return waypoints.map((waypoint) => ({ ...waypoint, x: start.x }));
   }
   return waypoints.map(waypoint => snapWaypointToRouteAxis(waypoint, start, end));

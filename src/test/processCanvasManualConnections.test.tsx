@@ -543,7 +543,7 @@ describe("ProcessCanvas manual connections in edit mode", () => {
     expect(path).not.toMatch(/V 103 H 384$/);
   });
 
-  it("straightens nearly vertical manual routes between stacked tasks", () => {
+  it("preserves offset doglegs in manual routes between stacked tasks", () => {
     const stackedSteps: ProcessStep[] = [
       { id: "from", type: "task", label: "Doorzetten", team: "sales", column: 0, row: 0 },
       { id: "to", type: "task", label: "Incasso", team: "sales", column: 0, row: 1 },
@@ -560,6 +560,43 @@ describe("ProcessCanvas manual connections in edit mode", () => {
         waypoints: [
           { x: 190, y: 70 },
           { x: 204, y: 92 },
+        ],
+      },
+    ];
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={stackedSteps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+      />,
+    );
+
+    const route = container.querySelector('path[aria-label="Handmatige hoofdroute route"]');
+    const path = route?.getAttribute("d") ?? "";
+
+    expect(path).toContain("H 204");
+    expect(path).toBe("M 186 65 V 92 H 204 H 186 V 111");
+  });
+
+  it("straightens micro-offset manual routes between stacked tasks", () => {
+    const stackedSteps: ProcessStep[] = [
+      { id: "from", type: "task", label: "Doorzetten", team: "sales", column: 0, row: 0 },
+      { id: "to", type: "task", label: "Incasso", team: "sales", column: 0, row: 1 },
+    ];
+    const connections: Connection[] = [
+      {
+        id: "manual-stacked-micro",
+        fromStepId: "from",
+        toStepId: "to",
+        manual: true,
+        routeType: "main",
+        fromSide: "bottom",
+        toSide: "top",
+        waypoints: [
+          { x: 190, y: 70 },
+          { x: 188, y: 92 },
         ],
       },
     ];
