@@ -1,0 +1,2 @@
+ALTER TABLE process_state
+  ADD COLUMN IF NOT EXISTS artifacts JSONB NOT NULL DEFAULT '[]';

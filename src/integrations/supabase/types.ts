@@ -455,6 +455,7 @@ export type Database = {
       process_state: {
         Row: {
           active_lanes: Json | null
+          artifacts: Json
           auto_links: Json
           connections: Json
           custom_lanes: Json | null
@@ -465,6 +466,7 @@ export type Database = {
         }
         Insert: {
           active_lanes?: Json | null
+          artifacts?: Json
           auto_links?: Json
           connections?: Json
           custom_lanes?: Json | null
@@ -475,6 +477,7 @@ export type Database = {
         }
         Update: {
           active_lanes?: Json | null
+          artifacts?: Json
           auto_links?: Json
           connections?: Json
           custom_lanes?: Json | null
