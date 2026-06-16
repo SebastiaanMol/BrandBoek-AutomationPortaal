@@ -1,4 +1,4 @@
-import type { CustomLane, ProcessStep, Connection, ProcessAttachment } from "@/data/processData";
+import type { CustomLane, ProcessArtifact, ProcessStep, Connection, ProcessAttachment } from "@/data/processData";
 import { buildProcessStateFromSaved, buildSavedProcessState } from "@/lib/processStateMapping";
 import type { SavedProcessState } from "@/lib/storage/processState";
 
@@ -15,6 +15,7 @@ export interface ProcessBackup {
     customLanes?: unknown[];
     flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
     attachments?: unknown[];
+    artifacts?: unknown[];
   };
 }
 
@@ -29,6 +30,7 @@ export function exportProcessBackup(
     customLanes: CustomLane[];
     flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
     attachments?: ProcessAttachment[];
+    artifacts?: ProcessArtifact[];
   },
 ): void {
   const backup: ProcessBackup = {
@@ -44,6 +46,7 @@ export function exportProcessBackup(
       customLanes: state.customLanes,
       flowLinks:   state.flowLinks,
       attachments: state.attachments ?? [],
+      artifacts:   state.artifacts ?? [],
     },
   };
 
@@ -108,6 +111,7 @@ export async function importProcessBackup(file: File): Promise<SavedProcessState
       ? (s.flowLinks as Record<string, { fromStepId: string; toStepId: string }>)
       : {},
     attachments: Array.isArray(s.attachments) ? s.attachments : [],
+    artifacts: Array.isArray(s.artifacts) ? s.artifacts : [],
   };
 
   const normalizedState = buildProcessStateFromSaved(imported, []);

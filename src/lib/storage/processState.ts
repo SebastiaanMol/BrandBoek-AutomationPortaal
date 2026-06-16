@@ -22,9 +22,10 @@ const PROCESS_STATE_COLUMNS = [
   "custom_lanes",
   "flow_links",
   "attachments",
+  "artifacts",
 ] as const;
 
-function isMissingOptionalColumnError(error: unknown, column: "attachments" | "flow_links"): boolean {
+function isMissingOptionalColumnError(error: unknown, column: "attachments" | "flow_links" | "artifacts"): boolean {
   if (typeof error !== "object" || error === null) return false;
   const maybeError = error as { code?: unknown; message?: unknown; details?: unknown };
   const text = `${String(maybeError.message ?? "")} ${String(maybeError.details ?? "")}`.toLowerCase();
@@ -36,18 +37,20 @@ function isMissingOptionalColumnError(error: unknown, column: "attachments" | "f
   );
 }
 
-function processStateColumns(options: { attachments?: boolean; flowLinks?: boolean } = {}): string {
+function processStateColumns(options: { attachments?: boolean; flowLinks?: boolean; artifacts?: boolean } = {}): string {
   const includeAttachments = options.attachments ?? true;
   const includeFlowLinks = options.flowLinks ?? true;
+  const includeArtifacts = options.artifacts ?? true;
   return PROCESS_STATE_COLUMNS
     .filter((column) => includeAttachments || column !== "attachments")
     .filter((column) => includeFlowLinks || column !== "flow_links")
+    .filter((column) => includeArtifacts || column !== "artifacts")
     .join(", ");
 }
 
 async function fetchProcessStateWithColumns(
   pipelineId: string,
-  options: { attachments?: boolean; flowLinks?: boolean } = {},
+  options: { attachments?: boolean; flowLinks?: boolean; artifacts?: boolean } = {},
 ) {
   return supabase
     .from("process_state")
@@ -59,9 +62,11 @@ async function fetchProcessStateWithColumns(
 export async function fetchProcessState(pipelineId: string): Promise<SavedProcessState | null> {
   let includeAttachments = true;
   let includeFlowLinks = true;
+  let includeArtifacts = true;
   let { data, error } = await fetchProcessStateWithColumns(pipelineId, {
     attachments: includeAttachments,
     flowLinks: includeFlowLinks,
+    artifacts: includeArtifacts,
   });
 
   if (error && isMissingOptionalColumnError(error, "attachments")) {
@@ -69,6 +74,7 @@ export async function fetchProcessState(pipelineId: string): Promise<SavedProces
     ({ data, error } = await fetchProcessStateWithColumns(pipelineId, {
       attachments: includeAttachments,
       flowLinks: includeFlowLinks,
+      artifacts: includeArtifacts,
     }));
   }
 
@@ -77,6 +83,16 @@ export async function fetchProcessState(pipelineId: string): Promise<SavedProces
     ({ data, error } = await fetchProcessStateWithColumns(pipelineId, {
       attachments: includeAttachments,
       flowLinks: includeFlowLinks,
+      artifacts: includeArtifacts,
+    }));
+  }
+
+  if (error && isMissingOptionalColumnError(error, "artifacts")) {
+    includeArtifacts = false;
+    ({ data, error } = await fetchProcessStateWithColumns(pipelineId, {
+      attachments: includeAttachments,
+      flowLinks: includeFlowLinks,
+      artifacts: includeArtifacts,
     }));
   }
 
@@ -94,16 +110,18 @@ export async function fetchProcessState(pipelineId: string): Promise<SavedProces
       ? (data.flow_links ?? {}) as Record<string, { fromStepId: string; toStepId: string }>
       : {},
     attachments: includeAttachments ? (data.attachments ?? []) as unknown[] : [],
+    artifacts: includeArtifacts ? (data.artifacts ?? []) as unknown[] : [],
   };
 }
 
 function buildProcessStateUpsertPayload(
   pipelineId: string,
   state: SavedProcessState,
-  options: { attachments?: boolean; flowLinks?: boolean } = {},
+  options: { attachments?: boolean; flowLinks?: boolean; artifacts?: boolean } = {},
 ) {
   const includeAttachments = options.attachments ?? true;
   const includeFlowLinks = options.flowLinks ?? true;
+  const includeArtifacts = options.artifacts ?? true;
   return {
     id: pipelineId,
     steps: state.steps as unknown as Json,
@@ -114,6 +132,7 @@ function buildProcessStateUpsertPayload(
     custom_lanes: (state.customLanes ?? null) as unknown as Json,
     ...(includeFlowLinks ? { flow_links: (state.flowLinks ?? {}) as unknown as Json } : {}),
     ...(includeAttachments ? { attachments: (state.attachments ?? []) as unknown as Json } : {}),
+    ...(includeArtifacts ? { artifacts: (state.artifacts ?? []) as unknown as Json } : {}),
     updated_at: new Date().toISOString(),
   };
 }
@@ -121,7 +140,7 @@ function buildProcessStateUpsertPayload(
 async function upsertProcessState(
   pipelineId: string,
   state: SavedProcessState,
-  options: { attachments?: boolean; flowLinks?: boolean } = {},
+  options: { attachments?: boolean; flowLinks?: boolean; artifacts?: boolean } = {},
 ) {
   return supabase
     .from("process_state")
@@ -134,9 +153,11 @@ async function upsertProcessState(
 export async function saveProcessState(pipelineId: string, state: SavedProcessState): Promise<void> {
   let includeAttachments = true;
   let includeFlowLinks = true;
+  let includeArtifacts = true;
   let { error } = await upsertProcessState(pipelineId, state, {
     attachments: includeAttachments,
     flowLinks: includeFlowLinks,
+    artifacts: includeArtifacts,
   });
 
   if (error && isMissingOptionalColumnError(error, "attachments")) {
@@ -144,6 +165,7 @@ export async function saveProcessState(pipelineId: string, state: SavedProcessSt
     ({ error } = await upsertProcessState(pipelineId, state, {
       attachments: includeAttachments,
       flowLinks: includeFlowLinks,
+      artifacts: includeArtifacts,
     }));
   }
 
@@ -152,6 +174,16 @@ export async function saveProcessState(pipelineId: string, state: SavedProcessSt
     ({ error } = await upsertProcessState(pipelineId, state, {
       attachments: includeAttachments,
       flowLinks: includeFlowLinks,
+      artifacts: includeArtifacts,
+    }));
+  }
+
+  if (error && isMissingOptionalColumnError(error, "artifacts")) {
+    includeArtifacts = false;
+    ({ error } = await upsertProcessState(pipelineId, state, {
+      attachments: includeAttachments,
+      flowLinks: includeFlowLinks,
+      artifacts: includeArtifacts,
     }));
   }
 
