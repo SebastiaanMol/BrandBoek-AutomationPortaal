@@ -1,6 +1,5 @@
 import { sanitizeForPrompt } from "./flowSuggestionAi";
 import { buildConceptJourneys, type ConceptJourney } from "./conceptJourneys";
-import { getExactWebhookProofBetween } from "./automationRouteGraph";
 import {
   buildProcessJourneyNarrative,
   buildProcessJourneyTitleFromAutomations,
@@ -103,34 +102,17 @@ const REVIEW_RELEVANT_FINDINGS = new Set(["source_missing", "source_data_incompl
 export function getProcessJourneyReviewPresentation({
   automations,
   suggestions,
-  flows = [],
-  confirmedLinks = [],
   reviewItems,
   selectedJourneyId,
 }: ProcessJourneyReviewInput): ProcessJourneyReviewPresentation {
   const journeys = buildConceptJourneys(suggestions);
-  const flowRows = flows.map((flow) => buildFlowQueueRow(flow, automations, reviewItems, confirmedLinks));
-  const conceptRows = journeys.map((journey) => buildQueueRow(journey, automations, reviewItems));
-  const queueRows = [...conceptRows, ...flowRows];
+  const queueRows = journeys.map((journey) => buildQueueRow(journey, automations, reviewItems));
   const selectedRow = queueRows.find((row) => row.id === selectedJourneyId) ?? queueRows[0] ?? null;
-
-  let selectedJourney: SelectedProcessJourneyReview | null = null;
-  if (selectedRow?.kind === "flow") {
-    selectedJourney = buildSelectedFlow(
-      selectedRow.id.replace(/^flow:/, ""),
-      flows,
-      automations,
-      reviewItems,
-      confirmedLinks,
-    );
-  } else if (selectedRow) {
-    const journey = journeys.find((item) => item.id === selectedRow.id);
-    selectedJourney = journey ? buildSelectedJourney(journey, automations, suggestions, reviewItems) : null;
-  }
+  const journey = selectedRow ? journeys.find((item) => item.id === selectedRow.id) : null;
 
   return {
     queueRows,
-    selectedJourney,
+    selectedJourney: journey ? buildSelectedJourney(journey, automations, suggestions, reviewItems) : null,
   };
 }
 
@@ -150,27 +132,6 @@ function buildQueueRow(
     openItemCount: reviewItems.filter((item) => item.conceptJourneyId === journey.id && item.status === "open").length,
     sourceLabels: [...new Set(autos.map((automation) => sourceLabel(automation.source)).filter(Boolean))],
     statusLabel: "Nog te doen",
-  };
-}
-
-function buildFlowQueueRow(
-  flow: Flow,
-  automations: Automatisering[],
-  reviewItems: ProcessJourneyReviewItem[],
-  confirmedLinks: Array<{ sourceId: string; targetId: string; matchType?: string | null }>,
-): ProcessJourneyReviewQueueRow {
-  const autos = flowAutomations(flow, automations);
-  const edges = buildFlowEdges(flow, automations, confirmedLinks);
-  return {
-    id: `flow:${flow.id}`,
-    kind: "flow",
-    title: flow.naam,
-    description: flow.beschrijving || "Goedgekeurde procesreis zonder beschrijving.",
-    automationCount: autos.length,
-    transitionCount: edges.length,
-    openItemCount: reviewItems.filter((item) => item.flowId === flow.id && item.status === "open").length,
-    sourceLabels: [...new Set(autos.map((automation) => sourceLabel(automation.source)).filter(Boolean))],
-    statusLabel: "Goedgekeurd",
   };
 }
 
@@ -236,76 +197,6 @@ function buildSelectedJourney(
   return {
     ...selectedJourney,
     prompt: buildReviewPrompt(selectedJourney, autos, suggestionsForJourney(journey, suggestions), selectedItems),
-    markdown: buildReviewMarkdown(selectedJourney),
-  };
-}
-
-function buildSelectedFlow(
-  flowId: string,
-  flows: Flow[],
-  automations: Automatisering[],
-  reviewItems: ProcessJourneyReviewItem[],
-  confirmedLinks: Array<{ sourceId: string; targetId: string; matchType?: string | null }>,
-): SelectedProcessJourneyReview | null {
-  const flow = flows.find((item) => item.id === flowId);
-  if (!flow) return null;
-
-  const autoMap = new Map(automations.map((automation) => [automation.id, automation]));
-  const autos = flowAutomations(flow, automations);
-  const copy = buildCuratedCopy(autos, flow.naam, flow.beschrijving, "");
-  const nodes = flow.automationIds.map((id) => {
-    const automation = autoMap.get(id);
-    return {
-      id,
-      name: automation?.naam ?? id,
-      sourceLabel: sourceLabel(automation?.source),
-      status: automation?.status ?? "Onbekend",
-      href: `/automations/${encodeURIComponent(id)}`,
-    };
-  });
-  const edges = buildFlowEdges(flow, automations, confirmedLinks);
-  const selectedItems = reviewItems.filter((item) => item.flowId === flow.id);
-  const sourceQualityWarnings = autos.flatMap((automation) =>
-    openReviewFindings(automation).map((finding) => ({
-      automationId: automation.id,
-      automationName: automation.naam,
-      type: finding.type,
-      severity: finding.severity,
-      message: finding.message,
-    })),
-  );
-  const stopReasons = buildStopReasons(nodes, edges);
-
-  const selectedJourney = {
-    id: `flow:${flow.id}`,
-    kind: "flow",
-    flowId: flow.id,
-    title: flow.naam,
-    description: flow.beschrijving || copy.description,
-    currentTitle: flow.naam,
-    currentDescription: flow.beschrijving,
-    proposedTitle: copy.title,
-    proposedDescription: copy.description,
-    saveLabel: "Bijwerken en volgende",
-    structureLabel: edges.length > 1 ? "Keten" : "Goedgekeurde reis",
-    automationCount: nodes.length,
-    transitionCount: edges.length,
-    automationIds: flow.automationIds,
-    systemen: flow.systemen,
-    saveTransitions: edges.map((edge) => ({ fromId: edge.fromId, toId: edge.toId })),
-    nodes,
-    edges,
-    stopReasons,
-    sourceQualityWarnings,
-    reviewItems: selectedItems,
-    prompt: "",
-    markdown: "",
-    approvalHref: `/flows/${encodeURIComponent(flow.id)}`,
-  } satisfies SelectedProcessJourneyReview;
-
-  return {
-    ...selectedJourney,
-    prompt: buildReviewPrompt(selectedJourney, autos, [], selectedItems),
     markdown: buildReviewMarkdown(selectedJourney),
   };
 }
@@ -415,46 +306,6 @@ function buildReviewMarkdown(journey: SelectedProcessJourneyReview): string {
 function automationsForJourney(journey: ConceptJourney, automations: Automatisering[]): Automatisering[] {
   const ids = new Set(journey.automationIds);
   return automations.filter((automation) => ids.has(automation.id));
-}
-
-function flowAutomations(flow: Flow, automations: Automatisering[]): Automatisering[] {
-  const autoMap = new Map(automations.map((automation) => [automation.id, automation]));
-  return flow.automationIds
-    .map((id) => autoMap.get(id))
-    .filter((automation): automation is Automatisering => Boolean(automation));
-}
-
-function buildFlowEdges(
-  flow: Flow,
-  automations: Automatisering[],
-  confirmedLinks: Array<{ sourceId: string; targetId: string; matchType?: string | null }>,
-): ProcessJourneyReviewEdge[] {
-  const flowIds = new Set(flow.automationIds);
-  const autoMap = new Map(automations.map((automation) => [automation.id, automation]));
-
-  return confirmedLinks
-    .filter((link) => flowIds.has(link.sourceId) && flowIds.has(link.targetId))
-    .filter((link) => link.matchType === "webhook" || link.matchType === "exact" || !link.matchType)
-    .map((link) => {
-      const from = autoMap.get(link.sourceId);
-      const to = autoMap.get(link.targetId);
-      const proof = getExactWebhookProofBetween(from, to);
-      const normalizedPath = proof?.normalizedPath ?? "";
-      return {
-        id: `${link.sourceId}->${link.targetId}:${normalizedPath || "confirmed-link"}`,
-        fromId: link.sourceId,
-        toId: link.targetId,
-        fromName: from?.naam ?? link.sourceId,
-        toName: to?.naam ?? link.targetId,
-        evidenceLabel: proof ? "100% webhook-match" : "Bevestigde link, route opnieuw checken",
-        normalizedPath,
-        method: "Methode onbekend",
-        sourceField: proof?.sourceField ?? "automation_links",
-        detail: proof
-          ? `${proof.sourceField} -> ${proof.targetField}`
-          : "Deze goedgekeurde procesreis heeft een confirmed automation_link, maar de actuele route-data levert geen exact pad terug.",
-      };
-    });
 }
 
 function buildCuratedCopy(

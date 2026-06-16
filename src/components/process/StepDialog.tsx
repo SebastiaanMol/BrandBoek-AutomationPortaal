@@ -57,6 +57,15 @@ const ReceiveIcon = () => (
   </svg>
 );
 
+const TimerIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="10" cy="10" r="4.5" stroke="currentColor" strokeWidth="1" />
+    <line x1="10" y1="10" x2="10" y2="7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    <line x1="10" y1="10" x2="12.5" y2="10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+  </svg>
+);
+
 const XorIcon = () => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
     <polygon points="10,2 18,10 10,18 2,10" stroke="currentColor" strokeWidth="1.5" />
@@ -80,7 +89,13 @@ const TaskIcon = () => (
   </svg>
 );
 
-type StepType = "task" | "decision" | "start" | "end" | "terminate" | "send" | "receive" | "and";
+const OptionalTaskIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <rect x="2" y="5" width="16" height="10" rx="3" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 2" />
+  </svg>
+);
+
+type StepType = "task" | "optional" | "decision" | "start" | "end" | "timer" | "terminate" | "send" | "receive" | "and";
 
 const TYPE_GROUPS: { label: string; types: { value: StepType; label: string; Icon: () => JSX.Element }[] }[] = [
   {
@@ -88,6 +103,7 @@ const TYPE_GROUPS: { label: string; types: { value: StepType; label: string; Ico
     types: [
       { value: "start",     label: "Start",     Icon: StartEventIcon },
       { value: "end",       label: "End",        Icon: EndEventIcon },
+      { value: "timer",     label: "Timer / wachttijd", Icon: TimerIcon },
       { value: "terminate", label: "Terminate",  Icon: TerminateIcon },
       { value: "send",      label: "Send",       Icon: SendIcon },
       { value: "receive",   label: "Receive",    Icon: ReceiveIcon },
@@ -103,7 +119,8 @@ const TYPE_GROUPS: { label: string; types: { value: StepType; label: string; Ico
   {
     label: "Activity",
     types: [
-      { value: "task",      label: "Task",       Icon: TaskIcon },
+      { value: "task",      label: "Taak",          Icon: TaskIcon },
+      { value: "optional",  label: "Optionele taak", Icon: OptionalTaskIcon },
     ],
   },
 ];

@@ -10,6 +10,7 @@ interface UnassignedPanelProps {
   steps: ProcessStep[];
   onAutomationClick: (auto: Automation) => void;
   onFlowClick: (flowId: string) => void;
+  onDetachFlow?: (flowId: string) => void;
 }
 
 export function UnassignedPanel({
@@ -19,6 +20,7 @@ export function UnassignedPanel({
   steps,
   onAutomationClick,
   onFlowClick,
+  onDetachFlow,
 }: UnassignedPanelProps) {
   const [openGekoppeld, setOpenGekoppeld] = useState(true);
   const [openProcessreizen, setOpenProcessreizen] = useState(false);
@@ -54,17 +56,27 @@ export function UnassignedPanel({
               const fromStep = steps.find(s => s.id === link?.fromStepId);
               const toStep   = steps.find(s => s.id === link?.toStepId);
               return (
-                <button key={flow.id}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-indigo-50 text-left w-full transition-colors"
-                  onClick={() => onFlowClick(flow.id)}>
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
-                  <span className="flex-1 min-w-0">
-                    <span className="text-[11px] font-medium text-slate-700 block truncate">{flow.naam}</span>
-                    {fromStep && toStep && (
-                      <span className="text-[10px] text-slate-400 block truncate">{fromStep.label} → {toStep.label}</span>
-                    )}
-                  </span>
-                </button>
+                <div key={flow.id} className="flex items-center gap-1 group">
+                  <button
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-indigo-50 text-left flex-1 min-w-0 transition-colors"
+                    onClick={() => onFlowClick(flow.id)}>
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
+                    <span className="flex-1 min-w-0">
+                      <span className="text-[11px] font-medium text-slate-700 block truncate">{flow.naam}</span>
+                      {fromStep && toStep && (
+                        <span className="text-[10px] text-slate-400 block truncate">{fromStep.label} → {toStep.label}</span>
+                      )}
+                    </span>
+                  </button>
+                  {onDetachFlow && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDetachFlow(flow.id); }}
+                      className="shrink-0 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                      title="Loskoppelen">
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               );
             })}
             {linkedAutos.map(auto => {

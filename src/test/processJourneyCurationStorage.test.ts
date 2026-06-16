@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   flowInserts: [] as unknown[],
   flowUpdates: [] as unknown[],
   suggestionUpdates: [] as unknown[],
+  existingFlowRows: [] as Array<{ flow_id: string | null }>,
+  suggestionSelects: [] as unknown[],
   linkUpserts: [] as unknown[],
   linkResponses: [] as Array<{ error: unknown | null }>,
   insertedFlow: {
@@ -48,6 +50,10 @@ vi.mock("@/integrations/supabase/client", () => ({
 
       if (table === "automatisering_ai_flows") {
         return {
+          select(columns: string) {
+            mocks.suggestionSelects.push({ columns });
+            return makeQuery({ data: mocks.existingFlowRows, error: null });
+          },
           update(payload: unknown) {
             mocks.suggestionUpdates.push(payload);
             return makeQuery({ error: null });
@@ -66,6 +72,8 @@ function makeQuery(result: unknown) {
     gte: () => query,
     ilike: () => query,
     is: () => query,
+    not: () => query,
+    limit: () => query,
     then: (resolve: (value: unknown) => void) => Promise.resolve(resolve(result)),
   };
   return query;
@@ -76,6 +84,8 @@ describe("process journey curation storage", () => {
     mocks.flowInserts = [];
     mocks.flowUpdates = [];
     mocks.suggestionUpdates = [];
+    mocks.existingFlowRows = [];
+    mocks.suggestionSelects = [];
     mocks.linkUpserts = [];
     mocks.linkResponses = [];
   });
@@ -140,5 +150,32 @@ describe("process journey curation storage", () => {
       systemen: ["HubSpot"],
       automation_ids: ["a", "b"],
     });
+  });
+
+  it("reuses an existing flow when a concept journey was already attached", async () => {
+    mocks.existingFlowRows = [{ flow_id: "flow-existing" }];
+    const { saveCuratedProcessJourney } = await import("@/lib/storage/processJourneyCuration");
+
+    const result = await saveCuratedProcessJourney({
+      kind: "concept",
+      title: "Bestaande procesreis",
+      description: "Nieuwe tekst",
+      automationIds: ["hs", "gl"],
+      systemen: ["HubSpot", "GitLab"],
+      transitions: [{ fromId: "hs", toId: "gl" }],
+    });
+
+    expect(result).toEqual({ flowId: "flow-existing", mode: "updated" });
+    expect(mocks.flowInserts).toEqual([]);
+    expect(mocks.flowUpdates[0]).toMatchObject({
+      naam: "Bestaande procesreis",
+      beschrijving: "Nieuwe tekst",
+      systemen: ["HubSpot", "GitLab"],
+      automation_ids: ["hs", "gl"],
+    });
+    expect(mocks.suggestionUpdates).toEqual([
+      { confirmed: true, rejected: false },
+      { flow_id: "flow-existing", confirmed: true, rejected: false },
+    ]);
   });
 });

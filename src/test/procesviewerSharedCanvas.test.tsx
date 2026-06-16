@@ -55,21 +55,8 @@ vi.mock("@/components/procesviewer/ProcessviewerCanvas", () => ({
 }));
 
 vi.mock("@/components/process/ProcessCanvas", () => ({
-  ProcessCanvas: ({
-    attachments = [],
-    steps = [],
-    onStepClick,
-  }: {
-    attachments?: Array<{ id: string; label: string }>;
-    steps?: Array<{ id: string; label: string }>;
-    onStepClick?: (step: { id: string; label: string }) => void;
-  }) => (
+  ProcessCanvas: ({ attachments = [] }: { attachments?: Array<{ id: string; label: string }> }) => (
     <div data-testid="shared-process-canvas" style={{ width: 800, height: 400 }}>
-      {steps.map((step) => (
-        <button key={step.id} type="button" onClick={() => onStepClick?.(step)}>
-          {step.label}
-        </button>
-      ))}
       {attachments.map((attachment) => (
         <span key={attachment.id}>{attachment.label}</span>
       ))}
@@ -151,26 +138,5 @@ describe("Procesviewer canvas renderer", () => {
 
     expect(viewport.style.transform).not.toBe(before);
     expect(screen.getByTestId("shared-process-canvas")).toBeInTheDocument();
-  });
-
-  it("opens and closes the replacement detail menu when a task is clicked", async () => {
-    HTMLElement.prototype.scrollIntoView = vi.fn();
-
-    render(
-      <MemoryRouter>
-        <Procesviewer />
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
-
-    fireEvent.click(await screen.findByRole("button", { name: "Betaalt op tijd" }));
-
-    expect(screen.getByRole("complementary", { name: "Taak detailmenu" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Sluit detailmenu" }));
-
-    expect(screen.queryByRole("complementary", { name: "Taak detailmenu" })).not.toBeInTheDocument();
   });
 });

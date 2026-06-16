@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
-import type { ProcessState, ProcessStep, Connection } from "@/data/processData";
+import type { ProcessState, ProcessStep, Connection, ConnectionRouteType, ConnectionWaypoint, ConnectionSide } from "@/data/processData";
 import { getLaneConfig, isPipelineStep, TEAM_ORDER } from "@/data/processData";
 import { BpmnToolbar } from "./BpmnToolbar";
 import { BpmnLegend } from "./BpmnLegend";
@@ -36,7 +36,10 @@ interface ProcessviewerCanvasProps {
   processState: ProcessState;
   onStepClick?: (stepId: string) => void;
   onAutoClick?: (autoId: string) => void;
+  onProcessStateChange?: (processState: ProcessState) => void;
 }
+
+interface Pt { x: number; y: number }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -98,19 +101,13 @@ function buildArrowPath(
   tx: number, ty: number,
 ): string {
   if (Math.abs(fy - ty) < 4) {
-    // horizontal
-    return `M ${fx} ${fy} L ${tx} ${ty}`;
+    return `M ${fx} ${fy} H ${tx}`;
   }
   if (Math.abs(fx - tx) < 4) {
-    // vertical
-    return `M ${fx} ${fy} L ${tx} ${ty}`;
+    return `M ${fx} ${fy} V ${ty}`;
   }
-  // orthogonal: go right from source midpoint, then down/up to target
   const midX = (fx + tx) / 2;
-  const r = 10;
-  const dy = ty > fy ? r : -r;
-  const dx = tx > fx ? r : -r;
-  return `M ${fx} ${fy} H ${midX - dx} Q ${midX} ${fy} ${midX} ${fy + dy} V ${ty - dy} Q ${midX} ${ty} ${midX + dx} ${ty} H ${tx}`;
+  return `M ${fx} ${fy} H ${midX} V ${ty} H ${tx}`;
 }
 
 // ── Node edge helpers ────────────────────────────────────────────────────────
@@ -137,6 +134,133 @@ function nodeTopY(step: ProcessStep, cy: number): number {
   return cy - STEP_H / 2;
 }
 
+const CONNECTION_SIDES: ConnectionSide[] = ["top", "right", "bottom", "left"];
+
+function connectionPoint(
+  step: ProcessStep,
+  side: ConnectionSide,
+  laneStarts: Record<string, number>,
+  colMap: Map<number, number>,
+): Pt {
+  const cx = stepCx(step, colMap);
+  const cy = stepCy(step, laneStarts);
+  if (side === "top") return { x: cx, y: nodeTopY(step, cy) };
+  if (side === "bottom") return { x: cx, y: nodeBottomY(step, cy) };
+  if (side === "left") return { x: nodeLeftX(step, colMap), y: cy };
+  return { x: nodeRightX(step, colMap), y: cy };
+}
+
+function defaultConnectionSide(step: ProcessStep, other: ProcessStep, role: "from" | "to"): ConnectionSide {
+  if (step.column < other.column) return "right";
+  if (step.column > other.column) return "left";
+  const stepY = stepRow(step);
+  const otherY = stepRow(other);
+  if (stepY < otherY) return "bottom";
+  if (stepY > otherY) return "top";
+  return role === "from" ? "right" : "left";
+}
+
+function inferSideFromWaypoint(
+  step: ProcessStep,
+  waypoint: ConnectionWaypoint | undefined,
+  laneStarts: Record<string, number>,
+  colMap: Map<number, number>,
+  fallback: ConnectionSide,
+): ConnectionSide {
+  if (!waypoint) return fallback;
+  let best = fallback;
+  let bestDistance = Infinity;
+  for (const side of CONNECTION_SIDES) {
+    const point = connectionPoint(step, side, laneStarts, colMap);
+    const distance = Math.hypot(waypoint.x - point.x, waypoint.y - point.y);
+    if (distance < bestDistance) {
+      best = side;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function firstRoutingAxis(sourceSide: ConnectionSide): "x" | "y" {
+  return sourceSide === "top" || sourceSide === "bottom" ? "y" : "x";
+}
+
+function pushPoint(points: Pt[], point: Pt) {
+  const previous = points[points.length - 1];
+  if (!previous || previous.x !== point.x || previous.y !== point.y) points.push(point);
+}
+
+function buildOrthogonalPoints(
+  start: Pt,
+  end: Pt,
+  waypoints: ConnectionWaypoint[],
+  firstAxis: "x" | "y",
+): Pt[] {
+  const points: Pt[] = [start];
+  let current = start;
+
+  for (const waypoint of waypoints) {
+    if (firstAxis === "x") {
+      pushPoint(points, { x: waypoint.x, y: current.y });
+      pushPoint(points, { x: waypoint.x, y: waypoint.y });
+    } else {
+      pushPoint(points, { x: current.x, y: waypoint.y });
+      pushPoint(points, { x: waypoint.x, y: waypoint.y });
+    }
+    current = points[points.length - 1];
+  }
+
+  current = points[points.length - 1];
+  if (firstAxis === "x") {
+    pushPoint(points, { x: current.x, y: end.y });
+    pushPoint(points, end);
+  } else {
+    pushPoint(points, { x: end.x, y: current.y });
+    pushPoint(points, end);
+  }
+
+  return points;
+}
+
+function buildPathFromPoints(points: Pt[]): string {
+  return points.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x} ${point.y}`;
+    const previous = points[index - 1];
+    if (point.y === previous.y) return `${path} H ${point.x}`;
+    if (point.x === previous.x) return `${path} V ${point.y}`;
+    return `${path} L ${point.x} ${point.y}`;
+  }, "");
+}
+
+function midpointFromPoints(points: Pt[]): Pt {
+  if (points.length === 0) return { x: 0, y: 0 };
+  return points[Math.floor(points.length / 2)];
+}
+
+function defaultWaypointForConnection(
+  from: ProcessStep,
+  to: ProcessStep,
+  laneStarts: Record<string, number>,
+  colMap: Map<number, number>,
+): ConnectionWaypoint {
+  const fy = stepCy(from, laneStarts);
+  const ty = stepCy(to, laneStarts);
+  const fromCx = stepCx(from, colMap);
+  const toCx = stepCx(to, colMap);
+
+  if (from.column === to.column) {
+    const down = fy < ty;
+    const startY = down ? nodeBottomY(from, fy) : nodeTopY(from, fy);
+    const endY = down ? nodeTopY(to, ty) : nodeBottomY(to, ty);
+    return { x: fromCx, y: (startY + endY) / 2 };
+  }
+
+  return {
+    x: (nodeRightX(from, colMap) + nodeLeftX(to, colMap)) / 2,
+    y: (fy + ty) / 2,
+  };
+}
+
 // ── Automation dot position ──────────────────────────────────────────────────
 function autoDotPos(
   from: ProcessStep,
@@ -155,7 +279,10 @@ function autoDotPos(
 }
 
 // ── Connection colour ────────────────────────────────────────────────────────
-function connColor(from: ProcessStep | undefined, to: ProcessStep | undefined): string {
+function connColor(from: ProcessStep | undefined, to: ProcessStep | undefined, routeType?: ConnectionRouteType): string {
+  if (routeType === "end") return COLOR_END;
+  if (routeType === "optional") return COLOR_OPTIONAL;
+  if (routeType === "main") return COLOR_MAIN;
   if (to?.type === "end" || to?.type === "terminate") return COLOR_END;
   if (from?.type === "decision") return COLOR_OPTIONAL;
   return COLOR_MAIN;
@@ -217,7 +344,7 @@ function laneHasStepsInRow(lane: string, row: number, steps: ProcessStep[]): boo
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
-export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: ProcessviewerCanvasProps): React.ReactNode {
+export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick, onProcessStateChange }: ProcessviewerCanvasProps): React.ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef       = useRef<SVGSVGElement>(null);
 
@@ -226,8 +353,13 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
   const [panY, setPanY]         = useState(24);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isAnimating, setIsAnimating]   = useState(false);
+  const [isDrawingConnection, setIsDrawingConnection] = useState(false);
+  const [selectedRouteType, setSelectedRouteType] = useState<ConnectionRouteType>("main");
+  const [draftConnection, setDraftConnection] = useState<{ fromStepId: string; waypoints: ConnectionWaypoint[] } | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
 
   const panRef = useRef<{ startX: number; startY: number; px: number; py: number } | null>(null);
+  const waypointDragRef = useRef<{ connectionId: string; waypointIndex: number } | null>(null);
 
   const { steps, connections, automations, customLanes, activeLanes } = processState;
 
@@ -332,8 +464,9 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
   // ── Pan handlers ──────────────────────────────────────────────────────────
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    if (isDrawingConnection) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, px: panX, py: panY };
-  }, [panX, panY]);
+  }, [isDrawingConnection, panX, panY]);
 
   useEffect(() => {
     function onMove(e: MouseEvent) {
@@ -361,6 +494,94 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
     };
   }, [panX, panY, zoom]);
 
+  const toggleDrawConnection = useCallback(() => {
+    setIsDrawingConnection((current) => {
+      if (current) setDraftConnection(null);
+      return !current;
+    });
+  }, []);
+
+  const completeManualConnection = useCallback((toStepId: string) => {
+    if (!draftConnection || draftConnection.fromStepId === toStepId || !onProcessStateChange) return;
+    const connection: Connection = {
+      id: `manual-${Date.now()}-${draftConnection.fromStepId}-${toStepId}`,
+      fromStepId: draftConnection.fromStepId,
+      toStepId,
+      manual: true,
+      routeType: selectedRouteType,
+      waypoints: draftConnection.waypoints,
+    };
+    onProcessStateChange({
+      ...processState,
+      connections: [...connections, connection],
+    });
+    setDraftConnection(null);
+  }, [connections, draftConnection, onProcessStateChange, processState, selectedRouteType]);
+
+  const handleStepActivate = useCallback((stepId: string) => {
+    if (!isDrawingConnection) {
+      onStepClick?.(stepId);
+      return;
+    }
+    if (!draftConnection) {
+      setDraftConnection({ fromStepId: stepId, waypoints: [] });
+      return;
+    }
+    completeManualConnection(stepId);
+  }, [completeManualConnection, draftConnection, isDrawingConnection, onStepClick]);
+
+  const handleSvgClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!isDrawingConnection || !draftConnection) return;
+    e.stopPropagation();
+    const point = clientToSvg(e.clientX, e.clientY);
+    setDraftConnection((current) => current
+      ? { ...current, waypoints: [...current.waypoints, point] }
+      : current,
+    );
+  }, [clientToSvg, draftConnection, isDrawingConnection]);
+
+  const updateConnectionWaypoint = useCallback((connectionId: string, waypointIndex: number, point: ConnectionWaypoint) => {
+    if (!onProcessStateChange) return;
+    onProcessStateChange({
+      ...processState,
+      connections: connections.map((connection) => {
+        if (connection.id !== connectionId) return connection;
+        const waypoints = [...(connection.waypoints ?? [])];
+        if (waypointIndex > waypoints.length) return connection;
+        waypoints[waypointIndex] = point;
+        return { ...connection, waypoints };
+      }),
+    });
+  }, [connections, onProcessStateChange, processState]);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const drag = waypointDragRef.current;
+      if (!drag) return;
+      updateConnectionWaypoint(
+        drag.connectionId,
+        drag.waypointIndex,
+        clientToSvg(e.clientX, e.clientY),
+      );
+    }
+    function onUp() {
+      waypointDragRef.current = null;
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [clientToSvg, updateConnectionWaypoint]);
+
+  const handleWaypointMouseDown = useCallback((connectionId: string, waypointIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    waypointDragRef.current = { connectionId, waypointIndex };
+    setSelectedConnectionId(connectionId);
+  }, []);
+
 
   const resetView = useCallback(() => {
     if (!containerRef.current) return;
@@ -377,7 +598,7 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
   }, [svgWidth, svgHeight]);
 
   // ── Cursor style ──────────────────────────────────────────────────────────
-  const cursor = panRef.current ? "grabbing" : "grab";
+  const cursor = isDrawingConnection ? "crosshair" : panRef.current ? "grabbing" : "grab";
 
   return (
     <div
@@ -407,9 +628,11 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
       >
         <svg
           ref={svgRef}
+          data-testid="processviewer-svg"
           width={svgWidth}
           height={svgHeight}
           style={{ overflow: "visible", display: "block" }}
+          onClick={handleSvgClick}
         >
           <defs>
             <ArrowMarkers />
@@ -436,11 +659,14 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
             return (
               <ConnectorLine
                 key={conn.id}
+                connection={conn}
                 from={from}
                 to={to}
                 laneStarts={laneStarts}
-                label={conn.label}
                 colMap={colMap}
+                selected={selectedConnectionId === conn.id}
+                onSelect={() => setSelectedConnectionId(conn.id)}
+                onWaypointMouseDown={handleWaypointMouseDown}
               />
             );
           })}
@@ -472,8 +698,14 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
                 step={step}
                 cx={cx}
                 cy={cy}
-                onMouseDown={onStepClick ? (e) => { e.stopPropagation(); } : undefined}
-                onClick={onStepClick ? () => onStepClick(step.id) : undefined}
+                selectedForConnection={draftConnection?.fromStepId === step.id}
+                onMouseDown={(e) => {
+                  if (isDrawingConnection || onStepClick) e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStepActivate(step.id);
+                }}
               />
             );
           })}
@@ -488,6 +720,10 @@ export function ProcessviewerCanvas({ processState, onStepClick, onAutoClick }: 
         onReset={resetView}
         onFullscreen={toggleFullscreen}
         isFullscreen={isFullscreen}
+        isDrawingConnection={isDrawingConnection}
+        selectedRouteType={selectedRouteType}
+        onToggleDrawConnection={onProcessStateChange ? toggleDrawConnection : undefined}
+        onRouteTypeChange={setSelectedRouteType}
       />
 
       <BpmnLegend lanes={legendLanes} />
@@ -587,17 +823,31 @@ function Lane({
 }
 
 function ConnectorLine({
-  from, to, laneStarts, label, colMap,
+  connection, from, to, laneStarts, colMap, selected, onSelect, onWaypointMouseDown,
 }: {
+  connection: Connection;
   from: ProcessStep;
   to: ProcessStep;
   laneStarts: Record<string, number>;
-  label?: string;
   colMap: Map<number, number>;
+  selected?: boolean;
+  onSelect?: () => void;
+  onWaypointMouseDown?: (connectionId: string, waypointIndex: number, e: React.MouseEvent) => void;
 }): React.ReactNode {
-  const color = connColor(from, to);
+  const color = connColor(from, to, connection.routeType);
   const markerId = color === COLOR_END ? "pvah-end" : color === COLOR_OPTIONAL ? "pvah-opt" : "pvah-main";
-  const dashed = from.type === "decision";
+  const dashed = connection.routeType === "optional" || (!connection.routeType && from.type === "decision");
+  const label = connection.label;
+  const waypoints = connection.waypoints?.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)) ?? [];
+  const handleWaypoints = selected && connection.manual
+    ? waypoints.length > 0
+      ? waypoints
+      : [defaultWaypointForConnection(from, to, laneStarts, colMap)]
+    : [];
+  const routeLabel =
+    connection.routeType === "end" ? "uitzondering/einde" :
+    connection.routeType === "optional" ? "correctie/optioneel" :
+    "hoofdroute";
 
   const fy = stepCy(from, laneStarts);
   const ty = stepCy(to,   laneStarts);
@@ -608,32 +858,76 @@ function ConnectorLine({
 
   let fx: number, tx: number, d: string, midX: number, midY: number;
   // Same column → straight vertical using node-type-aware exit/entry points
-  if (from.column === to.column) {
-    fx = fromCx; tx = toCx;
-    const down   = fy < ty;
-    const startY = down ? nodeBottomY(from, fy) : nodeTopY(from, fy);
-    const endY   = down ? nodeTopY(to, ty)      : nodeBottomY(to, ty);
-    d    = `M ${fx} ${startY} L ${tx} ${endY}`;
-    midX = fx;
-    midY = (startY + endY) / 2;
+  if (waypoints.length > 0) {
+    const first = waypoints[0];
+    const last = waypoints[waypoints.length - 1];
+    const sourceSide = connection.fromSide
+      ?? inferSideFromWaypoint(from, first, laneStarts, colMap, defaultConnectionSide(from, to, "from"));
+    const targetSide = connection.toSide
+      ?? inferSideFromWaypoint(to, last, laneStarts, colMap, defaultConnectionSide(to, from, "to"));
+    const start = connectionPoint(from, sourceSide, laneStarts, colMap);
+    const end = connectionPoint(to, targetSide, laneStarts, colMap);
+    const points = buildOrthogonalPoints(start, end, waypoints, firstRoutingAxis(sourceSide));
+    d = buildPathFromPoints(points);
+    fx = start.x;
+    tx = end.x;
+    const mid = midpointFromPoints(points);
+    midX = mid.x;
+    midY = mid.y;
+  } else if (from.column === to.column) {
+    const sourceSide = connection.fromSide ?? defaultConnectionSide(from, to, "from");
+    const targetSide = connection.toSide ?? defaultConnectionSide(to, from, "to");
+    const start = connectionPoint(from, sourceSide, laneStarts, colMap);
+    const end = connectionPoint(to, targetSide, laneStarts, colMap);
+    const points = buildOrthogonalPoints(start, end, [], firstRoutingAxis(sourceSide));
+    d = buildPathFromPoints(points);
+    fx = start.x;
+    tx = end.x;
+    const mid = midpointFromPoints(points);
+    midX = mid.x;
+    midY = mid.y;
   } else {
-    // Standard routing: exit right/left of source, enter left/right of target
-    fx = nodeRightX(from, colMap);
-    tx = nodeLeftX(to, colMap);
-    d = buildArrowPath(fx, fy, tx, ty);
-    midX = (fx + tx) / 2;
-    midY = (fy + ty) / 2;
+    const sourceSide = connection.fromSide ?? defaultConnectionSide(from, to, "from");
+    const targetSide = connection.toSide ?? defaultConnectionSide(to, from, "to");
+    const start = connectionPoint(from, sourceSide, laneStarts, colMap);
+    const end = connectionPoint(to, targetSide, laneStarts, colMap);
+    d = buildArrowPath(start.x, start.y, end.x, end.y);
+    fx = start.x;
+    tx = end.x;
+    midX = (start.x + end.x) / 2;
+    midY = (start.y + end.y) / 2;
   }
 
   return (
     <g>
       <path
+        aria-hidden="true"
+        d={d}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={12}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect?.();
+        }}
+        style={{ cursor: onSelect ? "pointer" : undefined }}
+      />
+      <path
+        aria-label={`${connection.manual ? "Handmatige " : ""}${routeLabel} route`}
         d={d}
         fill="none"
         stroke={color}
-        strokeWidth={1.5}
+        strokeWidth={selected ? 2.5 : 1.5}
         strokeDasharray={dashed ? "6 3" : undefined}
         markerEnd={`url(#${markerId})`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect?.();
+        }}
+        style={{
+          cursor: onSelect ? "pointer" : undefined,
+          filter: selected ? `drop-shadow(0 2px 5px ${color}55)` : undefined,
+        }}
       />
       {label && (
         <text
@@ -647,6 +941,29 @@ function ConnectorLine({
           {label}
         </text>
       )}
+      {handleWaypoints.map((point, index) => (
+        <g key={`${connection.id}-waypoint-${index}`}>
+          <circle
+            cx={point.x}
+            cy={point.y}
+            r={10}
+            fill="white"
+            stroke={color}
+            strokeWidth={1.5}
+          />
+          <circle
+            role="button"
+            aria-label={`Sleep knikpunt ${index + 1}`}
+            tabIndex={0}
+            cx={point.x}
+            cy={point.y}
+            r={5}
+            fill={color}
+            onMouseDown={(e) => onWaypointMouseDown?.(connection.id, index, e)}
+            style={{ cursor: "move" }}
+          />
+        </g>
+      ))}
     </g>
   );
 }
@@ -687,22 +1004,29 @@ function AutomationDot({ cx, cy, name, onClick }: { cx: number; cy: number; name
 }
 
 function BpmnNode({
-  step, cx, cy, ghost, onMouseDown, onClick,
+  step, cx, cy, ghost, selectedForConnection, onMouseDown, onClick,
 }: {
   step: ProcessStep;
   cx: number;
   cy: number;
   ghost?: boolean;
+  selectedForConnection?: boolean;
   onMouseDown?: (e: React.MouseEvent) => void;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
 }): React.ReactNode {
   const opacity = ghost ? 0.55 : 1;
   const clickable = !!(onMouseDown || onClick);
+  const [hovered, setHovered] = useState(false);
+  const nodeRoleProps = {
+    role: "button",
+    "aria-label": `Stap ${step.label}`,
+    tabIndex: 0,
+  };
 
   if (step.type === "start") {
     return (
-      <g opacity={opacity} onMouseDown={onMouseDown} onClick={onClick} style={{ cursor: clickable ? "pointer" : undefined }}>
-        <circle cx={cx} cy={cy} r={EVT_R} stroke="#16A34A" strokeWidth={2.5} fill="#F0FDF4" />
+      <g {...nodeRoleProps} opacity={opacity} onMouseDown={onMouseDown} onClick={onClick} style={{ cursor: clickable ? "pointer" : undefined }}>
+        <circle cx={cx} cy={cy} r={EVT_R} stroke={selectedForConnection ? "#0F172A" : "#16A34A"} strokeWidth={selectedForConnection ? 3.5 : 2.5} fill="#F0FDF4" />
         <circle cx={cx} cy={cy} r={5} fill="#16A34A" />
         <foreignObject x={cx - 40} y={cy + EVT_R + 4} width={80} height={24} style={{ pointerEvents: "none" }}>
           <div style={{ textAlign: "center", fontSize: "9px", fontWeight: "500", color: "#15803D", lineHeight: 1.2, overflow: "hidden", wordBreak: "break-word", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
@@ -715,8 +1039,8 @@ function BpmnNode({
 
   if (step.type === "end" || step.type === "terminate") {
     return (
-      <g opacity={opacity} onMouseDown={onMouseDown} onClick={onClick} style={{ cursor: clickable ? "pointer" : undefined }}>
-        <circle cx={cx} cy={cy} r={EVT_R} stroke="#DC2626" strokeWidth={3} fill="#FEF2F2" />
+      <g {...nodeRoleProps} opacity={opacity} onMouseDown={onMouseDown} onClick={onClick} style={{ cursor: clickable ? "pointer" : undefined }}>
+        <circle cx={cx} cy={cy} r={EVT_R} stroke={selectedForConnection ? "#0F172A" : "#DC2626"} strokeWidth={selectedForConnection ? 4 : 3} fill="#FEF2F2" />
         {step.type === "terminate" && <circle cx={cx} cy={cy} r={EVT_R * 0.5} fill="#DC2626" />}
         <foreignObject x={cx - 40} y={cy + EVT_R + 4} width={80} height={24} style={{ pointerEvents: "none" }}>
           <div style={{ textAlign: "center", fontSize: "9px", fontWeight: "500", color: "#DC2626", lineHeight: 1.2, overflow: "hidden", wordBreak: "break-word", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
@@ -730,11 +1054,11 @@ function BpmnNode({
   if (step.type === "decision" || step.type === "and") {
     const h = GATEWAY_SIZE;
     return (
-      <g opacity={opacity} onMouseDown={onMouseDown} onClick={onClick} style={{ cursor: clickable ? "pointer" : undefined }}>
+      <g {...nodeRoleProps} opacity={opacity} onMouseDown={onMouseDown} onClick={onClick} style={{ cursor: clickable ? "pointer" : undefined }}>
         <polygon
           points={`${cx},${cy - h} ${cx + h},${cy} ${cx},${cy + h} ${cx - h},${cy}`}
-          stroke="#3B82F6"
-          strokeWidth={1.5}
+          stroke={selectedForConnection ? "#0F172A" : "#3B82F6"}
+          strokeWidth={selectedForConnection ? 2.5 : 1.5}
           fill="#EFF6FF"
         />
         <line x1={cx - h * 0.5} y1={cy - h * 0.5} x2={cx + h * 0.5} y2={cy + h * 0.5} stroke="#3B82F6" strokeWidth={1.5} />
@@ -754,10 +1078,10 @@ function BpmnNode({
   const fill       = isOptional ? "#FFF7ED" : "#EFF6FF";
   const textColor  = isOptional ? "#C2410C" : "#1D4ED8";
   const dashArray  = isOptional ? "6 3" : undefined;
-  const [hovered, setHovered]   = useState(false);
 
   return (
     <g
+      {...nodeRoleProps}
       opacity={opacity}
       onMouseDown={onMouseDown}
       onClick={onClick}
@@ -771,8 +1095,8 @@ function BpmnNode({
         width={STEP_W}
         height={STEP_H}
         rx="7"
-        stroke={stroke}
-        strokeWidth={hovered ? 2 : 1.5}
+        stroke={selectedForConnection ? "#0F172A" : stroke}
+        strokeWidth={selectedForConnection ? 2.5 : hovered ? 2 : 1.5}
         strokeDasharray={dashArray}
         fill={fill}
         style={{ filter: hovered ? `drop-shadow(0 3px 8px ${stroke}44)` : undefined }}
@@ -836,4 +1160,3 @@ function BpmnNode({
     </g>
   );
 }
-

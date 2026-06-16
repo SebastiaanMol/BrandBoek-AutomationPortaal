@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   PlusCircle,
   List,
-  GitBranch,
   GitMerge,
   BarChart3,
   Menu,
@@ -35,6 +34,7 @@ const navGroups: NavGroup[] = [
     title: "Automations",
     items: [
       { title: "Automations", url: "/alle", icon: List },
+      { title: "Procesreis", url: "/flows", icon: GitMerge },
       { title: "Imports", url: "/imports", icon: Download },
     ],
   },
@@ -47,9 +47,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Analysis",
     items: [
-      { title: "Processes", url: "/processen", icon: GitBranch },
       { title: "Procesviewer", url: "/procesviewer", icon: Workflow },
-      { title: "Procesreis", url: "/flows", icon: GitMerge },
       { title: "Pipelines", url: "/pipelines", icon: Layers2 },
       { title: "Analysis", url: "/analyse", icon: BarChart3 },
     ],
@@ -224,7 +222,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
         <main className={`flex-1 w-full ${
           location.pathname === "/procesviewer" ||
-          location.pathname === "/processen" ||
           location.pathname === "/brandy" ||
           location.pathname === "/flows" ||
           location.pathname.startsWith("/flows/") ||

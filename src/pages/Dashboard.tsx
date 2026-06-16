@@ -165,7 +165,7 @@ export default function Dashboard() {
               label="Zonder koppeling"
               value={dashboard.withoutLinks.length}
               description="Automations die nog los staan."
-              to="/processen"
+              to="/procesviewer"
             />
           </div>
 
@@ -194,7 +194,7 @@ export default function Dashboard() {
             <QuickAction icon={Sparkles} label="Detecteer suggesties" to="/flows" />
             <QuickAction icon={GitBranch} label="Flow maken" to="/flows" />
             <QuickAction icon={Layers3} label="Pipelines beheren" to="/pipelines" />
-            <QuickAction icon={RefreshCw} label="Proces-canvas openen" to="/processen" />
+            <QuickAction icon={RefreshCw} label="Proces-canvas openen" to="/procesviewer" />
           </div>
         </div>
       </section>

@@ -88,11 +88,14 @@ describe("ProcessviewerDetailPanel", () => {
   it("renders a sticky task detail menu with a close button and overview", () => {
     const { onClose } = renderPanel();
 
-    expect(screen.getByRole("complementary", { name: "Taak detailmenu" })).toBeInTheDocument();
+    const detailMenu = screen.getByRole("complementary", { name: "Taak detailmenu" });
+    expect(detailMenu).toBeInTheDocument();
+    expect(detailMenu).toHaveClass("z-40");
     expect(screen.getByRole("heading", { name: "Betalingsregeling" })).toBeInTheDocument();
     expect(screen.getByText("Taak")).toBeInTheDocument();
     expect(screen.getByText("Escalatie")).toBeInTheDocument();
     expect(screen.getByText("Maak een betalingsregeling met de klant.")).toBeInTheDocument();
+    expect(screen.getByText("Sluiten")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Sluit detailmenu" }));
 

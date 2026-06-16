@@ -13,7 +13,6 @@ import Analyse from "./pages/Analyse";
 import BewerkAutomatisering from "./pages/BewerkAutomatisering";
 import AuthPage from "./pages/AuthPage";
 import Instellingen from "./pages/Instellingen";
-import Processen from "./pages/Processen";
 import Imports from "./pages/Imports";
 import Systems from "./pages/Systems";
 import Owners from "./pages/Owners";
@@ -56,7 +55,7 @@ function ProtectedRoutes() {
         <Route path="/analyse" element={<Analyse />} />
         <Route path="/gitlab-endpoint-check" element={<GitLabEndpointCheck />} />
         <Route path="/instellingen" element={<Instellingen />} />
-        <Route path="/processen" element={<Processen />} />
+        <Route path="/processen" element={<Navigate to="/procesviewer" replace />} />
         <Route path="/procesviewer" element={<Procesviewer />} />
         <Route path="/imports" element={<Imports />} />
         <Route path="/systemen-eigenaren" element={<SystemenEnEigenaren />} />

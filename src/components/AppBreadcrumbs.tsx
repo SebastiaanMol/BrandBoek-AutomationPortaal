@@ -88,7 +88,6 @@ function buildAppBreadcrumbs(pathname: string, searchParams: URLSearchParams): A
     { label: "Pipeline detail" },
   );
 
-  if (pathname === "/processen") return withDashboard({ label: "Processes" });
   if (pathname === "/procesviewer") return withDashboard({ label: "Procesviewer" });
   if (pathname === "/analyse") return withDashboard({ label: "Analysis" });
   if (pathname === "/gitlab-endpoint-check") return withDashboard(

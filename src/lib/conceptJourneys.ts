@@ -24,7 +24,7 @@ export interface ConceptJourney {
 
 export function buildConceptJourneys(suggesties: FlowSuggestie[]): ConceptJourney[] {
   const webhookSuggestions = preferSpecificEndpointSuggestions(
-    suggesties.filter((suggestie) => suggestie.zekerheid === "webhook" && !suggestie.rejected),
+    suggesties.filter((suggestie) => suggestie.zekerheid === "webhook" && !suggestie.confirmed && !suggestie.rejected),
   );
   const components = buildWebhookComponents(webhookSuggestions);
   const journeys: ConceptJourney[] = [];

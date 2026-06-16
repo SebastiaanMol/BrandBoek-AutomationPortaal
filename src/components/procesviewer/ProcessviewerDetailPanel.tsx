@@ -238,7 +238,7 @@ function Panel({
     <aside
       role="complementary"
       aria-label={`${eyebrow} detailmenu`}
-      className="absolute top-0 right-0 z-20 h-full w-[min(420px,calc(100vw-24px))] overflow-y-auto border-l border-slate-200 bg-white shadow-lg"
+      className="absolute top-0 right-0 z-40 h-full w-[min(420px,calc(100vw-24px))] overflow-y-auto border-l border-slate-200 bg-white shadow-lg"
       style={{
         maxHeight: "100%",
         animation: "slideInRight 220ms cubic-bezier(0.4,0,0.2,1)",
@@ -251,14 +251,15 @@ function Panel({
           to   { transform: translateX(0);    opacity: 1; }
         }
       `}</style>
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{eyebrow} detailmenu</p>
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+        <p className="min-w-0 text-[10px] font-bold uppercase tracking-wider text-slate-400">{eyebrow} detailmenu</p>
         <button
           aria-label="Sluit detailmenu"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
         >
           <X className="h-4 w-4" />
+          <span>Sluiten</span>
         </button>
       </div>
       <div className="px-5 py-5">{children}</div>

@@ -4,7 +4,7 @@
  * link presence tests are it.todo stubs (non-blocking for Wave 1).
  *
  * Requirements covered:
- *   LINK-01: link to /processen in detail panel          (it.todo — DOM)
+ *   LINK-01: link to /procesviewer in detail panel       (covered in processNavigationCleanup.test.tsx)
  *   LINK-02: system badges link to /systems?system=X     (it.todo — DOM)
  *   LINK-03: owner links to /owners?owner=X              (it.todo — DOM)
  *   LINK-04: deriveRelated pure function                 (full assertions)
@@ -89,11 +89,6 @@ describe("deriveRelated", () => {
     const result = deriveRelated([current, other], current);
     expect(result).toHaveLength(0);
   });
-});
-
-// LINK-01: canvas link
-describe("LINK-01: canvas link", () => {
-  it.todo("panel renders a Link to /processen when fullData is provided");
 });
 
 // LINK-02: system badge links

@@ -121,7 +121,7 @@ export function AutomationDetailPanel({
         {/* LINK-01: View on canvas */}
         {fullData && (
           <Link
-            to="/processen"
+            to="/procesviewer"
             className="text-xs text-primary flex items-center gap-1 hover:underline"
           >
             <ExternalLink className="h-3 w-3" />

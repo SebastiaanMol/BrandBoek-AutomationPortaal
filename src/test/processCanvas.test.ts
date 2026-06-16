@@ -7,19 +7,16 @@
  * PROC-03: autoLinks merge – the ref-pattern fix (Plan 02 must make these pass)
  * PROC-04: Automatisering field mappings (trigger, stappen, systemen, owner)
  *
- * NOTE: toCanvasAutomation and FASE_TO_TEAM are NOT exported from Processen.tsx
- * (React component side effects prevent direct import in unit tests).
- * The pure logic is duplicated here for testability — this is intentional.
- * Extracting to a shared module is a refactor deferred beyond Phase 1 scope.
+ * NOTE: this file keeps pure process-canvas mapping behavior isolated from React.
+ * The old Processen page wrapper was removed; the shared canvas/editor behavior
+ * now lives in the process components and Procesviewer.
  */
 
 import { describe, it, expect } from "vitest";
 import type { Automation, TeamKey, ProcessState } from "@/data/processData";
 import type { Automatisering, KlantFase, Systeem } from "@/lib/types";
 
-// ── Duplicated pure logic from src/pages/Processen.tsx ──────────────────────
-// Copy of FASE_TO_TEAM and toCanvasAutomation for testability.
-// Keep in sync with Processen.tsx if the source logic ever changes.
+// ── Duplicated pure mapping logic for testability ───────────────────────────
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
   Marketing:   "marketing",
@@ -74,8 +71,7 @@ function makeProcessState(automations: Automation[] = []): ProcessState {
   };
 }
 
-// ── Inline attach/detach logic from src/pages/Processen.tsx ─────────────────
-// Mirrors handleAttach and handleDetach without React/toast side effects.
+// ── Inline attach/detach logic without React/toast side effects ─────────────
 
 function applyAttach(
   state: ProcessState,

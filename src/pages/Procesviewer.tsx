@@ -147,7 +147,6 @@ export default function Procesviewer(): React.ReactNode {
           <div className="flex items-center gap-1">
             <input
               ref={renameInputRef}
-              aria-label="Pipelinenaam"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={handleRenameKeyDown}
@@ -173,31 +172,18 @@ export default function Procesviewer(): React.ReactNode {
           </div>
         ) : selectedPipeline ? (
           /* Selected: name text (click to rename if custom) + chevron to switch */
-          <div className={`flex items-center rounded-md border border-input bg-background text-sm ${mode === "edit" ? "opacity-60" : ""}`}>
-            {isCustomPipeline ? (
-              <button
-                onClick={startRename}
-                disabled={mode === "edit"}
-                className="h-8 max-w-[180px] truncate px-3 text-left leading-none text-foreground hover:text-foreground cursor-text disabled:cursor-not-allowed disabled:text-muted-foreground"
-                title="Klik om naam te wijzigen"
-              >
-                {selectedPipeline.naam}
-              </button>
-            ) : (
-              <span
-                className="flex h-8 max-w-[180px] items-center truncate px-3 leading-none text-foreground"
-                title={selectedPipeline.naam}
-              >
-                {selectedPipeline.naam}
-              </span>
-            )}
+          <div className={`flex items-center rounded-md border border-input bg-background text-sm ${mode === "edit" ? "opacity-60 pointer-events-none" : ""}`}>
+            <button
+              onClick={isCustomPipeline ? startRename : undefined}
+              className={`h-8 max-w-[180px] truncate px-3 text-left leading-none ${isCustomPipeline ? "hover:text-foreground cursor-text" : "cursor-default"} text-foreground`}
+              title={isCustomPipeline ? "Klik om naam te wijzigen" : selectedPipeline.naam}
+              tabIndex={isCustomPipeline ? 0 : -1}
+            >
+              {selectedPipeline.naam}
+            </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
-                  aria-label="Pipeline kiezen"
-                  disabled={mode === "edit"}
-                  className="flex h-8 w-7 items-center justify-center border-l border-input text-muted-foreground hover:bg-secondary hover:text-foreground rounded-r-md disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-                >
+                <button className="flex h-8 w-7 items-center justify-center border-l border-input text-muted-foreground hover:bg-secondary hover:text-foreground rounded-r-md">
                   <ChevronDown className="h-3.5 w-3.5" />
                 </button>
               </DropdownMenuTrigger>

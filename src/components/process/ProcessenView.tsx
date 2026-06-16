@@ -82,7 +82,7 @@ export function ProcessenView({
       {/* Canvas + right panel */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex-1 min-w-0 overflow-auto p-4">
-          {isLoading ? (
+          {isLoading && !canvasState ? (
             <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
               Proceskaart laden…
             </div>
@@ -101,6 +101,9 @@ export function ProcessenView({
                   steps={canvasState.steps}
                   connections={canvasState.connections}
                   automations={canvasState.automations}
+                  attachments={canvasState.attachments ?? []}
+                  activeLanes={canvasState.activeLanes}
+                  customLanes={canvasState.customLanes}
                   readOnly
                   onStepClick={handleStepClick}
                   onAutomationClick={handleAutoClick}

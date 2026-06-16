@@ -153,8 +153,9 @@ describe("ProcessJourneyReview page", () => {
     );
 
     screen.getByRole("heading", { name: "Procesreis Review Cockpit" });
-    screen.getByText("2 review-items");
+    screen.getByText("1 review-item");
     screen.getByRole("button", { name: /Create new deal/i });
+    expect(screen.queryByText("Bestaande reis")).not.toBeInTheDocument();
     screen.getByRole("heading", { name: "Webhook-bewijs" });
     screen.getByText("100% webhook-match");
     screen.getByText("/operations/hubspot/create_new_deal");
@@ -187,7 +188,8 @@ describe("ProcessJourneyReview page", () => {
       transitions: [{ fromId: "hs-create", toId: "gl-create" }],
     }));
 
-    await screen.findByText("Bestaande reis");
+    await screen.findByText("Opgeslagen");
+    expect(screen.queryByText("Bestaande reis")).not.toBeInTheDocument();
   });
 
   it("adds a review item from an edge and resolves existing items", async () => {

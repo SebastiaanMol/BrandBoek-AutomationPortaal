@@ -281,4 +281,17 @@ describe("buildConceptJourneys", () => {
 
     expect(journeys).toEqual([]);
   });
+
+  it("ignores already confirmed webhook suggestions because those are approved process journeys", () => {
+    const journeys = buildConceptJourneys([
+      makeSuggestie("typeform", "gitlab", {
+        fromNaam: "Typeform Webhook Verwerking",
+        toNaam: "Approved endpoint",
+        redenering: "Webhook-match: POST /typeform/webhook",
+        confirmed: true,
+      }),
+    ]);
+
+    expect(journeys).toEqual([]);
+  });
 });

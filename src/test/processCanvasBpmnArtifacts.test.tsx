@@ -1,0 +1,443 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { ProcessCanvas } from "@/components/process/ProcessCanvas";
+import type { Connection, ProcessAttachment, ProcessStep } from "@/data/processData";
+
+const steps: ProcessStep[] = [
+  { id: "intake", type: "task", label: "Intake", team: "sales", column: 0 },
+  { id: "controle", type: "task", label: "Controle", team: "sales", column: 1 },
+];
+
+const connections: Connection[] = [
+  { id: "route-1", fromStepId: "intake", toStepId: "controle" },
+];
+
+const addControlSteps: ProcessStep[] = [
+  { id: "step-1", type: "task", label: "Stap 1", team: "sales", column: 0 },
+  { id: "step-2", type: "task", label: "Stap 2", team: "sales", column: 1 },
+];
+
+const addControlConnections: Connection[] = [
+  { id: "conn-1", fromStepId: "step-1", toStepId: "step-2" },
+];
+
+function mockSvgRect(container: HTMLElement) {
+  const svg = container.querySelector("svg") as SVGSVGElement;
+  const width = Number(svg.getAttribute("width")) || 900;
+  const height = Number(svg.getAttribute("height")) || 500;
+  vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: width,
+    bottom: height,
+    width,
+    height,
+    toJSON: () => ({}),
+  });
+}
+
+describe("ProcessCanvas BPMN attachments", () => {
+  it("renders linked BPMN artifacts for step and connection targets", () => {
+    const attachments: ProcessAttachment[] = [
+      {
+        id: "note-1",
+        type: "annotation",
+        label: "Controle op volledigheid",
+        attachedTo: { kind: "step", id: "intake" },
+      },
+      {
+        id: "document-1",
+        type: "dataObject",
+        label: "Aanvraagformulier",
+        attachedTo: { kind: "connection", id: "route-1" },
+      },
+      {
+        id: "source-1",
+        type: "dataStore",
+        label: "CRM",
+        attachedTo: { kind: "step", id: "controle" },
+      },
+    ];
+
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={attachments}
+      />,
+    );
+
+    expect(screen.getByLabelText("BPMN notitie Controle op volledigheid")).toBeInTheDocument();
+    expect(screen.getByLabelText("BPMN data/document Aanvraagformulier")).toBeInTheDocument();
+    expect(screen.getByLabelText("BPMN databron CRM")).toBeInTheDocument();
+  });
+
+  it("keeps connection artifacts clickable above route hit paths", () => {
+    const onAttachmentClick = vi.fn();
+    const attachment: ProcessAttachment = {
+      id: "document-over-route",
+      type: "dataObject",
+      label: "Route dossier",
+      attachedTo: { kind: "connection", id: "route-1" },
+      offset: { x: -43, y: -22 },
+    };
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        onAttachmentClick={onAttachmentClick}
+      />,
+    );
+
+    const routeHitPath = container.querySelector('path[stroke="transparent"][stroke-width="22"]');
+    const artifact = screen.getByLabelText("BPMN data/document Route dossier");
+
+    expect(routeHitPath).toBeTruthy();
+    expect(routeHitPath!.compareDocumentPosition(artifact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(artifact);
+
+    expect(onAttachmentClick).toHaveBeenCalledWith(attachment);
+  });
+
+  it("edits annotation text from the artifact editor", () => {
+    const onUpdateAttachment = vi.fn();
+    const attachment: ProcessAttachment = {
+      id: "note-editable",
+      type: "annotation",
+      label: "Notitie",
+      description: "Oude tekst",
+      attachedTo: { kind: "connection", id: "route-1" },
+      offset: { x: -43, y: -22 },
+    };
+
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        onUpdateAttachment={onUpdateAttachment}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("BPMN notitie Notitie"));
+    fireEvent.change(screen.getByLabelText("Notitie tekst"), {
+      target: { value: "Nieuwe tekst voor deze notitie" },
+    });
+
+    expect(onUpdateAttachment).toHaveBeenCalledWith("note-editable", {
+      description: "Nieuwe tekst voor deze notitie",
+    });
+  });
+
+  it("closes the artifact editor with a close button and when clicking the canvas background", () => {
+    const onUpdateAttachment = vi.fn();
+    const attachment: ProcessAttachment = {
+      id: "note-closable",
+      type: "annotation",
+      label: "Sluitbare notitie",
+      attachedTo: { kind: "connection", id: "route-1" },
+      offset: { x: -43, y: -22 },
+    };
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        onUpdateAttachment={onUpdateAttachment}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("BPMN notitie Sluitbare notitie"));
+    expect(screen.getByLabelText("Notitie tekst")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Notitie editor sluiten"));
+    expect(screen.queryByLabelText("Notitie tekst")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("BPMN notitie Sluitbare notitie"));
+    expect(screen.getByLabelText("Notitie tekst")).toBeInTheDocument();
+
+    fireEvent.click(container.querySelector("svg")!);
+    expect(screen.queryByLabelText("Notitie tekst")).not.toBeInTheDocument();
+  });
+
+  it("drags an artifact as a relative offset in edit mode", () => {
+    const onMoveAttachment = vi.fn();
+    const attachment: ProcessAttachment = {
+      id: "note-draggable",
+      type: "annotation",
+      label: "Sleepnotitie",
+      attachedTo: { kind: "step", id: "intake" },
+      offset: { x: 30, y: -10 },
+    };
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        onMoveAttachment={onMoveAttachment}
+      />,
+    );
+    mockSvgRect(container);
+
+    fireEvent.mouseDown(screen.getByLabelText("BPMN notitie Sleepnotitie"), {
+      button: 0,
+      clientX: 120,
+      clientY: 40,
+    });
+    fireEvent.mouseMove(window, {
+      clientX: 145,
+      clientY: 55,
+    });
+    fireEvent.mouseUp(window);
+
+    expect(onMoveAttachment).toHaveBeenCalledWith("note-draggable", {
+      x: expect.any(Number),
+      y: expect.any(Number),
+    });
+    expect(onMoveAttachment.mock.calls.at(-1)?.[1]).toEqual({ x: 55, y: 5 });
+  });
+
+  it("does not drag artifacts on a read-only canvas", () => {
+    const onMoveAttachment = vi.fn();
+    const attachment: ProcessAttachment = {
+      id: "readonly-note",
+      type: "annotation",
+      label: "Alleen lezen",
+      attachedTo: { kind: "step", id: "intake" },
+      offset: { x: 30, y: -10 },
+    };
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        readOnly
+        onMoveAttachment={onMoveAttachment}
+      />,
+    );
+    mockSvgRect(container);
+
+    fireEvent.mouseDown(screen.getByLabelText("BPMN notitie Alleen lezen"), {
+      button: 0,
+      clientX: 120,
+      clientY: 40,
+    });
+    fireEvent.mouseMove(window, {
+      clientX: 145,
+      clientY: 55,
+    });
+    fireEvent.mouseUp(window);
+
+    expect(onMoveAttachment).not.toHaveBeenCalled();
+  });
+
+  it("deletes an artifact from the attachment context menu in edit mode", () => {
+    const onDeleteAttachment = vi.fn();
+    const attachment: ProcessAttachment = {
+      id: "note-delete",
+      type: "annotation",
+      label: "Verwijderbare notitie",
+      attachedTo: { kind: "step", id: "intake" },
+      offset: { x: 30, y: -10 },
+    };
+
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        onDeleteAttachment={onDeleteAttachment}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByLabelText("BPMN notitie Verwijderbare notitie"), {
+      clientX: 140,
+      clientY: 50,
+    });
+    fireEvent.click(screen.getByText("Artifact verwijderen"));
+
+    expect(onDeleteAttachment).toHaveBeenCalledWith("note-delete");
+  });
+
+  it("does not expose artifact delete controls on a read-only canvas", () => {
+    const onDeleteAttachment = vi.fn();
+    const attachment: ProcessAttachment = {
+      id: "readonly-delete-note",
+      type: "annotation",
+      label: "Readonly delete",
+      attachedTo: { kind: "step", id: "intake" },
+    };
+
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        readOnly
+        onDeleteAttachment={onDeleteAttachment}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByLabelText("BPMN notitie Readonly delete"), {
+      clientX: 140,
+      clientY: 50,
+    });
+
+    expect(screen.queryByText("Artifact verwijderen")).not.toBeInTheDocument();
+    expect(onDeleteAttachment).not.toHaveBeenCalled();
+  });
+
+  it("does not expose route edit or delete controls on a read-only canvas", () => {
+    const onUpdateConnectionLabel = vi.fn();
+    const onDeleteConnection = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={[{ ...connections[0], label: "Route label" }]}
+        automations={[]}
+        activeLanes={["sales"]}
+        readOnly
+        onUpdateConnectionLabel={onUpdateConnectionLabel}
+        onDeleteConnection={onDeleteConnection}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Hoofdproces route"));
+    fireEvent.click(container.querySelector('path[stroke="transparent"][stroke-width="22"]')!);
+    fireEvent.contextMenu(container.querySelector('path[stroke="transparent"][stroke-width="22"]')!, {
+      clientX: 300,
+      clientY: 44,
+    });
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verbinding verwijderen")).not.toBeInTheDocument();
+    expect(onUpdateConnectionLabel).not.toHaveBeenCalled();
+    expect(onDeleteConnection).not.toHaveBeenCalled();
+  });
+
+  it("does not show add attachment controls when selecting a step", () => {
+    const onAddAttachment = vi.fn();
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={addControlSteps}
+        connections={addControlConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        onAddAttachment={onAddAttachment}
+      />,
+    );
+
+    fireEvent.click(container.querySelector('rect[width="122"][height="42"]')!);
+
+    expect(screen.queryByLabelText("Notitie toevoegen")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Data/document toevoegen")).not.toBeInTheDocument();
+    expect(onAddAttachment).not.toHaveBeenCalled();
+  });
+
+  it("shows add attachment controls only from the connection context menu", () => {
+    const onAddAttachment = vi.fn();
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={addControlSteps}
+        connections={addControlConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        onAddAttachment={onAddAttachment}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Hoofdproces route"));
+    expect(screen.queryByLabelText("Data/document toevoegen")).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(container.querySelector('path[stroke="transparent"][stroke-width="22"]')!, {
+      clientX: 280,
+      clientY: 44,
+    });
+
+    const svg = container.querySelector("svg")!;
+    fireEvent.mouseDown(screen.getByLabelText("Data/document toevoegen"), {
+      button: 0,
+      clientX: 240,
+      clientY: 44,
+    });
+    fireEvent.click(screen.getByLabelText("Data/document toevoegen"));
+
+    expect(svg).toHaveStyle({ cursor: "grab" });
+    expect(onAddAttachment).toHaveBeenCalledWith("dataObject", { kind: "connection", id: "conn-1" });
+  });
+
+  it("adds an annotation attachment from the connection context menu", () => {
+    const onAddAttachment = vi.fn();
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={addControlSteps}
+        connections={addControlConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        onAddAttachment={onAddAttachment}
+      />,
+    );
+
+    fireEvent.contextMenu(container.querySelector('path[stroke="transparent"][stroke-width="22"]')!, {
+      clientX: 280,
+      clientY: 44,
+    });
+    fireEvent.click(screen.getByLabelText("Notitie toevoegen"));
+
+    expect(onAddAttachment).toHaveBeenCalledWith("annotation", { kind: "connection", id: "conn-1" });
+  });
+
+  it("does not show add attachment controls on a read-only canvas with artifacts", () => {
+    const attachment: ProcessAttachment = {
+      id: "readonly-document",
+      type: "dataObject",
+      label: "Readonly document",
+      attachedTo: { kind: "connection", id: "conn-1" },
+    };
+
+    render(
+      <ProcessCanvas
+        steps={addControlSteps}
+        connections={addControlConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        attachments={[attachment]}
+        readOnly
+        onAddAttachment={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Hoofdproces route"));
+
+    expect(screen.queryByLabelText("Notitie toevoegen")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Data/document toevoegen")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Databron toevoegen")).not.toBeInTheDocument();
+  });
+});

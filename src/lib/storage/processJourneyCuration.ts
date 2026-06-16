@@ -32,6 +32,15 @@ export async function saveCuratedProcessJourney(
     return { flowId: input.flowId, mode: "updated" };
   }
 
+  const existingFlowId = await findExistingFlowIdForTransitions(input.transitions);
+  if (existingFlowId) {
+    await updateExistingFlow({ ...input, flowId: existingFlowId });
+    await confirmConceptTransitions(input.transitions);
+    await upsertWebhookAutomationLinks(input.transitions);
+    await attachConceptTransitionsToFlow(input.transitions, existingFlowId);
+    return { flowId: existingFlowId, mode: "updated" };
+  }
+
   const flowId = await createFlow(input);
   await confirmConceptTransitions(input.transitions);
   await upsertWebhookAutomationLinks(input.transitions);
@@ -68,6 +77,28 @@ async function updateExistingFlow(input: SaveCuratedProcessJourneyInput): Promis
     .eq("id", input.flowId);
 
   if (error) throw error;
+}
+
+async function findExistingFlowIdForTransitions(
+  transitions: CuratedProcessJourneyTransitionInput[],
+): Promise<string | null> {
+  for (const transition of transitions) {
+    const { data, error } = await supabase
+      .from("automatisering_ai_flows")
+      .select("flow_id")
+      .eq("from_id", transition.fromId)
+      .eq("to_id", transition.toId)
+      .gte("confidence", 1)
+      .ilike("reasoning", "Webhook-match:%")
+      .not("flow_id", "is", null)
+      .limit(1);
+
+    if (error) throw error;
+    const row = (data ?? [])[0] as { flow_id?: string | null } | undefined;
+    if (row?.flow_id) return row.flow_id;
+  }
+
+  return null;
 }
 
 async function confirmConceptTransitions(transitions: CuratedProcessJourneyTransitionInput[]): Promise<void> {

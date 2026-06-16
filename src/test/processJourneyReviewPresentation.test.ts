@@ -212,7 +212,7 @@ describe("process journey review presentation", () => {
     expect(presentation.selectedJourney?.markdown).toContain("## Bewijs");
   });
 
-  it("puts concept journeys before already approved flows and prepares an update review item", () => {
+  it("shows only open concept journeys and excludes already approved flows", () => {
     const automations = [
       automation({ id: "hs-concept", naam: "Concept HubSpot", source: "hubspot", systemen: ["HubSpot"] }),
       automation({
@@ -260,32 +260,78 @@ describe("process journey review presentation", () => {
       selectedJourneyId: "flow:flow-approved",
     });
 
-    expect(presentation.queueRows.map((row) => row.kind)).toEqual(["concept", "flow"]);
+    expect(presentation.queueRows.map((row) => row.kind)).toEqual(["concept"]);
     expect(presentation.queueRows[0]).toMatchObject({
       title: expect.stringContaining("Concept HubSpot"),
       statusLabel: "Nog te doen",
     });
-    expect(presentation.queueRows[1]).toMatchObject({
-      id: "flow:flow-approved",
-      kind: "flow",
-      title: "Bestaande procesreis",
-      statusLabel: "Goedgekeurd",
-    });
-    expect(presentation.selectedJourney).toMatchObject({
-      id: "flow:flow-approved",
-      kind: "flow",
-      flowId: "flow-approved",
-      currentTitle: "Bestaande procesreis",
-      currentDescription: "Huidige beschrijving.",
-      saveLabel: "Bijwerken en volgende",
-    });
-    expect(presentation.selectedJourney?.edges).toMatchObject([
+    expect(presentation.selectedJourney?.kind).toBe("concept");
+  });
+
+  it("does not show duplicate already approved flow rows in the review queue", () => {
+    const automations = [
+      automation({ id: "hs-approved", naam: "Approved HubSpot", source: "hubspot", webhookPaths: ["/approved"] }),
+      automation({
+        id: "gl-approved",
+        naam: "Approved endpoint (POST /approved)",
+        source: "gitlab",
+        gitlabEndpoint: { method: "POST", endpoint: "/approved", handler: "approved" },
+      }),
+    ];
+    const flows: Flow[] = [
       {
-        fromId: "hs-approved",
-        toId: "gl-approved",
-        evidenceLabel: "100% webhook-match",
-        normalizedPath: "/approved",
+        id: "flow-newest",
+        naam: "Bestaande procesreis",
+        beschrijving: "Nieuwste duplicate.",
+        systemen: ["HubSpot", "GitLab"],
+        automationIds: ["hs-approved", "gl-approved"],
+        createdAt: "2026-05-30T00:00:00.000Z",
+        updatedAt: "2026-05-30T00:00:00.000Z",
       },
-    ]);
+      {
+        id: "flow-older",
+        naam: "Bestaande procesreis kopie",
+        beschrijving: "Oudere duplicate.",
+        systemen: ["HubSpot", "GitLab"],
+        automationIds: ["hs-approved", "gl-approved"],
+        createdAt: "2026-05-29T00:00:00.000Z",
+        updatedAt: "2026-05-29T00:00:00.000Z",
+      },
+    ];
+
+    const presentation = getProcessJourneyReviewPresentation({
+      automations,
+      flows,
+      confirmedLinks: [{ sourceId: "hs-approved", targetId: "gl-approved", matchType: "webhook" }],
+      suggestions: [],
+      reviewItems: [],
+    });
+
+    expect(presentation.queueRows).toEqual([]);
+    expect(presentation.selectedJourney).toBeNull();
+  });
+
+  it("excludes confirmed concept suggestions from the review queue", () => {
+    const presentation = getProcessJourneyReviewPresentation({
+      automations: [
+        automation({ id: "typeform", naam: "Typeform Webhook Verwerking", source: "typeform" }),
+        automation({ id: "gitlab", naam: "Approved endpoint", source: "gitlab" }),
+      ],
+      suggestions: [
+        suggestion({
+          fromId: "typeform",
+          toId: "gitlab",
+          fromNaam: "Typeform Webhook Verwerking",
+          toNaam: "Approved endpoint",
+          fromSource: "typeform",
+          redenering: "Webhook-match: POST /typeform/webhook",
+          confirmed: true,
+        }),
+      ],
+      reviewItems: [],
+    });
+
+    expect(presentation.queueRows).toEqual([]);
+    expect(presentation.selectedJourney).toBeNull();
   });
 });

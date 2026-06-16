@@ -1,4 +1,5 @@
-import type { CustomLane, ProcessStep, Connection } from "@/data/processData";
+import type { CustomLane, ProcessStep, Connection, ProcessAttachment } from "@/data/processData";
+import { buildProcessStateFromSaved, buildSavedProcessState } from "@/lib/processStateMapping";
 import type { SavedProcessState } from "@/lib/storage/processState";
 
 export interface ProcessBackup {
@@ -13,6 +14,7 @@ export interface ProcessBackup {
     activeLanes?: string[];
     customLanes?: unknown[];
     flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
+    attachments?: unknown[];
   };
 }
 
@@ -26,6 +28,7 @@ export function exportProcessBackup(
     activeLanes: string[];
     customLanes: CustomLane[];
     flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
+    attachments?: ProcessAttachment[];
   },
 ): void {
   const backup: ProcessBackup = {
@@ -40,6 +43,7 @@ export function exportProcessBackup(
       activeLanes: state.activeLanes,
       customLanes: state.customLanes,
       flowLinks:   state.flowLinks,
+      attachments: state.attachments ?? [],
     },
   };
 
@@ -93,12 +97,24 @@ export async function importProcessBackup(file: File): Promise<SavedProcessState
     }
   }
 
-  return {
+  const imported: SavedProcessState = {
     steps:       s.steps,
     connections: s.connections,
     autoLinks:   s.autoLinks as Record<string, { fromStepId: string; toStepId: string }>,
     parkedSteps: s.parkedSteps,
     activeLanes: Array.isArray(s.activeLanes) ? (s.activeLanes as string[]) : undefined,
     customLanes: Array.isArray(s.customLanes) ? s.customLanes : undefined,
+    flowLinks: typeof s.flowLinks === "object" && s.flowLinks !== null && !Array.isArray(s.flowLinks)
+      ? (s.flowLinks as Record<string, { fromStepId: string; toStepId: string }>)
+      : {},
+    attachments: Array.isArray(s.attachments) ? s.attachments : [],
   };
+
+  const normalizedState = buildProcessStateFromSaved(imported, []);
+  return buildSavedProcessState(
+    normalizedState,
+    imported.parkedSteps as ProcessStep[],
+    imported.activeLanes ?? [],
+    (imported.customLanes ?? []) as CustomLane[],
+  );
 }

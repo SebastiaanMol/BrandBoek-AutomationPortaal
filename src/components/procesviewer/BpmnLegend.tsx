@@ -139,8 +139,8 @@ export function BpmnLegend({ lanes, symbols = DEFAULT_SYMBOLS }: BpmnLegendProps
               <span className="text-xs font-semibold text-slate-700">Legenda</span>
             </div>
             <button
-              onClick={() => setOpen(false)}
               aria-label="Legenda sluiten"
+              onClick={() => setOpen(false)}
               className="text-slate-400 hover:text-slate-600 transition-colors"
               style={{ pointerEvents: "auto" }}
             >
