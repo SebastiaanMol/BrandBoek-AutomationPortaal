@@ -413,6 +413,7 @@ function SharedProcessViewerCanvas({
           connections={processState.connections}
           automations={processState.automations}
           attachments={processState.attachments ?? []}
+          artifacts={processState.artifacts ?? []}
           activeLanes={processState.activeLanes}
           customLanes={processState.customLanes}
           displayStyle="viewer"

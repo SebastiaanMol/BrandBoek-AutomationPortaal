@@ -35,6 +35,15 @@ const fixtures = vi.hoisted(() => ({
         attachedTo: { kind: "step", id: "s1" },
       },
     ],
+    artifacts: [
+      {
+        id: "artifact-1",
+        type: "manualExceptionBlock",
+        title: "Betalingsregeling",
+        description: "Mogelijk vanuit elke pipeline stage",
+        position: { x: 360, y: 180 },
+      },
+    ],
   },
 }));
 
@@ -55,10 +64,19 @@ vi.mock("@/components/procesviewer/ProcessviewerCanvas", () => ({
 }));
 
 vi.mock("@/components/process/ProcessCanvas", () => ({
-  ProcessCanvas: ({ attachments = [] }: { attachments?: Array<{ id: string; label: string }> }) => (
+  ProcessCanvas: ({
+    attachments = [],
+    artifacts = [],
+  }: {
+    attachments?: Array<{ id: string; label: string }>;
+    artifacts?: Array<{ id: string; title: string }>;
+  }) => (
     <div data-testid="shared-process-canvas" style={{ width: 800, height: 400 }}>
       {attachments.map((attachment) => (
         <span key={attachment.id}>{attachment.label}</span>
+      ))}
+      {artifacts.map((artifact) => (
+        <span key={artifact.id}>{artifact.title}</span>
       ))}
     </div>
   ),
@@ -117,6 +135,22 @@ describe("Procesviewer canvas renderer", () => {
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
     expect(screen.getByText("Viewer uitleg")).toBeInTheDocument();
+  });
+
+  it("passes saved process artifacts into the shared viewer canvas", async () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <Procesviewer />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
+
+    expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
+    expect(screen.getByText("Betalingsregeling")).toBeInTheDocument();
   });
 
   it("zooms the shared viewer canvas without replacing the shared renderer", async () => {
