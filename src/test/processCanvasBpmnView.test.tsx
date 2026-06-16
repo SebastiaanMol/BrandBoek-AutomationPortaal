@@ -104,6 +104,32 @@ describe("ProcessCanvas BPMN-like structural view", () => {
     expect(screen.getByLabelText("Uitzondering of einde route")).toBeInTheDocument();
   });
 
+  it("renders terminate events in red instead of the lane color", () => {
+    const terminateSteps: ProcessStep[] = [
+      { id: "terminate", type: "terminate", label: "Terminate", team: "sales", column: 0 },
+    ];
+    const { container } = render(
+      <ProcessCanvas
+        steps={terminateSteps}
+        connections={[]}
+        automations={[]}
+        activeLanes={["sales"]}
+        customLanes={customLanes}
+        readOnly
+      />,
+    );
+
+    const terminateLabel = screen.getByText("Terminate");
+    const terminateGroup = terminateLabel.closest("g");
+    const outerCircle = terminateGroup?.querySelector('circle[r="18"]');
+    const innerCircle = terminateGroup?.querySelector('circle[r="9"]');
+
+    expect(outerCircle).toHaveAttribute("stroke", "#dc2626");
+    expect(outerCircle).toHaveAttribute("fill", "#fee2e2");
+    expect(innerCircle).toHaveAttribute("fill", "#dc2626");
+    expect(container.querySelector('circle[stroke="hsl(215 80% 50%)"]')).not.toBeInTheDocument();
+  });
+
   it("renders gateway diamonds 20 percent smaller than the original size", () => {
     const { container } = render(
       <ProcessCanvas

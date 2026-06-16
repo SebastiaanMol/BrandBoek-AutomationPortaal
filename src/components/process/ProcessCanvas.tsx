@@ -1186,18 +1186,17 @@ function DecisionDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMo
 
 // ── TerminateCircle ───────────────────────────────────────────────────────────
 
-function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMouseDown, onClick, onPortMouseDown, onContextMenu }: {
+function TerminateCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onClick, onPortMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
-  customLanes?: CustomLane[];
   onMouseDown?: (e: React.MouseEvent) => void;
   onClick?: () => void;
   onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
-  const cfg = getLaneConfig(step.team, customLanes);
-  const str = cfg.stroke;
+  const str = ROUTE_END;
+  const fill = "#fee2e2";
   const label = step.label.length > 14 ? step.label.slice(0, 13) + "…" : step.label;
 
   return (
@@ -1208,7 +1207,7 @@ function TerminateCircle({ step, cx, cy, isDragging, isTarget, customLanes, onMo
         <circle cx={cx} cy={cy} r={EVT_R + 6}
           fill="none" stroke={str} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
       )}
-      <circle cx={cx} cy={cy} r={EVT_R} fill="white" stroke={str} strokeWidth="3"
+      <circle cx={cx} cy={cy} r={EVT_R} fill={fill} stroke={str} strokeWidth="3"
         style={{ filter: hov ? `drop-shadow(0 2px 8px ${str}88)` : undefined }} />
       <circle cx={cx} cy={cy} r={EVT_R * 0.5} fill={str} style={{ pointerEvents: "none" }} />
       <text x={cx} y={cy + EVT_R + 10} textAnchor="middle" dominantBaseline="middle"
@@ -2612,7 +2611,6 @@ export function ProcessCanvas({
             return (
               <TerminateCircle key={step.id} step={step} cx={cx} cy={cy}
                 isDragging={isDrag} isTarget={isTarget}
-                customLanes={customLanes}
                 onMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
                 onClick={() => { if (!dragging?.moved) selectStep(step); }}
                 onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
