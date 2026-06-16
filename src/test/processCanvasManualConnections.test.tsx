@@ -701,6 +701,42 @@ describe("ProcessCanvas manual connections in edit mode", () => {
     expect(path).toBe("M 186 65 V 70 V 92 V 111");
   });
 
+  it("straightens small grid-offset bends on vertical routes between aligned nodes", () => {
+    const alignedSteps: ProcessStep[] = [
+      { id: "from", type: "decision", label: "Akkoord?", team: "sales", column: 0, row: 2 },
+      { id: "to", type: "task", label: "WeFact klant aanm...", team: "sales", column: 0, row: 0 },
+    ];
+    const connections: Connection[] = [
+      {
+        id: "manual-small-dogleg",
+        fromStepId: "from",
+        toStepId: "to",
+        manual: true,
+        routeType: "main",
+        fromSide: "top",
+        toSide: "bottom",
+        waypoints: [
+          { x: 198, y: 220 },
+          { x: 174, y: 132 },
+        ],
+      },
+    ];
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={alignedSteps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+      />,
+    );
+
+    const route = container.querySelector('path[aria-label="Handmatige hoofdroute route"]');
+    const path = route?.getAttribute("d") ?? "";
+
+    expect(path).toBe("M 186 191 V 220 V 132 V 65");
+  });
+
   it("chooses vertical ports and default waypoints for a new stacked manual route", () => {
     const onAddConnection = vi.fn();
     const stackedSteps: ProcessStep[] = [
