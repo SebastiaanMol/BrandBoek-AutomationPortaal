@@ -440,4 +440,160 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(screen.queryByLabelText("Data/document toevoegen")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Databron toevoegen")).not.toBeInTheDocument();
   });
+
+  it("renders a manual exception block with a process-context association and no arrow marker", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Betalingsregeling",
+            description: "Mogelijk vanuit elke pipeline stage",
+            position: { x: 360, y: 160 },
+            size: { width: 250, height: 112 },
+            association: { anchor: "process", label: "Mogelijk vanuit elke pipeline stage" },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Manual exception block Betalingsregeling")).toBeInTheDocument();
+    expect(screen.getAllByText("Mogelijk vanuit elke pipeline stage").length).toBeGreaterThan(0);
+    expect(container.querySelector('[data-process-association="artifact-manual"]')).toHaveAttribute("stroke-dasharray", "4 5");
+    expect(container.querySelector('[data-process-association="artifact-manual"]')).not.toHaveAttribute("marker-end");
+  });
+
+  it("drags manual exception blocks in edit mode", () => {
+    const onMoveArtifact = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-draggable",
+            type: "manualExceptionBlock",
+            title: "Manual actie",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onMoveArtifact={onMoveArtifact}
+      />,
+    );
+    mockSvgRect(container);
+
+    fireEvent.mouseDown(screen.getByLabelText("Manual exception block Manual actie"), {
+      button: 0,
+      clientX: 370,
+      clientY: 170,
+    });
+    fireEvent.mouseMove(window, { clientX: 400, clientY: 190 });
+    fireEvent.mouseUp(window);
+
+    expect(onMoveArtifact).toHaveBeenCalledWith("artifact-draggable", { x: 390, y: 180 });
+  });
+
+  it("edits manual exception block title and description in edit mode", () => {
+    const onUpdateArtifact = vi.fn();
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-editable",
+            type: "manualExceptionBlock",
+            title: "Manual actie",
+            description: "Oud",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onUpdateArtifact={onUpdateArtifact}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Manual exception block Manual actie"));
+    fireEvent.change(screen.getByLabelText("Manual exception titel"), {
+      target: { value: "Betalingsregeling" },
+    });
+    fireEvent.change(screen.getByLabelText("Manual exception beschrijving"), {
+      target: { value: "Kan altijd gekozen worden" },
+    });
+
+    expect(onUpdateArtifact).toHaveBeenCalledWith("artifact-editable", { title: "Betalingsregeling" });
+    expect(onUpdateArtifact).toHaveBeenCalledWith("artifact-editable", { description: "Kan altijd gekozen worden" });
+  });
+
+  it("does not show manual exception edit controls or drag in read-only mode", () => {
+    const onMoveArtifact = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        readOnly
+        artifacts={[
+          {
+            id: "artifact-readonly",
+            type: "manualExceptionBlock",
+            title: "Alleen lezen",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onMoveArtifact={onMoveArtifact}
+      />,
+    );
+    mockSvgRect(container);
+
+    fireEvent.click(screen.getByLabelText("Manual exception block Alleen lezen"));
+    fireEvent.mouseDown(screen.getByLabelText("Manual exception block Alleen lezen"), {
+      button: 0,
+      clientX: 370,
+      clientY: 170,
+    });
+    fireEvent.mouseMove(window, { clientX: 400, clientY: 190 });
+    fireEvent.mouseUp(window);
+
+    expect(screen.queryByLabelText("Manual exception titel")).not.toBeInTheDocument();
+    expect(onMoveArtifact).not.toHaveBeenCalled();
+  });
+
+  it("deletes a manual exception block from the context menu in edit mode", () => {
+    const onDeleteArtifact = vi.fn();
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-delete",
+            type: "manualExceptionBlock",
+            title: "Verwijderbare actie",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onDeleteArtifact={onDeleteArtifact}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByLabelText("Manual exception block Verwijderbare actie"), {
+      clientX: 380,
+      clientY: 180,
+    });
+    fireEvent.click(screen.getByText("Artifact verwijderen"));
+
+    expect(onDeleteArtifact).toHaveBeenCalledWith("artifact-delete");
+  });
 });

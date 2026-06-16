@@ -7,6 +7,7 @@ import type {
   ConnectionRouteType,
   ConnectionSide,
   ConnectionWaypoint,
+  ProcessArtifact,
   ProcessAttachment,
   ProcessAttachmentTarget,
   ProcessAttachmentType,
@@ -46,6 +47,8 @@ const PORT_DROP_RADIUS = GRID_SIZE / 2;
 const MICRO_BEND_TOLERANCE = GRID_SIZE / 2;
 const ATTACHMENT_W = 86;
 const ATTACHMENT_H = 44;
+const MANUAL_EXCEPTION_DEFAULT_W = 250;
+const MANUAL_EXCEPTION_DEFAULT_H = 112;
 const STEP_ATTACHMENT_DEFAULT_OFFSET = { x: 72, y: 24 };
 const CONNECTION_ATTACHMENT_DEFAULT_OFFSET = { x: 16, y: 34 };
 const ADD_ATTACHMENT_CONTROLS: { type: ProcessAttachmentType; label: string }[] = [
@@ -1496,6 +1499,7 @@ interface ProcessCanvasProps {
   connections: Connection[];
   automations: Automation[];
   attachments?: ProcessAttachment[];
+  artifacts?: ProcessArtifact[];
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
   customLanes?: CustomLane[];
   readOnly?: boolean;
@@ -1510,6 +1514,12 @@ interface ProcessCanvasProps {
   onUpdateAttachment?: (attachmentId: string, patch: Partial<Pick<ProcessAttachment, "label" | "description">>) => void;
   onDeleteAttachment?: (attachmentId: string) => void;
   onAddAttachment?: (type: ProcessAttachmentType, target: ProcessAttachmentTarget) => void;
+  onMoveArtifact?: (artifactId: string, position: { x: number; y: number }) => void;
+  onUpdateArtifact?: (
+    artifactId: string,
+    patch: Partial<Pick<ProcessArtifact, "title" | "description" | "position" | "size" | "association">>,
+  ) => void;
+  onDeleteArtifact?: (artifactId: string) => void;
   onAddConnection?: (
     fromId: string,
     toId: string,
@@ -1539,9 +1549,109 @@ interface ProcessCanvasProps {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+function renderManualExceptionBlock(
+  artifact: ProcessArtifact,
+  editing: boolean,
+  readOnly: boolean,
+  onUpdateArtifact?: ProcessCanvasProps["onUpdateArtifact"],
+) {
+  const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
+  const height = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
+  const x = artifact.position.x;
+  const y = artifact.position.y;
+  const title = artifact.title.length > 30 ? `${artifact.title.slice(0, 29)}...` : artifact.title;
+  const description = artifact.description ?? "Mogelijk vanuit elke pipeline stage. Geen verplichte processtap.";
+
+  return (
+    <>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={8}
+        fill="#fff7ed"
+        stroke="#d97706"
+        strokeWidth={1.5}
+        strokeDasharray="7 4"
+      />
+      <circle cx={x + 20} cy={y + 22} r={9} fill="#fffbeb" stroke="#d97706" strokeWidth={1.5} />
+      <text x={x + 38} y={y + 24} fontSize={11} fontWeight={800} fill="#92400e"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
+        Manual
+      </text>
+      <text x={x + 14} y={y + 52} fontSize={12} fontWeight={800} fill="#111827"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
+        {title}
+      </text>
+      <foreignObject x={x + 14} y={y + 62} width={width - 28} height={height - 72} style={{ pointerEvents: "none" }}>
+        <div
+          style={{
+            color: "#78716c",
+            fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+            fontSize: 11,
+            lineHeight: 1.25,
+            overflow: "hidden",
+            wordBreak: "break-word",
+          }}
+        >
+          {description}
+        </div>
+      </foreignObject>
+      {editing && !readOnly && onUpdateArtifact && (
+        <foreignObject x={x + width + 8} y={y} width={220} height={132} style={{ overflow: "visible" }}>
+          <div
+            onMouseDown={event => event.stopPropagation()}
+            onClick={event => event.stopPropagation()}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              padding: 8,
+              border: "1px solid #f59e0b",
+              borderRadius: 6,
+              background: "rgba(255,255,255,0.98)",
+              boxShadow: "0 8px 20px rgba(15,23,42,0.16)",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+            }}
+          >
+            <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, fontWeight: 700, color: "#334155" }}>
+              Titel
+              <input
+                aria-label="Manual exception titel"
+                value={artifact.title}
+                onChange={event => onUpdateArtifact(artifact.id, { title: event.target.value })}
+                style={{ height: 24, border: "1px solid #cbd5e1", borderRadius: 4, fontSize: 11, padding: "0 6px" }}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, fontWeight: 700, color: "#334155" }}>
+              Beschrijving
+              <textarea
+                aria-label="Manual exception beschrijving"
+                value={artifact.description ?? ""}
+                onChange={event => onUpdateArtifact(artifact.id, { description: event.target.value })}
+                rows={3}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 4,
+                  fontSize: 11,
+                  lineHeight: 1.25,
+                  padding: "5px 6px",
+                  resize: "none",
+                }}
+              />
+            </label>
+          </div>
+        </foreignObject>
+      )}
+    </>
+  );
+}
+
 export function ProcessCanvas({
   steps, connections, automations,
   attachments = [],
+  artifacts = [],
   activeLanes, customLanes,
   readOnly = false,
   displayStyle,
@@ -1553,6 +1663,9 @@ export function ProcessCanvas({
   onUpdateAttachment,
   onDeleteAttachment,
   onAddAttachment,
+  onMoveArtifact,
+  onUpdateArtifact,
+  onDeleteArtifact,
   onAddConnection, onDeleteConnection,
   onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
   onUpdateConnectionWaypoints,
@@ -1584,6 +1697,20 @@ export function ProcessCanvas({
     () => visibleTeams.reduce((sum, t) => sum + laneHeightFn(t, steps), 0),
     [steps, visibleTeams],
   );
+  const artifactBounds = useMemo(() => {
+    return artifacts.reduce(
+      (bounds, artifact) => {
+        if (artifact.type !== "manualExceptionBlock") return bounds;
+        const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
+        const height = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
+        return {
+          width: Math.max(bounds.width, artifact.position.x + width + 260),
+          height: Math.max(bounds.height, artifact.position.y + height + CANVAS_LEGEND_H),
+        };
+      },
+      { width: 0, height: 0 },
+    );
+  }, [artifacts]);
 
   const lastCol = colX.length - 1;
   const lastColHasTask = steps.some(s => s.column === lastCol && !isEvent(s));
@@ -1591,6 +1718,8 @@ export function ProcessCanvas({
   const svgWidth = colX.length
     ? colX[lastCol] + (lastColHasTask ? STEP_W / 2 : EVT_R) + EDGE_PAD + BASE_COL_W * 2 + STEP_W
     : 800;
+  const canvasWidth = Math.max(svgWidth, artifactBounds.width);
+  const canvasHeight = Math.max(svgHeight, artifactBounds.height);
 
   // Interaction state
   const [hoveredConn, setHoveredConn] = useState<string | null>(null);
@@ -1614,12 +1743,14 @@ export function ProcessCanvas({
     | { type: "conn"; connId: string; x: number; y: number }
     | { type: "step"; stepId: string; x: number; y: number }
     | { type: "attachment"; attachmentId: string; x: number; y: number }
+    | { type: "artifact"; artifactId: string; x: number; y: number }
     | null
   >(null);
   const [editingLabel, setEditingLabel] = useState<{
     connId: string; x: number; y: number; value: string;
   } | null>(null);
   const [editingAttachmentId, setEditingAttachmentId] = useState<string | null>(null);
+  const [editingArtifactId, setEditingArtifactId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const panningRef = useRef<{ startX: number; scrollLeft: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -1629,6 +1760,11 @@ export function ProcessCanvas({
     attachmentId: string;
     startPoint: Pt;
     startOffset: Pt;
+  } | null>(null);
+  const artifactDragRef = useRef<{
+    artifactId: string;
+    startPoint: Pt;
+    startPosition: Pt;
   } | null>(null);
 
   // Step-to-step connections only (not branch edges)
@@ -1719,10 +1855,10 @@ export function ProcessCanvas({
     if (!svg) return { x: 0, y: 0 };
     const r = svg.getBoundingClientRect();
     return {
-      x: (clientX - r.left) * (svgWidth / r.width),
+      x: (clientX - r.left) * (canvasWidth / r.width),
       y:  clientY - r.top,
     };
-  }, [svgWidth]);
+  }, [canvasWidth]);
 
   const toSvg = useCallback((e: React.MouseEvent): Pt => {
     return clientToSvg(e.clientX, e.clientY);
@@ -1731,21 +1867,33 @@ export function ProcessCanvas({
   useEffect(() => {
     function onGlobalMove(e: MouseEvent) {
       const drag = attachmentDragRef.current;
-      if (!drag) return;
-      if (readOnly || !onMoveAttachment) {
+      const artifactDrag = artifactDragRef.current;
+      if (!drag && !artifactDrag) return;
+      if (drag && (readOnly || !onMoveAttachment)) {
         attachmentDragRef.current = null;
-        return;
+      }
+      if (artifactDrag && (readOnly || !onMoveArtifact)) {
+        artifactDragRef.current = null;
       }
 
       const pt = clientToSvg(e.clientX, e.clientY);
-      onMoveAttachment(drag.attachmentId, {
-        x: drag.startOffset.x + pt.x - drag.startPoint.x,
-        y: drag.startOffset.y + pt.y - drag.startPoint.y,
-      });
+      if (drag && !readOnly && onMoveAttachment) {
+        onMoveAttachment(drag.attachmentId, {
+          x: drag.startOffset.x + pt.x - drag.startPoint.x,
+          y: drag.startOffset.y + pt.y - drag.startPoint.y,
+        });
+      }
+      if (artifactDrag && !readOnly && onMoveArtifact) {
+        onMoveArtifact(artifactDrag.artifactId, {
+          x: artifactDrag.startPosition.x + pt.x - artifactDrag.startPoint.x,
+          y: artifactDrag.startPosition.y + pt.y - artifactDrag.startPoint.y,
+        });
+      }
     }
 
     function onGlobalUp() {
       attachmentDragRef.current = null;
+      artifactDragRef.current = null;
     }
 
     window.addEventListener("mousemove", onGlobalMove);
@@ -1754,7 +1902,7 @@ export function ProcessCanvas({
       window.removeEventListener("mousemove", onGlobalMove);
       window.removeEventListener("mouseup", onGlobalUp);
     };
-  }, [clientToSvg, onMoveAttachment, readOnly]);
+  }, [clientToSvg, onMoveArtifact, onMoveAttachment, readOnly]);
 
   useEffect(() => {
     function onGlobalMove(e: MouseEvent) {
@@ -1916,6 +2064,18 @@ export function ProcessCanvas({
     };
   }
 
+  function handleArtifactMouseDown(e: React.MouseEvent, artifact: ProcessArtifact) {
+    if (readOnly || !onMoveArtifact || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    artifactDragRef.current = {
+      artifactId: artifact.id,
+      startPoint: toSvg(e),
+      startPosition: artifact.position,
+    };
+  }
+
   function handlePortMouseDown(e: React.MouseEvent, step: ProcessStep, side: ConnectionSide = "right") {
     if (readOnly) return;
     e.stopPropagation();
@@ -2047,7 +2207,7 @@ export function ProcessCanvas({
   const extensionTeam = dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, steps)
     ? dragTarget.team : null;
   const legendReserve = showLegend ? CANVAS_LEGEND_H : 0;
-  const effectiveSvgHeight = svgHeight + (extensionTeam ? ROW_H : 0) + legendReserve;
+  const effectiveSvgHeight = Math.max(canvasHeight, svgHeight + (extensionTeam ? ROW_H : 0)) + legendReserve;
 
   const gridStyle = viewerMode ? {
     background: "#F8FAFC",
@@ -2060,7 +2220,7 @@ export function ProcessCanvas({
 
     const lineY = (laneStarts[hoverSep.team] ?? 0) + (hoverSep.afterRow + 1) * ROW_H;
     const pillW = 80;
-    const midX  = (LANE_HDR_W + svgWidth) / 2;
+    const midX  = (LANE_HDR_W + canvasWidth) / 2;
     return (
       <g
         data-testid="row-separator-insert-indicator"
@@ -2075,7 +2235,7 @@ export function ProcessCanvas({
         <line
           x1={LANE_HDR_W}
           y1={lineY}
-          x2={svgWidth}
+          x2={canvasWidth}
           y2={lineY}
           stroke="#3B82F6"
           strokeWidth={18}
@@ -2085,7 +2245,7 @@ export function ProcessCanvas({
         <line
           x1={LANE_HDR_W}
           y1={lineY}
-          x2={svgWidth}
+          x2={canvasWidth}
           y2={lineY}
           stroke="#3B82F6"
           strokeWidth={1.5}
@@ -2120,12 +2280,13 @@ export function ProcessCanvas({
   return (
     <div className="relative w-full bg-card" style={gridStyle}>
       <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-hidden w-full" style={{ height: effectiveSvgHeight }}>
-        <svg ref={svgRef} width={svgWidth} height={effectiveSvgHeight}
+        <svg ref={svgRef} width={canvasWidth} height={effectiveSvgHeight}
         onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
         onMouseLeave={() => { setDrawing(null); setDrawingBranch(null); }}
         onClick={() => {
           setContextMenu(null);
           setEditingAttachmentId(null);
+          setEditingArtifactId(null);
         }}
         onMouseDown={e => {
           if (e.button !== 0 || dragging || drawing || drawingBranch) return;
@@ -2217,7 +2378,7 @@ export function ProcessCanvas({
             <g key={team} aria-label={`Fase ${idx + 1}: ${cfg.label}`}>
               {viewerMode ? (
                 <>
-                  <rect x={0} y={startY} width={svgWidth} height={lh} fill={laneAccent} fillOpacity={0.04} />
+                  <rect x={0} y={startY} width={canvasWidth} height={lh} fill={laneAccent} fillOpacity={0.04} />
                   <rect x={0} y={startY} width={LANE_HDR_W} height={lh} fill={laneAccent} fillOpacity={0.1} />
                   <line x1={LANE_HDR_W} y1={startY} x2={LANE_HDR_W} y2={startY + lh} stroke="#E2E8F0" strokeWidth="0.5" />
                   <foreignObject
@@ -2237,28 +2398,28 @@ export function ProcessCanvas({
                       {cfg.label}
                     </div>
                   </foreignObject>
-                  <line x1={0} y1={startY + lh} x2={svgWidth} y2={startY + lh} stroke="#E2E8F0" strokeWidth="0.5" />
+                  <line x1={0} y1={startY + lh} x2={canvasWidth} y2={startY + lh} stroke="#E2E8F0" strokeWidth="0.5" />
                   {Array.from({ length: maxR }, (_, r) => (
                     <line key={r}
                       x1={LANE_HDR_W} y1={startY + (r + 1) * ROW_H}
-                      x2={svgWidth}   y2={startY + (r + 1) * ROW_H}
+                      x2={canvasWidth}   y2={startY + (r + 1) * ROW_H}
                       stroke="#E2E8F0" strokeWidth="0.5" strokeDasharray="4 4" />
                   ))}
                 </>
               ) : (
                 <>
-                  <rect x={0} y={startY} width={svgWidth} height={lh} fill="#ffffff" />
-                  <rect x={LANE_HDR_W} y={startY} width={svgWidth - LANE_HDR_W} height={lh} fill={cfg.bg} fillOpacity={0.36} />
+                  <rect x={0} y={startY} width={canvasWidth} height={lh} fill="#ffffff" />
+                  <rect x={LANE_HDR_W} y={startY} width={canvasWidth - LANE_HDR_W} height={lh} fill={cfg.bg} fillOpacity={0.36} />
 
                   {/* Row dividers inside lane */}
                   {Array.from({ length: maxR }, (_, r) => (
                     <line key={r}
                       x1={LANE_HDR_W} y1={startY + (r + 1) * ROW_H}
-                      x2={svgWidth}   y2={startY + (r + 1) * ROW_H}
+                      x2={canvasWidth}   y2={startY + (r + 1) * ROW_H}
                       stroke="#e2e8f0" strokeWidth="1" strokeDasharray="6 4" />
                   ))}
 
-                  <line x1={0} y1={startY + lh} x2={svgWidth} y2={startY + lh}
+                  <line x1={0} y1={startY + lh} x2={canvasWidth} y2={startY + lh}
                     stroke="#e2e8f0" strokeWidth="1" />
                   <rect x={0} y={startY} width={LANE_HDR_W} height={lh} fill={PHASE_BAR_BG} />
                   <rect x={0} y={startY} width={4} height={lh} fill={cfg.stroke} />
@@ -2303,11 +2464,11 @@ export function ProcessCanvas({
           const lh     = laneHeightFn(extensionTeam, steps);
           return (
             <g>
-              <rect x={0} y={startY + lh} width={svgWidth} height={ROW_H}
+              <rect x={0} y={startY + lh} width={canvasWidth} height={ROW_H}
                 fill={cfg.bg} fillOpacity={0.6} />
               <rect x={0} y={startY + lh} width={4} height={ROW_H} fill={cfg.stroke} />
               <rect x={4} y={startY + lh} width={LANE_HDR_W - 4} height={ROW_H} fill={PHASE_BAR_BG} fillOpacity={0.9} />
-              <rect x={LANE_HDR_W} y={startY + lh} width={svgWidth - LANE_HDR_W} height={ROW_H}
+              <rect x={LANE_HDR_W} y={startY + lh} width={canvasWidth - LANE_HDR_W} height={ROW_H}
                 fill="none" stroke={cfg.stroke} strokeWidth={1.5} strokeDasharray="8 4" opacity={0.5} />
             </g>
           );
@@ -3061,6 +3222,66 @@ export function ProcessCanvas({
         })}
 
         {/* ── Connection preview ── */}
+        {artifacts.map((artifact) => {
+          if (artifact.type !== "manualExceptionBlock") return null;
+          const height = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
+          const processAnchor = { x: LANE_HDR_W + 24, y: 24 };
+          const blockAnchor = { x: artifact.position.x, y: artifact.position.y + height / 2 };
+          const clickable = !readOnly && !!onUpdateArtifact;
+          const draggable = !readOnly && !!onMoveArtifact;
+          const editing = !readOnly && editingArtifactId === artifact.id && !!onUpdateArtifact;
+
+          return (
+            <g key={artifact.id}>
+              <line
+                data-process-association={artifact.id}
+                x1={processAnchor.x}
+                y1={processAnchor.y}
+                x2={blockAnchor.x}
+                y2={blockAnchor.y}
+                stroke="#64748b"
+                strokeWidth={1.2}
+                strokeDasharray="4 5"
+                style={{ pointerEvents: "none" }}
+              />
+              {artifact.association?.label && (
+                <text
+                  x={(processAnchor.x + blockAnchor.x) / 2}
+                  y={(processAnchor.y + blockAnchor.y) / 2 - 6}
+                  textAnchor="middle"
+                  fontSize={9}
+                  fontWeight={700}
+                  fill="#64748b"
+                  style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}
+                >
+                  {artifact.association.label}
+                </text>
+              )}
+              <g
+                aria-label={`Manual exception block ${artifact.title}`}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onClick={clickable ? event => {
+                  event.stopPropagation();
+                  setEditingArtifactId(artifact.id);
+                } : undefined}
+                onMouseDown={draggable ? event => handleArtifactMouseDown(event, artifact) : undefined}
+                onContextMenu={readOnly || !onDeleteArtifact ? undefined : event => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setContextMenu({ type: "artifact", artifactId: artifact.id, x: event.clientX, y: event.clientY });
+                }}
+                style={{
+                  cursor: draggable ? "move" : clickable ? "pointer" : !readOnly && onDeleteArtifact ? "context-menu" : undefined,
+                  pointerEvents: draggable || clickable || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
+                }}
+              >
+                {renderManualExceptionBlock(artifact, editing, readOnly, onUpdateArtifact)}
+              </g>
+            </g>
+          );
+        })}
+
         {drawing && (() => {
           const horizontalFirst = drawing.fromSide === "left" || drawing.fromSide === "right";
           const previewPath = Math.abs(drawing.fromX - drawing.curX) < 4
@@ -3146,6 +3367,14 @@ export function ProcessCanvas({
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
               onClick={() => { onDeleteAttachment?.(contextMenu.attachmentId); setContextMenu(null); }}
+            >
+              Artifact verwijderen
+            </button>
+          )}
+          {contextMenu.type === "artifact" && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+              onClick={() => { onDeleteArtifact?.(contextMenu.artifactId); setContextMenu(null); }}
             >
               Artifact verwijderen
             </button>
