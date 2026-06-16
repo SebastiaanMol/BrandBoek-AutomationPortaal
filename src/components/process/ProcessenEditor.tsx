@@ -40,6 +40,7 @@ import type {
   ProcessAttachment,
   ProcessAttachmentTarget,
   ProcessAttachmentType,
+  ProcessArtifact,
 } from "@/data/processData";
 import {
   buildLaneKeys,
@@ -62,9 +63,10 @@ import { saveProcessState } from "@/lib/storage/processState";
 import { detectDrift } from "@/lib/processDrift";
 import { StepStagingPanel } from "@/components/process/StepStagingPanel";
 import { exportProcessCanvasPdf, exportProcessCanvasPng } from "@/lib/processExport";
-import { importProcessBackup } from "@/lib/processBackup";
+import { exportProcessBackup, importProcessBackup } from "@/lib/processBackup";
 import { buildProcessStateFromSaved, buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
 import { removeAttachmentsForTarget } from "@/lib/processAttachments";
+import { createManualExceptionBlock, deleteProcessArtifact, updateProcessArtifact } from "@/lib/processArtifacts";
 import { removeFlowLinksForConnection, removeFlowLinksForStep } from "@/lib/processFlowLinks";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
@@ -190,6 +192,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       steps:       restoredState.steps,
       connections: restoredState.connections,
       attachments: restoredState.attachments,
+      artifacts:   restoredState.artifacts,
       flowLinks:   restoredState.flowLinks,
     }));
     setSaved(s => ({
@@ -197,6 +200,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       steps:       restoredState.steps,
       connections: restoredState.connections,
       attachments: restoredState.attachments,
+      artifacts:   restoredState.artifacts,
       flowLinks:   restoredState.flowLinks,
     }));
     const restoredParked = savedState.parkedSteps as ProcessStep[];
@@ -300,31 +304,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         autoLinks[a.id] = { fromStepId: a.fromStepId, toStepId: a.toStepId };
       }
     });
-    const backup = {
-      version: 1,
-      pipelineName: pipeline?.naam ?? pipelineId,
-      exportedAt: new Date().toISOString(),
-      state: {
-        steps:       state.steps,
-        connections: state.connections,
-        attachments: state.attachments ?? [],
-        autoLinks,
-        parkedSteps,
-        activeLanes,
-        customLanes,
-        flowLinks,
-      },
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    const safe = backup.pipelineName.replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
-    a.href     = url;
-    a.download = `proces-backup-${safe}-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 100);
+    exportProcessBackup(pipeline?.naam ?? pipelineId, {
+      steps:       state.steps,
+      connections: state.connections,
+      attachments: state.attachments ?? [],
+      artifacts:   state.artifacts ?? [],
+      autoLinks,
+      parkedSteps,
+      activeLanes,
+      customLanes,
+      flowLinks,
+    });
     toast.success("Backup gedownload als JSON");
   }
 
@@ -345,6 +335,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         steps:       savedState.steps       as ProcessStep[],
         connections: savedState.connections as ProcessState["connections"],
         attachments: savedState.attachments as ProcessState["attachments"] ?? prev.attachments ?? [],
+        artifacts:   savedState.artifacts   as ProcessState["artifacts"] ?? prev.artifacts ?? [],
         automations: restoredAutos,
       }));
       const restoredCustomLanes = savedState.customLanes as CustomLane[] | undefined;
@@ -579,6 +570,41 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     update(s => ({
       ...s,
       attachments: (s.attachments ?? []).filter(attachment => attachment.id !== attachmentId),
+    }));
+    toast.success("Artifact verwijderd");
+  }
+
+  function handleAddManualExceptionArtifact() {
+    update(s => ({
+      ...s,
+      artifacts: [
+        ...(s.artifacts ?? []),
+        createManualExceptionBlock({ x: 360, y: 220 }),
+      ],
+    }));
+  }
+
+  function handleMoveArtifact(artifactId: string, position: { x: number; y: number }) {
+    update(s => ({
+      ...s,
+      artifacts: updateProcessArtifact(s.artifacts, artifactId, { position }),
+    }));
+  }
+
+  function handleUpdateArtifact(
+    artifactId: string,
+    patch: Partial<Pick<ProcessArtifact, "title" | "description" | "position" | "size" | "association">>,
+  ) {
+    update(s => ({
+      ...s,
+      artifacts: updateProcessArtifact(s.artifacts, artifactId, patch),
+    }));
+  }
+
+  function handleDeleteArtifact(artifactId: string) {
+    update(s => ({
+      ...s,
+      artifacts: deleteProcessArtifact(s.artifacts, artifactId),
     }));
     toast.success("Artifact verwijderd");
   }
@@ -1075,6 +1101,20 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                     </button>
                   </div>
                 </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Artifacts</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaletteOpen(false);
+                      handleAddManualExceptionArtifact();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors"
+                  >
+                    <span className="inline-flex h-4 w-5 rounded border border-dashed border-amber-500 bg-amber-50" />
+                    Manual exception
+                  </button>
+                </div>
               </div>
             </PopoverContent>
           </Popover>
@@ -1200,6 +1240,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 flows={flows}
                 flowLinks={flowLinks}
                 attachments={state.attachments ?? []}
+                artifacts={state.artifacts ?? []}
                 onAttachFlow={handleAttachFlow}
                 onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
                 displayStyle={displayStyle}
@@ -1221,6 +1262,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 onMoveAttachment={handleMoveAttachment}
                 onUpdateAttachment={handleUpdateAttachment}
                 onDeleteAttachment={handleDeleteAttachment}
+                onMoveArtifact={handleMoveArtifact}
+                onUpdateArtifact={handleUpdateArtifact}
+                onDeleteArtifact={handleDeleteArtifact}
                 onParkStep={handleParkStep}
                 onDeleteStep={handleDeleteStep}
                 onPlaceStagedStep={handlePlaceStep}

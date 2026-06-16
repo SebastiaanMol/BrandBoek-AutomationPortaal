@@ -102,6 +102,7 @@ export function ProcessenView({
                   connections={canvasState.connections}
                   automations={canvasState.automations}
                   attachments={canvasState.attachments ?? []}
+                  artifacts={canvasState.artifacts ?? []}
                   activeLanes={canvasState.activeLanes}
                   customLanes={canvasState.customLanes}
                   readOnly

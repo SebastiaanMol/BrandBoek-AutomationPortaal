@@ -183,4 +183,38 @@ describe("ProcessenEditor edit mode", () => {
       }),
     );
   });
+
+  it("adds and saves a manual exception artifact", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    fireEvent.click(screen.getByRole("button", { name: /Toevoegen/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Manual exception/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
+
+    await waitFor(() => {
+      expect(saveProcessStateMock).toHaveBeenCalledOnce();
+    });
+    expect(saveProcessStateMock).toHaveBeenCalledWith(
+      "pipe-1",
+      expect.objectContaining({
+        artifacts: [
+          expect.objectContaining({
+            type: "manualExceptionBlock",
+            title: "Altijd beschikbare handmatige actie",
+            association: expect.objectContaining({
+              anchor: "process",
+              label: "Mogelijk vanuit elke pipeline stage",
+            }),
+          }),
+        ],
+      }),
+    );
+  });
 });
