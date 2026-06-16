@@ -7,8 +7,10 @@ type ProcessArtifactPatch = Partial<
 >;
 
 export function createManualExceptionBlock(position: { x: number; y: number }): ProcessArtifact {
+  const id = globalThis.crypto?.randomUUID?.() ?? Date.now();
+
   return {
-    id: `artifact-${Date.now()}`,
+    id: `artifact-${id}`,
     type: "manualExceptionBlock",
     title: "Altijd beschikbare handmatige actie",
     description: "Mogelijk vanuit elke pipeline stage. Geen verplichte processtap.",

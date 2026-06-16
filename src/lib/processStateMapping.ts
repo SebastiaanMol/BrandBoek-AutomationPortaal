@@ -10,10 +10,6 @@ import type {
 import { filterFlowLinksForSteps } from "@/lib/processFlowLinks";
 import type { SavedProcessState } from "@/lib/storage/processState";
 
-type SavedProcessStateWithArtifacts = SavedProcessState & {
-  artifacts?: unknown[];
-};
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -29,6 +25,7 @@ function parseAttachment(value: unknown): ProcessAttachment | null {
   if (!isRecord(attachedTo)) return null;
   if (attachedTo.kind !== "step" && attachedTo.kind !== "connection") return null;
   if (typeof attachedTo.id !== "string") return null;
+  const parsedDescription = typeof description === "string" ? description : undefined;
 
   const attachment: ProcessAttachment = {
     id,
@@ -40,8 +37,8 @@ function parseAttachment(value: unknown): ProcessAttachment | null {
     },
   };
 
-  if (description !== undefined) {
-    attachment.description = description;
+  if (parsedDescription !== undefined) {
+    attachment.description = parsedDescription;
   }
 
   if (offset !== undefined) {
@@ -65,6 +62,7 @@ function parseArtifact(value: unknown): ProcessArtifact | null {
   if (!isRecord(position) || typeof position.x !== "number" || typeof position.y !== "number") {
     return null;
   }
+  const parsedDescription = typeof description === "string" ? description : undefined;
 
   const artifact: ProcessArtifact = {
     id,
@@ -73,8 +71,8 @@ function parseArtifact(value: unknown): ProcessArtifact | null {
     position: { x: position.x, y: position.y },
   };
 
-  if (description !== undefined) {
-    artifact.description = description;
+  if (parsedDescription !== undefined) {
+    artifact.description = parsedDescription;
   }
 
   if (size !== undefined) {
@@ -147,7 +145,7 @@ export function buildSavedProcessState(
   parkedSteps: ProcessStep[],
   activeLanes: string[],
   customLanes: CustomLane[],
-): SavedProcessStateWithArtifacts {
+): SavedProcessState {
   const targetSteps = [...state.steps, ...parkedSteps];
   const autoLinks: SavedProcessState["autoLinks"] = {};
   state.automations.forEach((automation) => {
@@ -203,7 +201,6 @@ export function buildProcessStateFromSaved(
   saved: SavedProcessState,
   automations: Automation[],
 ): ProcessState {
-  const savedWithArtifacts = saved as SavedProcessStateWithArtifacts;
   const steps = saved.steps as ProcessStep[];
   const parkedSteps = saved.parkedSteps as ProcessStep[];
   const connections = saved.connections as Connection[];
@@ -216,6 +213,6 @@ export function buildProcessStateFromSaved(
     customLanes: saved.customLanes as CustomLane[] | undefined,
     flowLinks: filterFlowLinksForSteps(parseFlowLinks(saved.flowLinks), steps.map((step) => step.id)),
     attachments: validAttachments({ steps: [...steps, ...parkedSteps], connections, attachments: saved.attachments }),
-    artifacts: validArtifacts(savedWithArtifacts.artifacts),
+    artifacts: validArtifacts(saved.artifacts),
   };
 }

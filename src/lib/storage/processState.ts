@@ -10,6 +10,7 @@ export interface SavedProcessState {
   customLanes?: unknown[];
   flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
   attachments?: unknown[];
+  artifacts?: unknown[];
 }
 
 const PROCESS_STATE_COLUMNS = [

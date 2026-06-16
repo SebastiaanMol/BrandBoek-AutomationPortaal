@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProcessState } from "@/data/processData";
 import {
   createManualExceptionBlock,
@@ -19,7 +19,23 @@ const baseState: ProcessState = {
 };
 
 describe("processArtifacts", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("uses crypto randomUUID for manual exception block ids when available", () => {
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => "uuid-123"),
+    });
+
+    const artifact = createManualExceptionBlock({ x: 420, y: 260 });
+
+    expect(artifact.id).toBe("artifact-uuid-123");
+  });
+
   it("creates a default manual exception block at the requested position", () => {
+    vi.stubGlobal("crypto", undefined);
     vi.spyOn(Date, "now").mockReturnValue(1710000000000);
 
     const artifact = createManualExceptionBlock({ x: 420, y: 260 });
@@ -37,7 +53,6 @@ describe("processArtifacts", () => {
       },
     });
 
-    vi.restoreAllMocks();
   });
 
   it("updates one artifact without changing the others", () => {
