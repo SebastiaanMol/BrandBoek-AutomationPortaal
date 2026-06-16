@@ -844,6 +844,36 @@ function buildBendInsertionTargets(waypoints: ConnectionWaypoint[], fallback: Pt
   ];
 }
 
+function orderedStepConnectionsForRender(
+  connections: Connection[],
+  selectedConnectionId: string | null,
+  readOnly: boolean,
+): Connection[] {
+  if (readOnly || !selectedConnectionId) return connections;
+  const selected = connections.find(connection => connection.id === selectedConnectionId);
+  if (!selected) return connections;
+  return [
+    ...connections.filter(connection => connection.id !== selectedConnectionId),
+    selected,
+  ];
+}
+
+function routeVisibleStrokeWidth(selected: boolean): number {
+  return selected ? 2.8 : 1.7;
+}
+
+function routeFocusOutlineStrokeWidth(selected: boolean): number {
+  return selected ? 7 : 0;
+}
+
+function waypointOuterRadius(selected: boolean): number {
+  return selected ? 12 : 10;
+}
+
+function waypointInnerRadius(selected: boolean): number {
+  return selected ? 7 : 5;
+}
+
 function ConnectionPortHandles({
   label,
   ports,
@@ -2288,13 +2318,13 @@ export function ProcessCanvas({
         {renderRowSeparatorInsertIndicator()}
 
         {/* ── Connections (step-to-step only) ── */}
-        {stepConnections.map(conn => {
+        {orderedStepConnectionsForRender(stepConnections, selectedConnectionId, readOnly).map(conn => {
           const from = steps.find(s => s.id === conn.fromStepId);
           const to   = steps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return null;
           const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           const isHov = hoveredConn === conn.id;
-          const isSelected = selectedConnectionId === conn.id;
+          const isSelected = !readOnly && selectedConnectionId === conn.id;
           const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
           const hasAuto = connAutos.length > 0;
           const type = resolveRouteType(conn, from, to);
@@ -2322,15 +2352,41 @@ export function ProcessCanvas({
             if (!conn.manual) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" });
           };
           return (
-            <g key={conn.id}>
+            <g
+              key={conn.id}
+              data-route-id={conn.id}
+              data-route-selected={isSelected ? "true" : undefined}
+            >
               {/* Pre-dot segment always in gray; post-dot in amber dashed when automation sits on this connection */}
               {splitForAutomation ? (
                 <>
-                  <path d={arrow.preDotPath} stroke={mainStroke} strokeWidth="1.7" fill="none"
+                  {isSelected && (
+                    <>
+                      <path
+                        d={arrow.preDotPath}
+                        stroke="#ffffff"
+                        strokeWidth={routeFocusOutlineStrokeWidth(isSelected)}
+                        fill="none"
+                        data-route-focus-outline="true"
+                        style={{ pointerEvents: "none" }}
+                      />
+                      <path
+                        d={arrow.postDotPath}
+                        stroke="#ffffff"
+                        strokeWidth={routeFocusOutlineStrokeWidth(isSelected)}
+                        fill="none"
+                        data-route-focus-outline="true"
+                        style={{ pointerEvents: "none" }}
+                      />
+                    </>
+                  )}
+                  <path d={arrow.preDotPath} stroke={mainStroke} strokeWidth={routeVisibleStrokeWidth(isSelected)} fill="none"
                     aria-label={labelForRoute}
+                    data-route-visible-path="true"
                     strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
-                  <path d={arrow.postDotPath} stroke={postStroke} strokeWidth="1.7" strokeDasharray={isEndRoute ? undefined : "5 3"} fill="none"
+                  <path d={arrow.postDotPath} stroke={postStroke} strokeWidth={routeVisibleStrokeWidth(isSelected)} strokeDasharray={isEndRoute ? undefined : "5 3"} fill="none"
                     aria-label={isEndRoute ? labelForRoute : "correctie/optioneel route"}
+                    data-route-visible-path="true"
                     markerEnd={`url(#${isEndRoute ? "ah-end" : "ah-branch"})`} opacity={0.9} style={{ pointerEvents: "none" }} />
                   {/* Label on post-dot segment — edit input when active, badge when label is set */}
                   {isEditingPost ? (
@@ -2353,16 +2409,29 @@ export function ProcessCanvas({
                   ) : null}
                 </>
               ) : (
-                <path d={arrow.path} stroke={mainStroke} strokeWidth="1.7" fill="none"
-                  aria-label={labelForRoute}
-                  markerEnd={`url(#${markerId})`}
-                  strokeDasharray={isOptionalRoute ? "5 3" : isHov ? "6 3" : undefined}
-                  onClick={readOnly ? undefined : selectConnection}
-                  style={{
-                    filter: isSelected ? `drop-shadow(0 2px 5px ${mainStroke}55)` : undefined,
-                    cursor: readOnly ? undefined : "pointer",
-                    pointerEvents: "stroke",
-                  }} />
+                <>
+                  {isSelected && (
+                    <path
+                      d={arrow.path}
+                      stroke="#ffffff"
+                      strokeWidth={routeFocusOutlineStrokeWidth(isSelected)}
+                      fill="none"
+                      data-route-focus-outline="true"
+                      style={{ pointerEvents: "none" }}
+                    />
+                  )}
+                  <path d={arrow.path} stroke={mainStroke} strokeWidth={routeVisibleStrokeWidth(isSelected)} fill="none"
+                    aria-label={labelForRoute}
+                    data-route-visible-path="true"
+                    markerEnd={`url(#${markerId})`}
+                    strokeDasharray={isOptionalRoute ? "5 3" : isHov ? "6 3" : undefined}
+                    onClick={readOnly ? undefined : selectConnection}
+                    style={{
+                      filter: isSelected ? `drop-shadow(0 2px 5px ${mainStroke}55)` : undefined,
+                      cursor: readOnly ? undefined : "pointer",
+                      pointerEvents: "stroke",
+                    }} />
+                </>
               )}
               <path d={arrow.path} stroke="transparent" strokeWidth="22" fill="none" className="cursor-pointer"
                 onMouseEnter={() => setHoveredConn(conn.id)}
@@ -2393,7 +2462,7 @@ export function ProcessCanvas({
                   <circle
                     cx={point.x}
                     cy={point.y}
-                    r={10}
+                    r={waypointOuterRadius(isSelected)}
                     fill="white"
                     stroke={mainStroke}
                     strokeWidth={1.5}
@@ -2404,7 +2473,7 @@ export function ProcessCanvas({
                     tabIndex={0}
                     cx={point.x}
                     cy={point.y}
-                    r={5}
+                    r={waypointInnerRadius(isSelected)}
                     fill={mainStroke}
                     onMouseDown={e => {
                       e.preventDefault();

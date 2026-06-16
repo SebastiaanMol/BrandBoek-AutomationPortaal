@@ -13,6 +13,29 @@ const steppedRows: ProcessStep[] = [
   { id: "later", type: "task", label: "Later", team: "sales", column: 1, row: 1 },
 ];
 
+const overlappingConnections: Connection[] = [
+  {
+    id: "manual-back",
+    fromStepId: "intake",
+    toStepId: "controle",
+    manual: true,
+    routeType: "main",
+    fromSide: "right",
+    toSide: "left",
+    waypoints: [{ x: 308, y: 42 }],
+  },
+  {
+    id: "manual-front",
+    fromStepId: "intake",
+    toStepId: "controle",
+    manual: true,
+    routeType: "optional",
+    fromSide: "right",
+    toSide: "left",
+    waypoints: [{ x: 336, y: 70 }],
+  },
+];
+
 function mockSvgRect(container: HTMLElement) {
   const svg = container.querySelector("svg") as SVGSVGElement;
   const width = Number(svg.getAttribute("width")) || 900;
@@ -32,6 +55,68 @@ function mockSvgRect(container: HTMLElement) {
 }
 
 describe("ProcessCanvas manual connections in edit mode", () => {
+  it("renders the selected editable route after other step routes", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={overlappingConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        onUpdateConnectionWaypoints={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Handmatige correctie/optioneel route"));
+
+    const routeGroups = Array.from(container.querySelectorAll("[data-route-id]"));
+    expect(routeGroups.map(group => group.getAttribute("data-route-id"))).toEqual([
+      "manual-back",
+      "manual-front",
+    ]);
+    expect(routeGroups.at(-1)).toHaveAttribute("data-route-selected", "true");
+  });
+
+  it("marks a selected editable route with focus styling and larger handles", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={overlappingConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        onUpdateConnectionWaypoints={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Handmatige correctie/optioneel route"));
+
+    const selectedRoute = container.querySelector('[data-route-id="manual-front"]');
+    expect(selectedRoute).toHaveAttribute("data-route-selected", "true");
+    expect(selectedRoute?.querySelector('[data-route-focus-outline="true"]')).toBeInTheDocument();
+    expect(selectedRoute?.querySelector('[data-route-visible-path="true"]')).toHaveAttribute("stroke-width", "2.8");
+
+    const dragHandle = screen.getByRole("button", { name: "Sleep knikpunt 1" });
+    expect(dragHandle).toHaveAttribute("r", "7");
+  });
+
+  it("does not apply edit route focus styling in read-only mode", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={overlappingConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        readOnly
+        onUpdateConnectionWaypoints={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Handmatige correctie/optioneel route"));
+
+    expect(container.querySelector('[data-route-selected="true"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-route-focus-outline="true"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Sleep knikpunt/ })).not.toBeInTheDocument();
+  });
+
   it("adds a manual route with the selected route type from the edit canvas", () => {
     const onAddConnection = vi.fn();
     const { container } = render(
