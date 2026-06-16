@@ -77,11 +77,27 @@ export interface ProcessAttachment {
   offset?: { x: number; y: number };
 }
 
+export type ProcessArtifactType = "manualExceptionBlock";
+
+export interface ProcessArtifact {
+  id: string;
+  type: ProcessArtifactType;
+  title: string;
+  description?: string;
+  position: { x: number; y: number };
+  size?: { width: number; height: number };
+  association?: {
+    label?: string;
+    anchor: "process";
+  };
+}
+
 export interface ProcessState {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
   attachments?: ProcessAttachment[];
+  artifacts?: ProcessArtifact[];
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
   customLanes?: CustomLane[];
   flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
