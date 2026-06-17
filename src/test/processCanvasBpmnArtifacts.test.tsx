@@ -504,6 +504,45 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(container.querySelector('[data-route-id="end-route"]')).not.toBeInTheDocument();
   });
 
+  it("shows full manual block title, description, and step labels without truncating them", () => {
+    const longTitle = "Manual interventie voor betalingsregeling met uitgebreide klantcontext";
+    const longDescription = "Deze handmatige route kan vanuit iedere pipelinefase worden gekozen wanneer een klant om een afwijkende behandeling vraagt.";
+    const longStepLabel = "Bespreek volledige betalingsregeling met klant en leg afspraken vast";
+
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          { id: "start", type: "start", label: "Start", team: "sales", column: 0 },
+          { id: "manual-step", type: "task", label: longStepLabel, team: "sales", column: 1 },
+        ]}
+        connections={[]}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-long-manual",
+            type: "manualExceptionBlock",
+            title: longTitle,
+            description: longDescription,
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-step"],
+          },
+        ]}
+      />,
+    );
+
+    const manualBlock = screen.getByLabelText(`Manual exception block ${longTitle}`);
+    const blockText = manualBlock.textContent ?? "";
+    const blockRect = manualBlock.querySelector("rect");
+
+    expect(blockText).toContain(longTitle);
+    expect(blockText).toContain(longDescription);
+    expect(blockText).toContain(longStepLabel);
+    expect(blockText).not.toContain("...");
+    expect(Number(blockRect?.getAttribute("height"))).toBeGreaterThan(180);
+    expect(container.querySelector('[data-manual-step-id="manual-step"] foreignObject')).toBeInTheDocument();
+  });
+
   it("renders multiple manual steps in stepIds order", () => {
     render(
       <ProcessCanvas

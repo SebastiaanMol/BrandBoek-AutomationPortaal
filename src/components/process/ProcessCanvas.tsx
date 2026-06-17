@@ -49,9 +49,17 @@ const ATTACHMENT_W = 86;
 const ATTACHMENT_H = 44;
 const MANUAL_EXCEPTION_DEFAULT_W = 250;
 const MANUAL_EXCEPTION_DEFAULT_H = 112;
-const MANUAL_EXCEPTION_STEP_TOP = 96;
+const MANUAL_EXCEPTION_HEADER_TOP = 14;
+const MANUAL_EXCEPTION_TITLE_TOP = 38;
+const MANUAL_EXCEPTION_DESCRIPTION_GAP = 6;
+const MANUAL_EXCEPTION_STEP_GAP_FROM_DESCRIPTION = 12;
 const MANUAL_EXCEPTION_STEP_GAP = 10;
 const MANUAL_EXCEPTION_STEP_BOTTOM = 14;
+const MANUAL_EXCEPTION_TEXT_PAD_X = 14;
+const MANUAL_EXCEPTION_TITLE_LINE_H = 15;
+const MANUAL_EXCEPTION_DESCRIPTION_LINE_H = 14;
+const MANUAL_EXCEPTION_STEP_LINE_H = 12;
+const MANUAL_EXCEPTION_STEP_PAD_Y = 9;
 const STEP_ATTACHMENT_DEFAULT_OFFSET = { x: 72, y: 24 };
 const CONNECTION_ATTACHMENT_DEFAULT_OFFSET = { x: 16, y: 34 };
 const ADD_ATTACHMENT_CONTROLS: { type: ProcessAttachmentType; label: string }[] = [
@@ -738,15 +746,64 @@ function attachmentAriaLabel(attachment: ProcessAttachment): string {
   return `BPMN databron ${attachment.label}`;
 }
 
-function manualExceptionBlockHeight(artifact: ProcessArtifact): number {
+function estimatedWrappedLineCount(text: string, availableWidth: number, averageCharWidth = 6): number {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 1;
+  const maxChars = Math.max(8, Math.floor(availableWidth / averageCharWidth));
+  let lines = 1;
+  let current = 0;
+  for (const word of words) {
+    if (!current) {
+      current = word.length;
+      continue;
+    }
+    if (current + 1 + word.length > maxChars) {
+      lines += 1;
+      current = word.length;
+    } else {
+      current += 1 + word.length;
+    }
+  }
+  return lines;
+}
+
+function manualExceptionStepHeight(label: string, width: number): number {
+  const textWidth = Math.max(56, width - 34);
+  const lines = estimatedWrappedLineCount(label, textWidth, 5.2);
+  return Math.max(STEP_H, lines * MANUAL_EXCEPTION_STEP_LINE_H + MANUAL_EXCEPTION_STEP_PAD_Y * 2);
+}
+
+function manualExceptionTextLayout(artifact: ProcessArtifact, containedSteps: ProcessStep[] = []) {
+  const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
+  const textWidth = width - MANUAL_EXCEPTION_TEXT_PAD_X * 2;
+  const description = artifact.description ?? "Mogelijk vanuit elke pipeline stage. Geen verplichte processtap.";
+  const titleHeight = estimatedWrappedLineCount(artifact.title, textWidth, 6.1) * MANUAL_EXCEPTION_TITLE_LINE_H;
+  const descriptionHeight = estimatedWrappedLineCount(description, textWidth, 5.7) * MANUAL_EXCEPTION_DESCRIPTION_LINE_H;
+  const stepHeights = containedSteps.map(step => manualExceptionStepHeight(step.label, STEP_W));
+  const contentTop = MANUAL_EXCEPTION_TITLE_TOP;
+  const descriptionTop = contentTop + titleHeight + MANUAL_EXCEPTION_DESCRIPTION_GAP;
+  const stepsTop = descriptionTop + descriptionHeight + MANUAL_EXCEPTION_STEP_GAP_FROM_DESCRIPTION;
+  const stepsHeight = stepHeights.reduce((sum, height) => sum + height, 0)
+    + Math.max(0, stepHeights.length - 1) * MANUAL_EXCEPTION_STEP_GAP;
+  const contentHeight = stepsTop + stepsHeight + MANUAL_EXCEPTION_STEP_BOTTOM;
+
+  return {
+    width,
+    textWidth,
+    description,
+    titleHeight,
+    descriptionHeight,
+    descriptionTop,
+    stepsTop,
+    stepHeights,
+    contentHeight,
+  };
+}
+
+function manualExceptionBlockHeight(artifact: ProcessArtifact, containedSteps: ProcessStep[] = []): number {
   const configuredHeight = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
-  const containedCount = artifact.stepIds?.length ?? 0;
-  if (!containedCount) return configuredHeight;
-  const containedHeight = MANUAL_EXCEPTION_STEP_TOP
-    + containedCount * STEP_H
-    + Math.max(0, containedCount - 1) * MANUAL_EXCEPTION_STEP_GAP
-    + MANUAL_EXCEPTION_STEP_BOTTOM;
-  return Math.max(configuredHeight, containedHeight);
+  const layout = manualExceptionTextLayout(artifact, containedSteps);
+  return Math.max(configuredHeight, layout.contentHeight);
 }
 
 function attachmentDefaultOffset(attachment: ProcessAttachment): Pt {
@@ -1580,13 +1637,11 @@ function renderManualExceptionBlock(
   readOnly: boolean,
   onUpdateArtifact?: ProcessCanvasProps["onUpdateArtifact"],
 ) {
-  const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
-  const height = manualExceptionBlockHeight(artifact);
+  const layout = manualExceptionTextLayout(artifact, containedSteps);
+  const width = layout.width;
+  const height = manualExceptionBlockHeight(artifact, containedSteps);
   const x = artifact.position.x;
   const y = artifact.position.y;
-  const title = artifact.title.length > 30 ? `${artifact.title.slice(0, 29)}...` : artifact.title;
-  const description = artifact.description ?? "Mogelijk vanuit elke pipeline stage. Geen verplichte processtap.";
-  const descriptionHeight = containedSteps.length ? 24 : height - 72;
 
   return (
     <>
@@ -1606,28 +1661,57 @@ function renderManualExceptionBlock(
         style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
         Manual
       </text>
-      <text x={x + 14} y={y + 52} fontSize={12} fontWeight={800} fill="#111827"
-        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
-        {title}
-      </text>
-      <foreignObject x={x + 14} y={y + 62} width={width - 28} height={descriptionHeight} style={{ pointerEvents: "none" }}>
+      <foreignObject
+        x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+        y={y + MANUAL_EXCEPTION_TITLE_TOP}
+        width={layout.textWidth}
+        height={layout.titleHeight}
+        style={{ pointerEvents: "none", overflow: "visible" }}
+      >
+        <div
+          style={{
+            color: "#111827",
+            fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+            fontSize: 12,
+            fontWeight: 800,
+            lineHeight: `${MANUAL_EXCEPTION_TITLE_LINE_H}px`,
+            overflow: "visible",
+            overflowWrap: "anywhere",
+            wordBreak: "break-word",
+          }}
+        >
+          {artifact.title}
+        </div>
+      </foreignObject>
+      <foreignObject
+        x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+        y={y + layout.descriptionTop}
+        width={layout.textWidth}
+        height={layout.descriptionHeight}
+        style={{ pointerEvents: "none", overflow: "visible" }}
+      >
         <div
           style={{
             color: "#78716c",
             fontFamily: "IBM Plex Sans, system-ui, sans-serif",
             fontSize: 11,
-            lineHeight: 1.25,
-            overflow: "hidden",
+            lineHeight: `${MANUAL_EXCEPTION_DESCRIPTION_LINE_H}px`,
+            overflow: "visible",
+            overflowWrap: "anywhere",
             wordBreak: "break-word",
           }}
         >
-          {description}
+          {layout.description}
         </div>
       </foreignObject>
       {containedSteps.map((step, index) => {
         const stepX = x + width / 2;
-        const stepY = y + MANUAL_EXCEPTION_STEP_TOP + index * (STEP_H + MANUAL_EXCEPTION_STEP_GAP) + STEP_H / 2;
-        const label = step.label.length > 18 ? `${step.label.slice(0, 17)}...` : step.label;
+        const previousHeight = layout.stepHeights
+          .slice(0, index)
+          .reduce((sum, itemHeight) => sum + itemHeight + MANUAL_EXCEPTION_STEP_GAP, 0);
+        const stepHeight = layout.stepHeights[index] ?? STEP_H;
+        const stepTop = y + layout.stepsTop + previousHeight;
+        const stepY = stepTop + stepHeight / 2;
         return (
           <g
             key={step.id}
@@ -1637,9 +1721,9 @@ function renderManualExceptionBlock(
           >
             <rect
               x={stepX - STEP_W / 2}
-              y={stepY - STEP_H / 2}
+              y={stepTop}
               width={STEP_W}
-              height={STEP_H}
+              height={stepHeight}
               rx={8}
               fill="white"
               stroke="#f59e0b"
@@ -1647,24 +1731,39 @@ function renderManualExceptionBlock(
             />
             <rect
               x={stepX - STEP_W / 2}
-              y={stepY - STEP_H / 2}
+              y={stepTop}
               width={4}
-              height={STEP_H}
+              height={stepHeight}
               rx={2}
               fill="#d97706"
             />
-            <text
-              x={stepX + 4}
-              y={stepY}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize={9}
-              fontWeight={500}
-              fill="#1e293b"
-              style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
+            <foreignObject
+              x={stepX - STEP_W / 2 + 12}
+              y={stepTop + MANUAL_EXCEPTION_STEP_PAD_Y}
+              width={STEP_W - 24}
+              height={stepHeight - MANUAL_EXCEPTION_STEP_PAD_Y * 2}
+              style={{ pointerEvents: "none", overflow: "visible" }}
             >
-              {label}
-            </text>
+              <div
+                style={{
+                  alignItems: "center",
+                  color: "#1e293b",
+                  display: "flex",
+                  fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+                  fontSize: 9,
+                  fontWeight: 600,
+                  height: "100%",
+                  justifyContent: "center",
+                  lineHeight: `${MANUAL_EXCEPTION_STEP_LINE_H}px`,
+                  overflow: "visible",
+                  overflowWrap: "anywhere",
+                  textAlign: "center",
+                  wordBreak: "break-word",
+                }}
+              >
+                {step.label}
+              </div>
+            </foreignObject>
           </g>
         );
       })}
@@ -1814,7 +1913,10 @@ export function ProcessCanvas({
       (bounds, artifact) => {
         if (artifact.type !== "manualExceptionBlock") return bounds;
         const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
-        const height = manualExceptionBlockHeight(artifact);
+        const containedSteps = (artifact.stepIds ?? [])
+          .map(stepId => stepsById.get(stepId))
+          .filter(Boolean) as ProcessStep[];
+        const height = manualExceptionBlockHeight(artifact, containedSteps);
         return {
           width: Math.max(bounds.width, artifact.position.x + width + 260),
           height: Math.max(bounds.height, artifact.position.y + height + CANVAS_LEGEND_H),
@@ -1822,7 +1924,7 @@ export function ProcessCanvas({
       },
       { width: 0, height: 0 },
     );
-  }, [artifacts]);
+  }, [artifacts, stepsById]);
 
   const lastCol = colX.length - 1;
   const lastColHasTask = canvasSteps.some(s => s.column === lastCol && !isEvent(s));
@@ -2135,21 +2237,32 @@ export function ProcessCanvas({
     return artifacts.find((artifact) => {
       if (artifact.type !== "manualExceptionBlock") return false;
       const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
-      const height = manualExceptionBlockHeight(artifact);
+      const containedSteps = (artifact.stepIds ?? [])
+        .map(stepId => stepsById.get(stepId))
+        .filter(Boolean) as ProcessStep[];
+      const height = manualExceptionBlockHeight(artifact, containedSteps);
       return point.x >= artifact.position.x
         && point.x <= artifact.position.x + width
         && point.y >= artifact.position.y
         && point.y <= artifact.position.y + height;
     }) ?? null;
-  }, [artifacts]);
+  }, [artifacts, stepsById]);
 
   const manualStepIndexAtPoint = useCallback((artifact: ProcessArtifact, point: Pt): number => {
-    const count = artifact.stepIds?.length ?? 0;
-    if (!count) return 0;
-    const relativeY = point.y - artifact.position.y - MANUAL_EXCEPTION_STEP_TOP;
-    const rawIndex = Math.floor(relativeY / (STEP_H + MANUAL_EXCEPTION_STEP_GAP));
-    return Math.max(0, Math.min(rawIndex, count - 1));
-  }, []);
+    const containedSteps = (artifact.stepIds ?? [])
+      .map(stepId => stepsById.get(stepId))
+      .filter(Boolean) as ProcessStep[];
+    if (!containedSteps.length) return 0;
+    const layout = manualExceptionTextLayout(artifact, containedSteps);
+    const relativeY = point.y - artifact.position.y - layout.stepsTop;
+    let offset = 0;
+    for (let index = 0; index < layout.stepHeights.length; index += 1) {
+      const stepHeight = layout.stepHeights[index];
+      if (relativeY <= offset + stepHeight + MANUAL_EXCEPTION_STEP_GAP / 2) return index;
+      offset += stepHeight + MANUAL_EXCEPTION_STEP_GAP;
+    }
+    return containedSteps.length - 1;
+  }, [stepsById]);
 
   const completeStepDragToManualArtifact = useCallback((d: NonNullable<typeof dragging>, point: Pt): boolean => {
     if (readOnly || !d.moved || !onMoveStepToArtifact) return false;
@@ -3449,10 +3562,11 @@ export function ProcessCanvas({
         {/* ── Connection preview ── */}
         {artifacts.map((artifact) => {
           if (artifact.type !== "manualExceptionBlock") return null;
-          const height = manualExceptionBlockHeight(artifact);
           const containedSteps = (artifact.stepIds ?? [])
             .map(stepId => stepsById.get(stepId))
             .filter(Boolean) as ProcessStep[];
+          const manualLayout = manualExceptionTextLayout(artifact, containedSteps);
+          const height = manualExceptionBlockHeight(artifact, containedSteps);
           const clickable = !readOnly && !!onUpdateArtifact;
           const draggable = !readOnly && !!onMoveArtifact;
           const editing = !readOnly && editingArtifactId === artifact.id && !!onUpdateArtifact;
@@ -3500,10 +3614,12 @@ export function ProcessCanvas({
                 )}
                 {hasManualStepControls && containedSteps.map((step, index) => {
                   const stepX = artifact.position.x + (artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W) / 2;
-                  const stepY = artifact.position.y
-                    + MANUAL_EXCEPTION_STEP_TOP
-                    + index * (STEP_H + MANUAL_EXCEPTION_STEP_GAP)
-                    + STEP_H / 2;
+                  const previousHeight = manualLayout.stepHeights
+                    .slice(0, index)
+                    .reduce((sum, itemHeight) => sum + itemHeight + MANUAL_EXCEPTION_STEP_GAP, 0);
+                  const stepHeight = manualLayout.stepHeights[index] ?? STEP_H;
+                  const stepTop = artifact.position.y + manualLayout.stepsTop + previousHeight;
+                  const stepY = stepTop + stepHeight / 2;
                   return (
                     <g key={`${artifact.id}-${step.id}-controls`}>
                       {onReorderManualArtifactStep && (
@@ -3517,9 +3633,9 @@ export function ProcessCanvas({
                         >
                           <rect
                             x={stepX - STEP_W / 2 - 20}
-                            y={stepY - STEP_H / 2}
+                            y={stepTop}
                             width={18}
-                            height={STEP_H}
+                            height={stepHeight}
                             rx={5}
                             fill="transparent"
                           />
@@ -3543,9 +3659,9 @@ export function ProcessCanvas({
                           tabIndex={0}
                           data-manual-step-drag-handle="true"
                           x={stepX - STEP_W / 2}
-                          y={stepY - STEP_H / 2}
+                          y={stepTop}
                           width={STEP_W}
-                          height={STEP_H}
+                          height={stepHeight}
                           rx={8}
                           fill="transparent"
                           style={{ cursor: "grab" }}
