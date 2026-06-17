@@ -1102,7 +1102,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div data-testid="proceseditor-root" className="flex h-full flex-1 flex-col min-h-0">
       {/* ── Page header ──────────────────────────────────────────────────── */}
       <div className="shrink-0 px-6 py-3 border-b border-border bg-card flex items-center gap-4">
         <div className="flex-1 min-w-0">

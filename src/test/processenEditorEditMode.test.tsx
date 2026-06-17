@@ -192,6 +192,26 @@ describe("ProcessenEditor edit mode", () => {
     });
   });
 
+  it("fills the available height when embedded as the procesviewer editor", async () => {
+    render(
+      <div className="h-[720px]">
+        <ProcessenEditor
+          pipelineId="pipe-1"
+          onSwitchPipeline={() => undefined}
+          displayStyle="viewer"
+        />
+      </div>,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    const editorRoot = viewport.closest("[data-testid='proceseditor-root']");
+
+    expect(editorRoot).toHaveClass("h-full");
+    expect(viewport).toHaveClass("h-full");
+  });
+
   it("shows always-accessible zoom controls and scales the editor canvas", async () => {
     render(
       <ProcessenEditor
