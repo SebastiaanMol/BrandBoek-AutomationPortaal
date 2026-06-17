@@ -42,6 +42,7 @@ const fixtures = vi.hoisted(() => ({
         title: "Betalingsregeling",
         description: "Mogelijk vanuit elke pipeline stage",
         position: { x: 360, y: 180 },
+        stepIds: ["s2"],
       },
     ],
   },
@@ -69,14 +70,14 @@ vi.mock("@/components/process/ProcessCanvas", () => ({
     artifacts = [],
   }: {
     attachments?: Array<{ id: string; label: string }>;
-    artifacts?: Array<{ id: string; title: string }>;
+    artifacts?: Array<{ id: string; title: string; stepIds?: string[] }>;
   }) => (
     <div data-testid="shared-process-canvas" style={{ width: 800, height: 400 }}>
       {attachments.map((attachment) => (
         <span key={attachment.id}>{attachment.label}</span>
       ))}
       {artifacts.map((artifact) => (
-        <span key={artifact.id}>{artifact.title}</span>
+        <span key={artifact.id}>{`${artifact.title}:${artifact.stepIds?.join(",") ?? ""}`}</span>
       ))}
     </div>
   ),
@@ -150,7 +151,7 @@ describe("Procesviewer canvas renderer", () => {
     fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
-    expect(screen.getByText("Betalingsregeling")).toBeInTheDocument();
+    expect(screen.getByText("Betalingsregeling:s2")).toBeInTheDocument();
   });
 
   it("zooms the shared viewer canvas without replacing the shared renderer", async () => {
