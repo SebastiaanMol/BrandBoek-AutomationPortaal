@@ -305,6 +305,9 @@ describe("ProcessenEditor edit mode", () => {
     fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
 
     await waitFor(() => expect(saveProcessStateMock).toHaveBeenCalledOnce());
+    const persisted = saveProcessStateMock.mock.calls[0][1] as {
+      connections: Array<{ fromStepId?: string; toStepId?: string }>;
+    };
     expect(saveProcessStateMock).toHaveBeenCalledWith(
       "pipe-1",
       expect.objectContaining({
@@ -314,12 +317,6 @@ describe("ProcessenEditor edit mode", () => {
             stepIds: ["intake"],
           }),
         ],
-        connections: expect.not.arrayContaining([
-          expect.objectContaining({ fromStepId: "intake" }),
-        ]),
-        connections: expect.not.arrayContaining([
-          expect.objectContaining({ toStepId: "intake" }),
-        ]),
         attachments: expect.not.arrayContaining([
           expect.objectContaining({ attachedTo: { kind: "connection", id: "connection-intake-controle" } }),
         ]),
@@ -330,6 +327,16 @@ describe("ProcessenEditor edit mode", () => {
           flowRoute: expect.anything(),
         }),
       }),
+    );
+    expect(persisted.connections).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ fromStepId: "intake" }),
+      ]),
+    );
+    expect(persisted.connections).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ toStepId: "intake" }),
+      ]),
     );
   });
 
