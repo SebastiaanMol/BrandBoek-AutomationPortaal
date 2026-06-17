@@ -49,7 +49,10 @@ export function moveStepIntoManualArtifact(
   artifactId: string,
   stepId: string,
 ): ProcessArtifact[] {
-  return (artifacts ?? []).map((artifact) => {
+  const values = artifacts ?? [];
+  if (!values.some((artifact) => artifact.id === artifactId)) return values;
+
+  return values.map((artifact) => {
     const currentStepIds = withoutStepId(artifact.stepIds, stepId);
     if (artifact.id !== artifactId) {
       return artifact.stepIds ? { ...artifact, stepIds: currentStepIds } : artifact;

@@ -103,6 +103,24 @@ describe("processArtifacts", () => {
     ]);
   });
 
+  it("leaves artifacts unchanged when moving a step into an unknown manual exception block", () => {
+    const first = {
+      ...createManualExceptionBlock({ x: 10, y: 20 }),
+      id: "artifact-first",
+      stepIds: ["existing", "move-me"],
+    };
+    const second = {
+      ...createManualExceptionBlock({ x: 30, y: 40 }),
+      id: "artifact-second",
+      stepIds: ["other"],
+    };
+
+    expect(moveStepIntoManualArtifact([first, second], "artifact-missing", "move-me")).toEqual([
+      first,
+      second,
+    ]);
+  });
+
   it("removes a step from a manual exception block", () => {
     const artifact = {
       ...createManualExceptionBlock({ x: 10, y: 20 }),
@@ -239,5 +257,47 @@ describe("processArtifacts", () => {
       expect.objectContaining({ id: "artifact-first", stepIds: ["s2", "s3"] }),
       expect.objectContaining({ id: "artifact-second", stepIds: ["s1"] }),
     ]);
+  });
+
+  it("removes stepIds when every manual step id is invalid or duplicate", () => {
+    const saved: SavedProcessState = {
+      steps: [
+        { id: "s1", label: "Intake", team: "sales", column: 0 },
+      ],
+      connections: [],
+      autoLinks: {},
+      parkedSteps: [],
+      artifacts: [
+        {
+          id: "artifact-first",
+          type: "manualExceptionBlock",
+          title: "Manual first",
+          position: { x: 10, y: 20 },
+          stepIds: ["s1"],
+        },
+        {
+          id: "artifact-duplicate",
+          type: "manualExceptionBlock",
+          title: "Manual duplicate",
+          position: { x: 30, y: 40 },
+          stepIds: ["s1"],
+        },
+        {
+          id: "artifact-invalid",
+          type: "manualExceptionBlock",
+          title: "Manual invalid",
+          position: { x: 50, y: 60 },
+          stepIds: ["missing"],
+        },
+      ],
+    };
+
+    const artifacts = buildProcessStateFromSaved(saved, []).artifacts ?? [];
+
+    expect(artifacts[0]).toEqual(expect.objectContaining({ id: "artifact-first", stepIds: ["s1"] }));
+    expect(artifacts[1]).toEqual(expect.objectContaining({ id: "artifact-duplicate" }));
+    expect(artifacts[1]).not.toHaveProperty("stepIds");
+    expect(artifacts[2]).toEqual(expect.objectContaining({ id: "artifact-invalid" }));
+    expect(artifacts[2]).not.toHaveProperty("stepIds");
   });
 });

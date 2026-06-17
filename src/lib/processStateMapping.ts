@@ -129,7 +129,9 @@ function validArtifacts(artifacts: unknown, validStepIds: Set<string>): ProcessA
       usedStepIds.add(stepId);
       return true;
     });
-    return [{ ...artifact, ...(stepIds.length ? { stepIds } : {}) }];
+    const sanitizedArtifact = { ...artifact };
+    delete sanitizedArtifact.stepIds;
+    return [{ ...sanitizedArtifact, ...(stepIds.length ? { stepIds } : {}) }];
   });
 }
 
