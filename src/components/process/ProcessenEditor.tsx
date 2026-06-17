@@ -142,14 +142,15 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [renameLaneName, setRenameLaneName]       = useState("");
   const [selectedRouteType, setSelectedRouteType] = useState<ConnectionRouteType>("main");
   const [editorZoom, setEditorZoom] = useState(1);
+  const [editorPan, setEditorPan] = useState({ x: 24, y: 24 });
   const [isEditorCanvasFullscreen, setIsEditorCanvasFullscreen] = useState(false);
   const editorCanvasViewportRef = useRef<HTMLDivElement>(null);
   const editorZoomRef = useRef(1);
   const editorPanRef = useRef<{
     startX: number;
     startY: number;
-    scrollLeft: number;
-    scrollTop: number;
+    panX: number;
+    panY: number;
   } | null>(null);
   const [isEditorPanning, setIsEditorPanning] = useState(false);
 
@@ -283,10 +284,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       const rect = viewport.getBoundingClientRect();
       const anchorX = anchor.clientX - rect.left;
       const anchorY = anchor.clientY - rect.top;
-      const canvasX = (viewport.scrollLeft + anchorX) / current;
-      const canvasY = (viewport.scrollTop + anchorY) / current;
-      viewport.scrollLeft = Math.round((canvasX * next - anchorX) * 100) / 100;
-      viewport.scrollTop = Math.round((canvasY * next - anchorY) * 100) / 100;
+      setEditorPan(currentPan => ({
+        x: Math.round((anchorX - (anchorX - currentPan.x) * (next / current)) * 100) / 100,
+        y: Math.round((anchorY - (anchorY - currentPan.y) * (next / current)) * 100) / 100,
+      }));
     }
 
     editorZoomRef.current = next;
@@ -309,8 +310,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       const pan = editorPanRef.current;
       const viewport = editorCanvasViewportRef.current;
       if (!pan || !viewport) return;
-      viewport.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
-      viewport.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
+      setEditorPan({
+        x: pan.panX + event.clientX - pan.startX,
+        y: pan.panY + event.clientY - pan.startY,
+      });
     }
     function onMouseUp() {
       if (!editorPanRef.current) return;
@@ -327,6 +330,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
   const resetEditorZoom = useCallback(() => {
     setEditorZoom(1);
+    editorZoomRef.current = 1;
+    setEditorPan({ x: 24, y: 24 });
   }, []);
 
   const toggleEditorCanvasFullscreen = useCallback(() => {
@@ -348,11 +353,11 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     editorPanRef.current = {
       startX: event.clientX,
       startY: event.clientY,
-      scrollLeft: viewport.scrollLeft,
-      scrollTop: viewport.scrollTop,
+      panX: editorPan.x,
+      panY: editorPan.y,
     };
     setIsEditorPanning(true);
-  }, []);
+  }, [editorPan.x, editorPan.y]);
 
   // ── Dirty tracking helper ──────────────────────────────────────────────────
   function update(fn: (s: ProcessState) => ProcessState) {
@@ -1401,28 +1406,26 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
         {/* Canvas */}
         <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
-          <div className={`flex-1 overflow-auto ${displayStyle === "viewer" ? "" : "p-4"}`}>
+          <div className={`flex-1 min-h-0 ${displayStyle === "viewer" ? "overflow-hidden" : "overflow-auto p-4"}`}>
             {loading ? (
               <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
                 Proceskaart laden…
               </div>
             ) : null}
-            <div className={`relative ${loading ? "hidden" : ""}`}>
+            <div className={`relative ${displayStyle === "viewer" ? "h-full min-h-0 overflow-hidden bg-slate-50" : ""} ${loading ? "hidden" : ""}`}>
               <div
                 ref={editorCanvasViewportRef}
                 data-testid="proceseditor-zoom-viewport"
-                className={`process-canvas-wrap overflow-auto ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"}`}
+                className={`process-canvas-wrap relative h-full overflow-hidden ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"}`}
                 onMouseDown={handleEditorViewportMouseDown}
                 style={{ cursor: isEditorPanning ? "grabbing" : "grab" }}
               >
               <div
                 data-testid="proceseditor-zoom-viewport-inner"
-                className="inline-block origin-top-left"
+                className="absolute left-0 top-0 origin-top-left"
                 style={{
-                  transform: `scale(${editorZoom})`,
+                  transform: `translate(${editorPan.x}px, ${editorPan.y}px) scale(${editorZoom})`,
                   transformOrigin: "0 0",
-                  marginBottom: `${Math.max(0, editorZoom - 1) * 100}%`,
-                  marginRight: `${Math.max(0, editorZoom - 1) * 100}%`,
                 }}
               >
                 <ProcessCanvas
@@ -1437,6 +1440,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                   attachments={state.attachments ?? []}
                   artifacts={state.artifacts ?? []}
                   viewportScale={editorZoom}
+                  disableInternalPan
                   onAttachFlow={handleAttachFlow}
                   onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
                   displayStyle={displayStyle}

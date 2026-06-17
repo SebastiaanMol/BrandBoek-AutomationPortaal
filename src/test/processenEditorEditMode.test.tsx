@@ -213,6 +213,7 @@ describe("ProcessenEditor edit mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
 
     expect(canvas.style.transform).not.toBe(before);
+    expect(canvas.style.transform).toContain("translate(");
     expect(canvas.style.transform).toContain("scale(1.1)");
   });
 
@@ -259,16 +260,14 @@ describe("ProcessenEditor edit mode", () => {
       height: 600,
       toJSON: () => ({}),
     });
-    Object.defineProperty(viewport, "scrollLeft", { value: 300, writable: true });
-    Object.defineProperty(viewport, "scrollTop", { value: 200, writable: true });
-
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 500, clientY: 350 });
 
     await waitFor(() => {
+      expect(canvas.style.transform).toContain("translate(-13.6px, -3.6px)");
       expect(canvas.style.transform).toContain("scale(1.1)");
     });
-    expect(viewport.scrollLeft).toBe(370);
-    expect(viewport.scrollTop).toBe(250);
+    expect(viewport.scrollLeft).toBe(0);
+    expect(viewport.scrollTop).toBe(0);
   });
 
   it("pans the editor canvas by dragging empty viewport space", async () => {
@@ -282,15 +281,13 @@ describe("ProcessenEditor edit mode", () => {
     await screen.findByText("Intake");
 
     const viewport = screen.getByTestId("proceseditor-zoom-viewport");
-    Object.defineProperty(viewport, "scrollLeft", { value: 120, writable: true });
-    Object.defineProperty(viewport, "scrollTop", { value: 80, writable: true });
+    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
 
     fireEvent.mouseDown(viewport, { button: 0, clientX: 300, clientY: 200 });
     fireEvent.mouseMove(window, { clientX: 250, clientY: 170 });
     fireEvent.mouseUp(window);
 
-    expect(viewport.scrollLeft).toBe(170);
-    expect(viewport.scrollTop).toBe(110);
+    expect(canvas.style.transform).toContain("translate(-26px, -6px)");
   });
 
   it("does not pan the editor canvas when dragging an interactive canvas item", async () => {
@@ -304,16 +301,14 @@ describe("ProcessenEditor edit mode", () => {
     await screen.findByText("Intake");
 
     const viewport = screen.getByTestId("proceseditor-zoom-viewport");
-    Object.defineProperty(viewport, "scrollLeft", { value: 120, writable: true });
-    Object.defineProperty(viewport, "scrollTop", { value: 80, writable: true });
+    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
 
     const step = container.querySelector('[data-step-id="intake"] rect') as SVGRectElement;
     fireEvent.mouseDown(step, { button: 0, clientX: 186, clientY: 44 });
     fireEvent.mouseMove(window, { clientX: 250, clientY: 170 });
     fireEvent.mouseUp(window);
 
-    expect(viewport.scrollLeft).toBe(120);
-    expect(viewport.scrollTop).toBe(80);
+    expect(canvas.style.transform).toContain("translate(24px, 24px)");
   });
 
   it("updates the process state query cache after saving so the viewer sees the edit immediately", async () => {

@@ -1521,6 +1521,7 @@ interface ProcessCanvasProps {
   displayStyle?: "viewer";
   showLegend?: boolean;
   viewportScale?: number;
+  disableInternalPan?: boolean;
   selectedRouteType?: ConnectionRouteType;
   onRenameLane?: (laneKey: string) => void;
   onStepClick?: (s: ProcessStep) => void;
@@ -1726,6 +1727,7 @@ export function ProcessCanvas({
   displayStyle,
   showLegend = true,
   viewportScale = 1,
+  disableInternalPan = false,
   selectedRouteType = "main",
   onRenameLane,
   onStepClick, onAutomationClick, onAttachmentClick,
@@ -2511,6 +2513,7 @@ export function ProcessCanvas({
           setEditingArtifactId(null);
         }}
         onMouseDown={e => {
+          if (disableInternalPan) return;
           if (e.button !== 0 || dragging || drawing || drawingBranch) return;
           const container = scrollContainerRef.current;
           if (!container) return;
