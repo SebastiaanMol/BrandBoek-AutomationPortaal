@@ -216,6 +216,26 @@ describe("ProcessenEditor edit mode", () => {
     expect(canvas.style.transform).toContain("scale(1.1)");
   });
 
+  it("zooms the editor canvas with the mouse wheel", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
+    const before = canvas.style.transform;
+
+    fireEvent.wheel(viewport, { deltaY: -100, clientX: 200, clientY: 120 });
+
+    expect(canvas.style.transform).not.toBe(before);
+    expect(canvas.style.transform).toContain("scale(1.1)");
+  });
+
   it("updates the process state query cache after saving so the viewer sees the edit immediately", async () => {
     render(
       <ProcessenEditor

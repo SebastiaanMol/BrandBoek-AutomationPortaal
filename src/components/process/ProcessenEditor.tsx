@@ -265,6 +265,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     setEditorZoom(current => Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2)))));
   }, []);
 
+  useEffect(() => {
+    const viewport = editorCanvasViewportRef.current;
+    if (!viewport) return;
+    function onWheel(event: WheelEvent) {
+      event.preventDefault();
+      applyEditorZoom(event.deltaY < 0 ? 0.1 : -0.1);
+    }
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, [applyEditorZoom]);
+
   const resetEditorZoom = useCallback(() => {
     setEditorZoom(1);
   }, []);
