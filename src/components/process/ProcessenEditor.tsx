@@ -274,9 +274,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     editorZoomRef.current = editorZoom;
   }, [editorZoom]);
 
-  const applyEditorZoom = useCallback((delta: number, anchor?: { clientX: number; clientY: number }) => {
+  const applyEditorZoom = useCallback((nextZoom: number, anchor?: { clientX: number; clientY: number }) => {
     const current = editorZoomRef.current;
-    const next = Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2))));
+    const next = Math.min(2, Math.max(0.5, Number(nextZoom.toFixed(4))));
     if (next === current) return;
 
     const viewport = editorCanvasViewportRef.current;
@@ -294,16 +294,25 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     setEditorZoom(next);
   }, []);
 
+  const applyEditorZoomStep = useCallback((delta: number) => {
+    applyEditorZoom(editorZoomRef.current + delta);
+  }, [applyEditorZoom]);
+
+  const applyEditorWheelZoom = useCallback((deltaY: number, anchor: { clientX: number; clientY: number }) => {
+    const factor = Math.exp(-deltaY * 0.001);
+    applyEditorZoom(editorZoomRef.current * factor, anchor);
+  }, [applyEditorZoom]);
+
   useEffect(() => {
     const viewport = editorCanvasViewportRef.current;
     if (!viewport) return;
     function onWheel(event: WheelEvent) {
       event.preventDefault();
-      applyEditorZoom(event.deltaY < 0 ? 0.1 : -0.1, { clientX: event.clientX, clientY: event.clientY });
+      applyEditorWheelZoom(event.deltaY, { clientX: event.clientX, clientY: event.clientY });
     }
     viewport.addEventListener("wheel", onWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", onWheel);
-  }, [applyEditorZoom]);
+  }, [applyEditorWheelZoom]);
 
   useEffect(() => {
     function onMouseMove(event: MouseEvent) {
@@ -1476,8 +1485,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               </div>
               <BpmnToolbar
                 zoom={editorZoom}
-                onZoomIn={() => applyEditorZoom(0.1)}
-                onZoomOut={() => applyEditorZoom(-0.1)}
+                onZoomIn={() => applyEditorZoomStep(0.1)}
+                onZoomOut={() => applyEditorZoomStep(-0.1)}
                 onReset={resetEditorZoom}
                 onFullscreen={toggleEditorCanvasFullscreen}
                 isFullscreen={isEditorCanvasFullscreen}

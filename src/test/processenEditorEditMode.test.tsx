@@ -254,7 +254,28 @@ describe("ProcessenEditor edit mode", () => {
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 200, clientY: 120 });
 
     expect(canvas.style.transform).not.toBe(before);
-    expect(canvas.style.transform).toContain("scale(1.1)");
+    expect(canvas.style.transform).toContain("scale(1.1052)");
+  });
+
+  it("uses proportional wheel zoom so small scroll deltas do not jump the view", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
+
+    fireEvent.wheel(viewport, { deltaY: -1, clientX: 200, clientY: 120 });
+
+    await waitFor(() => {
+      expect(canvas.style.transform).toContain("scale(1.001)");
+    });
+    expect(canvas.style.transform).not.toContain("scale(1.1)");
   });
 
   it("keeps the mouse position anchored while wheel zooming the editor canvas", async () => {
@@ -283,11 +304,43 @@ describe("ProcessenEditor edit mode", () => {
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 500, clientY: 350 });
 
     await waitFor(() => {
-      expect(canvas.style.transform).toContain("translate(-13.6px, -3.6px)");
-      expect(canvas.style.transform).toContain("scale(1.1)");
+      expect(canvas.style.transform).toContain("translate(-15.56px, -5.04px)");
+      expect(canvas.style.transform).toContain("scale(1.1052)");
     });
     expect(viewport.scrollLeft).toBe(0);
     expect(viewport.scrollTop).toBe(0);
+  });
+
+  it("keeps repeated wheel zooms at different mouse positions in one stable transform", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
+    vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 50,
+      left: 100,
+      top: 50,
+      right: 900,
+      bottom: 650,
+      width: 800,
+      height: 600,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.wheel(viewport, { deltaY: -100, clientX: 500, clientY: 350 });
+    fireEvent.wheel(viewport, { deltaY: -100, clientX: 800, clientY: 500 });
+
+    await waitFor(() => {
+      expect(canvas.style.transform).toBe("translate(-90.79px, -52.88px) scale(1.2214)");
+    });
   });
 
   it("pans the editor canvas by dragging empty viewport space", async () => {
