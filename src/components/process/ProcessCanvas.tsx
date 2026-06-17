@@ -1633,9 +1633,7 @@ interface ProcessCanvasProps {
 function renderManualExceptionBlock(
   artifact: ProcessArtifact,
   containedSteps: ProcessStep[],
-  editing: boolean,
   readOnly: boolean,
-  onUpdateArtifact?: ProcessCanvasProps["onUpdateArtifact"],
   onStepClick?: ProcessCanvasProps["onStepClick"],
 ) {
   const layout = manualExceptionTextLayout(artifact, containedSteps);
@@ -1784,52 +1782,6 @@ function renderManualExceptionBlock(
           </g>
         );
       })}
-      {editing && !readOnly && onUpdateArtifact && (
-        <foreignObject x={x + width + 8} y={y} width={220} height={132} style={{ overflow: "visible" }}>
-          <div
-            onMouseDown={event => event.stopPropagation()}
-            onClick={event => event.stopPropagation()}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              padding: 8,
-              border: "1px solid #f59e0b",
-              borderRadius: 6,
-              background: "rgba(255,255,255,0.98)",
-              boxShadow: "0 8px 20px rgba(15,23,42,0.16)",
-              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
-            }}
-          >
-            <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, fontWeight: 700, color: "#334155" }}>
-              Titel
-              <input
-                aria-label="Manual exception titel"
-                value={artifact.title}
-                onChange={event => onUpdateArtifact(artifact.id, { title: event.target.value })}
-                style={{ height: 24, border: "1px solid #cbd5e1", borderRadius: 4, fontSize: 11, padding: "0 6px" }}
-              />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, fontWeight: 700, color: "#334155" }}>
-              Beschrijving
-              <textarea
-                aria-label="Manual exception beschrijving"
-                value={artifact.description ?? ""}
-                onChange={event => onUpdateArtifact(artifact.id, { description: event.target.value })}
-                rows={3}
-                style={{
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 4,
-                  fontSize: 11,
-                  lineHeight: 1.25,
-                  padding: "5px 6px",
-                  resize: "none",
-                }}
-              />
-            </label>
-          </div>
-        </foreignObject>
-      )}
     </>
   );
 }
@@ -1981,7 +1933,6 @@ export function ProcessCanvas({
     connId: string; x: number; y: number; value: string;
   } | null>(null);
   const [editingAttachmentId, setEditingAttachmentId] = useState<string | null>(null);
-  const [editingArtifactId, setEditingArtifactId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const panningRef = useRef<{ startX: number; scrollLeft: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -2640,7 +2591,6 @@ export function ProcessCanvas({
         onClick={() => {
           setContextMenu(null);
           setEditingAttachmentId(null);
-          setEditingArtifactId(null);
         }}
         onMouseDown={e => {
           if (disableInternalPan) return;
@@ -3584,9 +3534,7 @@ export function ProcessCanvas({
             .filter(Boolean) as ProcessStep[];
           const manualLayout = manualExceptionTextLayout(artifact, containedSteps);
           const height = manualExceptionBlockHeight(artifact, containedSteps);
-          const clickable = !readOnly && !!onUpdateArtifact;
           const draggable = !readOnly && !!onMoveArtifact;
-          const editing = !readOnly && editingArtifactId === artifact.id && !!onUpdateArtifact;
           const hasManualStepControls = !readOnly
             && containedSteps.length > 0
             && (!!onMoveManualStepToCanvas || !!onReorderManualArtifactStep);
@@ -3595,12 +3543,6 @@ export function ProcessCanvas({
             <g key={artifact.id}>
               <g
                 aria-label={`Manual exception block ${artifact.title}`}
-                role={clickable ? "button" : undefined}
-                tabIndex={clickable ? 0 : undefined}
-                onClick={clickable ? event => {
-                  event.stopPropagation();
-                  setEditingArtifactId(artifact.id);
-                } : undefined}
                 onMouseDown={draggable ? event => handleArtifactMouseDown(event, artifact) : undefined}
                 onContextMenu={readOnly || !onDeleteArtifact ? undefined : event => {
                   event.preventDefault();
@@ -3608,11 +3550,11 @@ export function ProcessCanvas({
                   setContextMenu({ type: "artifact", artifactId: artifact.id, x: event.clientX, y: event.clientY });
                 }}
                 style={{
-                  cursor: draggable ? "move" : clickable ? "pointer" : !readOnly && onDeleteArtifact ? "context-menu" : undefined,
-                  pointerEvents: draggable || clickable || hasManualStepControls || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
+                  cursor: draggable ? "move" : !readOnly && onDeleteArtifact ? "context-menu" : undefined,
+                  pointerEvents: draggable || hasManualStepControls || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
                 }}
               >
-                {renderManualExceptionBlock(artifact, containedSteps, editing, readOnly, onUpdateArtifact, onStepClick)}
+                {renderManualExceptionBlock(artifact, containedSteps, readOnly, onStepClick)}
                 {manualBlockDropTarget?.id === artifact.id && (
                   <rect
                     data-manual-block-drop-highlight={artifact.id}

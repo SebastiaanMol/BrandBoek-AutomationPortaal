@@ -932,7 +932,7 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(onMoveArtifact).toHaveBeenCalledWith("artifact-scaled", { x: 390, y: 180 });
   });
 
-  it("edits manual exception block title and description in edit mode", () => {
+  it("does not open the old manual exception input bar when the block is clicked", () => {
     const onUpdateArtifact = vi.fn();
     render(
       <ProcessCanvas
@@ -954,15 +954,10 @@ describe("ProcessCanvas BPMN attachments", () => {
     );
 
     fireEvent.click(screen.getByLabelText("Manual exception block Manual actie"));
-    fireEvent.change(screen.getByLabelText("Manual exception titel"), {
-      target: { value: "Betalingsregeling" },
-    });
-    fireEvent.change(screen.getByLabelText("Manual exception beschrijving"), {
-      target: { value: "Kan altijd gekozen worden" },
-    });
 
-    expect(onUpdateArtifact).toHaveBeenCalledWith("artifact-editable", { title: "Betalingsregeling" });
-    expect(onUpdateArtifact).toHaveBeenCalledWith("artifact-editable", { description: "Kan altijd gekozen worden" });
+    expect(screen.queryByLabelText("Manual exception titel")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Manual exception beschrijving")).not.toBeInTheDocument();
+    expect(onUpdateArtifact).not.toHaveBeenCalled();
   });
 
   it("does not show manual exception edit controls or drag in read-only mode", () => {
