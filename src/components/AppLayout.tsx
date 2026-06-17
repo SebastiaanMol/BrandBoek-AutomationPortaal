@@ -162,8 +162,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             );
           })}
 
-          {/* User profile + collapse toggle */}
-          <div className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg mt-1 ${collapsed ? "justify-center" : ""}`}>
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Uitklappen" : undefined}
+            aria-label={collapsed ? "Uitklappen" : undefined}
+            className={`hidden lg:flex w-full items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors duration-150 ${
+              collapsed ? "justify-center" : ""
+            }`}
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
+            {!collapsed && <span>Inklappen</span>}
+          </button>
+
+          {/* User profile */}
+          <div data-testid="sidebar-user-profile" className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg mt-1 ${collapsed ? "justify-center" : ""}`}>
             <button
               onClick={signOut}
               title="Sign out"
@@ -185,23 +198,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     Sign out
                   </button>
                 </div>
-                <button
-                  onClick={() => setCollapsed((c) => !c)}
-                  className="hidden lg:flex p-1.5 rounded-lg text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors shrink-0"
-                  title="Inklappen"
-                >
-                  <PanelLeftClose className="h-4 w-4" />
-                </button>
               </>
-            )}
-            {collapsed && (
-              <button
-                onClick={() => setCollapsed((c) => !c)}
-                className="hidden lg:flex p-1.5 rounded-lg text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-                title="Uitklappen"
-              >
-                <PanelLeftOpen className="h-4 w-4" />
-              </button>
             )}
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -97,6 +97,29 @@ describe("process navigation cleanup", () => {
 
     expect(automationsGroup).toHaveTextContent("Procesreis");
     expect(analysisGroup).not.toHaveTextContent("Procesreis");
+  });
+
+  it("shows the sidebar collapse action as a full footer item below settings", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AppLayout>
+          <div />
+        </AppLayout>
+      </MemoryRouter>,
+    );
+
+    const settings = screen.getByRole("link", { name: /Settings/i });
+    const collapse = screen.getByRole("button", { name: /Inklappen/i });
+
+    expect(collapse).toHaveTextContent("Inklappen");
+    expect(collapse.className).toContain("px-2.5");
+    expect(settings.compareDocumentPosition(collapse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector("[data-testid='sidebar-user-profile']")).not.toContainElement(collapse);
+
+    fireEvent.click(collapse);
+
+    expect(screen.queryByText("Inklappen")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Uitklappen/i })).toBeInTheDocument();
   });
 
   it("points dashboard process actions to the Procesviewer", () => {
