@@ -564,6 +564,121 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(container.querySelector("[data-manual-step-sort-control]")).not.toBeInTheDocument();
   });
 
+  it("calls onMoveStepToArtifact when a canvas step is dropped on a manual block", () => {
+    const onMoveStepToArtifact = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          ...steps,
+          { id: "move-me", type: "task", label: "Betalingsregeling", team: "sales", column: 2 },
+        ]}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Manual acties",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onMoveStepToArtifact={onMoveStepToArtifact}
+      />,
+    );
+    mockSvgRect(container);
+
+    const stepNode = container.querySelector('[data-step-id="move-me"] rect');
+    expect(stepNode).toBeInTheDocument();
+
+    fireEvent.mouseDown(stepNode!, {
+      button: 0,
+      clientX: 500,
+      clientY: 44,
+    });
+    fireEvent.mouseMove(window, { clientX: 390, clientY: 190 });
+    fireEvent.mouseUp(window, { clientX: 390, clientY: 190 });
+
+    expect(onMoveStepToArtifact).toHaveBeenCalledWith("move-me", "artifact-manual");
+  });
+
+  it("calls onMoveManualStepToCanvas when dragging a manual step back to the canvas", () => {
+    const onMoveManualStepToCanvas = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          ...steps,
+          { id: "manual-step", type: "task", label: "Betalingsregeling", team: "sales", column: 2 },
+        ]}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Manual acties",
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-step"],
+          },
+        ]}
+        onMoveManualStepToCanvas={onMoveManualStepToCanvas}
+      />,
+    );
+    mockSvgRect(container);
+
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Manual stap Betalingsregeling terugplaatsen" }), {
+      button: 0,
+      clientX: 390,
+      clientY: 245,
+    });
+    fireEvent.mouseMove(window, { clientX: 180, clientY: 44 });
+    fireEvent.mouseUp(window, { clientX: 180, clientY: 44 });
+
+    expect(onMoveManualStepToCanvas).toHaveBeenCalledWith("artifact-manual", "manual-step", {
+      team: "sales",
+      column: expect.any(Number),
+      row: expect.any(Number),
+    });
+  });
+
+  it("calls onReorderManualArtifactStep when a manual step is dropped over another manual step", () => {
+    const onReorderManualArtifactStep = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          ...steps,
+          { id: "manual-one", type: "task", label: "Betalingsregeling", team: "sales", column: 2 },
+          { id: "manual-two", type: "task", label: "Escalatie", team: "sales", column: 3 },
+        ]}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Manual acties",
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-one", "manual-two"],
+          },
+        ]}
+        onReorderManualArtifactStep={onReorderManualArtifactStep}
+      />,
+    );
+    mockSvgRect(container);
+
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Manual stap Escalatie sorteren" }), {
+      button: 0,
+      clientX: 385,
+      clientY: 286,
+    });
+    fireEvent.mouseMove(window, { clientX: 385, clientY: 244 });
+    fireEvent.mouseUp(window, { clientX: 385, clientY: 244 });
+
+    expect(onReorderManualArtifactStep).toHaveBeenCalledWith("artifact-manual", "manual-two", 0);
+  });
+
   it("drags manual exception blocks in edit mode", () => {
     const onMoveArtifact = vi.fn();
     const { container } = render(

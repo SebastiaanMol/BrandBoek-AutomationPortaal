@@ -1545,6 +1545,13 @@ interface ProcessCanvasProps {
   ) => void;
   onDeleteConnection?: (id: string) => void;
   onMoveStep?: (stepId: string, newTeam: string, newColumn: number, newRow: number) => void;
+  onMoveStepToArtifact?: (stepId: string, artifactId: string) => void;
+  onMoveManualStepToCanvas?: (
+    artifactId: string,
+    stepId: string,
+    target: { team: string; column: number; row: number },
+  ) => void;
+  onReorderManualArtifactStep?: (artifactId: string, stepId: string, targetIndex: number) => void;
   onAttachAutomation?: (autoId: string, fromStepId: string, toStepId: string) => void;
   onAddStep?: (team: string, column: number, row: number, type?: ProcessStep["type"]) => void;
   onAddBranch?: (automationId: string, toStepId: string) => void;
@@ -1728,7 +1735,11 @@ export function ProcessCanvas({
   onUpdateArtifact,
   onDeleteArtifact,
   onAddConnection, onDeleteConnection,
-  onMoveStep, onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
+  onMoveStep,
+  onMoveStepToArtifact,
+  onMoveManualStepToCanvas,
+  onReorderManualArtifactStep,
+  onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
   onUpdateConnectionWaypoints,
   onParkStep, onDeleteStep, onPlaceStagedStep, onInsertRowAfter,
   onInsertMoveStep, onInsertAddStep,
@@ -1862,6 +1873,12 @@ export function ProcessCanvas({
     artifactId: string;
     startPoint: Pt;
     startPosition: Pt;
+  } | null>(null);
+  const manualStepDragRef = useRef<{
+    artifactId: string;
+    stepId: string;
+    mode: "sort" | "return";
+    startPoint: Pt;
   } | null>(null);
 
   // Stagger offsets for parallel orthogonal connections sharing the same column corridor.
@@ -2088,31 +2105,114 @@ export function ProcessCanvas({
     return { team: best, row: Math.min(halfRow, maxR) };
   }
 
+  function dropTargetFromPoint(point: Pt, step?: ProcessStep): { team: string; column: number; row: number } | null {
+    if (!visibleTeams.length) return null;
+    const column = nearestCol(point.x);
+    const { team, row } = nearestTeamRow(point.y, !!step && isEvent(step));
+    return { team, column, row };
+  }
+
+  function findArtifactDropTarget(point: Pt): ProcessArtifact | null {
+    return artifacts.find((artifact) => {
+      if (artifact.type !== "manualExceptionBlock") return false;
+      const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
+      const height = manualExceptionBlockHeight(artifact);
+      return point.x >= artifact.position.x
+        && point.x <= artifact.position.x + width
+        && point.y >= artifact.position.y
+        && point.y <= artifact.position.y + height;
+    }) ?? null;
+  }
+
+  function manualStepIndexAtPoint(artifact: ProcessArtifact, point: Pt): number {
+    const count = artifact.stepIds?.length ?? 0;
+    if (!count) return 0;
+    const relativeY = point.y - artifact.position.y - MANUAL_EXCEPTION_STEP_TOP;
+    const rawIndex = Math.floor(relativeY / (STEP_H + MANUAL_EXCEPTION_STEP_GAP));
+    return Math.max(0, Math.min(rawIndex, count - 1));
+  }
+
+  function completeStepDragToManualArtifact(d: NonNullable<typeof dragging>, point: Pt): boolean {
+    if (readOnly || !d.moved || !onMoveStepToArtifact) return false;
+    const artifactTarget = findArtifactDropTarget(point);
+    if (!artifactTarget) return false;
+    onMoveStepToArtifact(d.stepId, artifactTarget.id);
+    draggingRef.current = null;
+    setDragging(null);
+    setDragCleanupState();
+    return true;
+  }
+
+  function setDragCleanupState() {
+    setDrawing(null);
+    setDrawingBranch(null);
+    setHoverSep(null);
+    waypointDragRef.current = null;
+  }
+
   // Global mouseup: detect drag-to-right-of-SVG to park step in staging area.
   // Uses refs for dragging and onParkStep so this stable handler always sees current values.
   // 8px buffer prevents false positives when dropping exactly at the SVG's right edge.
   useEffect(() => {
     function onGlobalUp(e: MouseEvent) {
+      const point = clientToSvg(e.clientX, e.clientY);
+      const manualDrag = manualStepDragRef.current;
+      if (manualDrag && !readOnly) {
+        const targetArtifact = findArtifactDropTarget(point);
+        if (
+          manualDrag.mode === "sort"
+          && targetArtifact?.id === manualDrag.artifactId
+          && onReorderManualArtifactStep
+        ) {
+          onReorderManualArtifactStep(
+            manualDrag.artifactId,
+            manualDrag.stepId,
+            manualStepIndexAtPoint(targetArtifact, point),
+          );
+        } else if (manualDrag.mode === "return" && !targetArtifact && onMoveManualStepToCanvas) {
+          const manualStep = stepsById.get(manualDrag.stepId);
+          const target = dropTargetFromPoint(point, manualStep);
+          if (target) {
+            onMoveManualStepToCanvas(manualDrag.artifactId, manualDrag.stepId, target);
+          }
+        }
+        manualStepDragRef.current = null;
+        setDragCleanupState();
+        return;
+      }
+      manualStepDragRef.current = null;
+
       const d = draggingRef.current;
       if (d?.moved) {
+        if (completeStepDragToManualArtifact(d, point)) {
+          return;
+        }
         const svgRect = svgRef.current?.getBoundingClientRect();
         if (svgRect && e.clientX > svgRect.right + 8) {
           onParkStepRef.current?.(d.stepId);
+          draggingRef.current = null;
           setDragging(null);
-          setDrawing(null);
-          setDrawingBranch(null);
-          waypointDragRef.current = null;
+          setDragCleanupState();
           return;
         }
       }
+      draggingRef.current = null;
       setDragging(null);
-      setDrawing(null);
-      setDrawingBranch(null);
-      waypointDragRef.current = null;
+      setDragCleanupState();
     }
     window.addEventListener("mouseup", onGlobalUp);
     return () => window.removeEventListener("mouseup", onGlobalUp);
-  }, []); // stable: reads from refs
+  }, [
+    clientToSvg,
+    completeStepDragToManualArtifact,
+    dropTargetFromPoint,
+    findArtifactDropTarget,
+    manualStepIndexAtPoint,
+    onMoveManualStepToCanvas,
+    onReorderManualArtifactStep,
+    readOnly,
+    stepsById,
+  ]);
 
   // Pan-to-scroll: global handlers read from refs so the effect is stable.
   useEffect(() => {
@@ -2158,6 +2258,26 @@ export function ProcessCanvas({
       artifactId: artifact.id,
       startPoint: toSvg(e),
       startPosition: artifact.position,
+    };
+  }
+
+  function handleManualStepMouseDown(
+    e: React.MouseEvent<SVGElement>,
+    artifact: ProcessArtifact,
+    step: ProcessStep,
+    mode: "sort" | "return",
+  ) {
+    if (readOnly || e.button !== 0) return;
+    if (mode === "sort" && !onReorderManualArtifactStep) return;
+    if (mode === "return" && !onMoveManualStepToCanvas) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    manualStepDragRef.current = {
+      artifactId: artifact.id,
+      stepId: step.id,
+      mode,
+      startPoint: toSvg(e),
     };
   }
 
@@ -2264,6 +2384,9 @@ export function ProcessCanvas({
 
     if (dragging) {
       if (dragging.moved) {
+        if (completeStepDragToManualArtifact(dragging, pt)) {
+          return;
+        }
         const col = nearestCol(dragging.curX);
         if (hoverSep && onInsertMoveStep) {
           // Drop on a divider line → insert between rows
@@ -3318,6 +3441,9 @@ export function ProcessCanvas({
           const clickable = !readOnly && !!onUpdateArtifact;
           const draggable = !readOnly && !!onMoveArtifact;
           const editing = !readOnly && editingArtifactId === artifact.id && !!onUpdateArtifact;
+          const hasManualStepControls = !readOnly
+            && containedSteps.length > 0
+            && (!!onMoveManualStepToCanvas || !!onReorderManualArtifactStep);
 
           return (
             <g key={artifact.id}>
@@ -3361,10 +3487,67 @@ export function ProcessCanvas({
                 }}
                 style={{
                   cursor: draggable ? "move" : clickable ? "pointer" : !readOnly && onDeleteArtifact ? "context-menu" : undefined,
-                  pointerEvents: draggable || clickable || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
+                  pointerEvents: draggable || clickable || hasManualStepControls || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
                 }}
               >
                 {renderManualExceptionBlock(artifact, containedSteps, editing, readOnly, onUpdateArtifact)}
+                {hasManualStepControls && containedSteps.map((step, index) => {
+                  const stepX = artifact.position.x + (artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W) / 2;
+                  const stepY = artifact.position.y
+                    + MANUAL_EXCEPTION_STEP_TOP
+                    + index * (STEP_H + MANUAL_EXCEPTION_STEP_GAP)
+                    + STEP_H / 2;
+                  return (
+                    <g key={`${artifact.id}-${step.id}-controls`}>
+                      {onReorderManualArtifactStep && (
+                        <g
+                          role="button"
+                          aria-label={`Manual stap ${step.label} sorteren`}
+                          tabIndex={0}
+                          data-manual-step-sort-control="true"
+                          onMouseDown={event => handleManualStepMouseDown(event, artifact, step, "sort")}
+                          style={{ cursor: "grab" }}
+                        >
+                          <rect
+                            x={stepX - STEP_W / 2 - 20}
+                            y={stepY - STEP_H / 2}
+                            width={18}
+                            height={STEP_H}
+                            rx={5}
+                            fill="transparent"
+                          />
+                          <text
+                            x={stepX - STEP_W / 2 - 11}
+                            y={stepY + 4}
+                            textAnchor="middle"
+                            fontSize={13}
+                            fontWeight={800}
+                            fill="#a16207"
+                            style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}
+                          >
+                            ::
+                          </text>
+                        </g>
+                      )}
+                      {onMoveManualStepToCanvas && (
+                        <rect
+                          role="button"
+                          aria-label={`Manual stap ${step.label} terugplaatsen`}
+                          tabIndex={0}
+                          data-manual-step-drag-handle="true"
+                          x={stepX - STEP_W / 2}
+                          y={stepY - STEP_H / 2}
+                          width={STEP_W}
+                          height={STEP_H}
+                          rx={8}
+                          fill="transparent"
+                          style={{ cursor: "grab" }}
+                          onMouseDown={event => handleManualStepMouseDown(event, artifact, step, "return")}
+                        />
+                      )}
+                    </g>
+                  );
+                })}
               </g>
             </g>
           );
