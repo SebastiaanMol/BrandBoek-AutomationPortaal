@@ -468,6 +468,102 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(container.querySelector('[data-process-association="artifact-manual"]')).not.toHaveAttribute("marker-end");
   });
 
+  it("renders artifact-contained steps inside the manual block and not in the main flow", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          { id: "start", type: "start", label: "Start", team: "sales", column: 0 },
+          { id: "main", type: "task", label: "Hoofdproces", team: "sales", column: 1 },
+          { id: "manual-step", type: "task", label: "Bel klant", team: "sales", column: 2 },
+          { id: "end", type: "end", label: "Einde", team: "sales", column: 3 },
+        ]}
+        connections={[
+          { id: "main-route", fromStepId: "start", toStepId: "main" },
+          { id: "manual-route", fromStepId: "main", toStepId: "manual-step" },
+          { id: "end-route", fromStepId: "manual-step", toStepId: "end" },
+        ]}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-contained",
+            type: "manualExceptionBlock",
+            title: "Manual pad",
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-step"],
+          },
+        ]}
+      />,
+    );
+
+    const manualBlock = screen.getByLabelText("Manual exception block Manual pad");
+    const containedStep = screen.getByLabelText("Manual exception step Bel klant");
+
+    expect(manualBlock).toContainElement(containedStep);
+    expect(container.querySelector('[data-step-id="manual-step"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-route-id="manual-route"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-route-id="end-route"]')).not.toBeInTheDocument();
+  });
+
+  it("renders multiple manual steps in stepIds order", () => {
+    render(
+      <ProcessCanvas
+        steps={[
+          { id: "first", type: "task", label: "Eerste", team: "sales", column: 0 },
+          { id: "second", type: "task", label: "Tweede", team: "sales", column: 1 },
+          { id: "third", type: "task", label: "Derde", team: "sales", column: 2 },
+        ]}
+        connections={[]}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-ordered",
+            type: "manualExceptionBlock",
+            title: "Manual volgorde",
+            position: { x: 360, y: 160 },
+            stepIds: ["third", "first", "second"],
+          },
+        ]}
+      />,
+    );
+
+    const labels = Array.from(
+      screen.getByLabelText("Manual exception block Manual volgorde").querySelectorAll("[data-manual-step-id]"),
+    ).map(element => element.textContent);
+
+    expect(labels).toEqual(["Derde", "Eerste", "Tweede"]);
+  });
+
+  it("shows contained manual steps in read-only mode without manual step drag or sort controls", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          { id: "manual-one", type: "task", label: "Bel klant", team: "sales", column: 0 },
+          { id: "manual-two", type: "task", label: "Leg afspraak vast", team: "sales", column: 1 },
+        ]}
+        connections={[]}
+        automations={[]}
+        activeLanes={["sales"]}
+        readOnly
+        artifacts={[
+          {
+            id: "artifact-readonly-steps",
+            type: "manualExceptionBlock",
+            title: "Readonly manual",
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-one", "manual-two"],
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Manual exception step Bel klant")).toBeInTheDocument();
+    expect(screen.getByLabelText("Manual exception step Leg afspraak vast")).toBeInTheDocument();
+    expect(container.querySelector("[data-manual-step-drag-handle]")).not.toBeInTheDocument();
+    expect(container.querySelector("[data-manual-step-sort-control]")).not.toBeInTheDocument();
+  });
+
   it("drags manual exception blocks in edit mode", () => {
     const onMoveArtifact = vi.fn();
     const { container } = render(

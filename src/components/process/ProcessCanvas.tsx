@@ -49,6 +49,9 @@ const ATTACHMENT_W = 86;
 const ATTACHMENT_H = 44;
 const MANUAL_EXCEPTION_DEFAULT_W = 250;
 const MANUAL_EXCEPTION_DEFAULT_H = 112;
+const MANUAL_EXCEPTION_STEP_TOP = 96;
+const MANUAL_EXCEPTION_STEP_GAP = 10;
+const MANUAL_EXCEPTION_STEP_BOTTOM = 14;
 const STEP_ATTACHMENT_DEFAULT_OFFSET = { x: 72, y: 24 };
 const CONNECTION_ATTACHMENT_DEFAULT_OFFSET = { x: 16, y: 34 };
 const ADD_ATTACHMENT_CONTROLS: { type: ProcessAttachmentType; label: string }[] = [
@@ -735,6 +738,17 @@ function attachmentAriaLabel(attachment: ProcessAttachment): string {
   return `BPMN databron ${attachment.label}`;
 }
 
+function manualExceptionBlockHeight(artifact: ProcessArtifact): number {
+  const configuredHeight = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
+  const containedCount = artifact.stepIds?.length ?? 0;
+  if (!containedCount) return configuredHeight;
+  const containedHeight = MANUAL_EXCEPTION_STEP_TOP
+    + containedCount * STEP_H
+    + Math.max(0, containedCount - 1) * MANUAL_EXCEPTION_STEP_GAP
+    + MANUAL_EXCEPTION_STEP_BOTTOM;
+  return Math.max(configuredHeight, containedHeight);
+}
+
 function attachmentDefaultOffset(attachment: ProcessAttachment): Pt {
   return attachment.attachedTo.kind === "step"
     ? STEP_ATTACHMENT_DEFAULT_OFFSET
@@ -1065,7 +1079,8 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
   const txtFill = viewerMode ? (isOptional ? "#C2410C" : "#1D4ED8") : "#1e293b";
 
   return (
-    <g style={{ opacity: isDragging ? 0.3 : 1 }}
+    <g data-step-id={step.id}
+      style={{ opacity: isDragging ? 0.3 : 1 }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       onContextMenu={onContextMenu}>
       {isTarget && (
@@ -1551,16 +1566,18 @@ interface ProcessCanvasProps {
 
 function renderManualExceptionBlock(
   artifact: ProcessArtifact,
+  containedSteps: ProcessStep[],
   editing: boolean,
   readOnly: boolean,
   onUpdateArtifact?: ProcessCanvasProps["onUpdateArtifact"],
 ) {
   const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
-  const height = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
+  const height = manualExceptionBlockHeight(artifact);
   const x = artifact.position.x;
   const y = artifact.position.y;
   const title = artifact.title.length > 30 ? `${artifact.title.slice(0, 29)}...` : artifact.title;
   const description = artifact.description ?? "Mogelijk vanuit elke pipeline stage. Geen verplichte processtap.";
+  const descriptionHeight = containedSteps.length ? 24 : height - 72;
 
   return (
     <>
@@ -1584,7 +1601,7 @@ function renderManualExceptionBlock(
         style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
         {title}
       </text>
-      <foreignObject x={x + 14} y={y + 62} width={width - 28} height={height - 72} style={{ pointerEvents: "none" }}>
+      <foreignObject x={x + 14} y={y + 62} width={width - 28} height={descriptionHeight} style={{ pointerEvents: "none" }}>
         <div
           style={{
             color: "#78716c",
@@ -1598,6 +1615,50 @@ function renderManualExceptionBlock(
           {description}
         </div>
       </foreignObject>
+      {containedSteps.map((step, index) => {
+        const stepX = x + width / 2;
+        const stepY = y + MANUAL_EXCEPTION_STEP_TOP + index * (STEP_H + MANUAL_EXCEPTION_STEP_GAP) + STEP_H / 2;
+        const label = step.label.length > 18 ? `${step.label.slice(0, 17)}...` : step.label;
+        return (
+          <g
+            key={step.id}
+            aria-label={`Manual exception step ${step.label}`}
+            data-manual-step-id={step.id}
+            style={{ pointerEvents: "none" }}
+          >
+            <rect
+              x={stepX - STEP_W / 2}
+              y={stepY - STEP_H / 2}
+              width={STEP_W}
+              height={STEP_H}
+              rx={8}
+              fill="white"
+              stroke="#f59e0b"
+              strokeWidth={1.4}
+            />
+            <rect
+              x={stepX - STEP_W / 2}
+              y={stepY - STEP_H / 2}
+              width={4}
+              height={STEP_H}
+              rx={2}
+              fill="#d97706"
+            />
+            <text
+              x={stepX + 4}
+              y={stepY}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize={9}
+              fontWeight={500}
+              fill="#1e293b"
+              style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
+            >
+              {label}
+            </text>
+          </g>
+        );
+      })}
       {editing && !readOnly && onUpdateArtifact && (
         <foreignObject x={x + width + 8} y={y} width={220} height={132} style={{ overflow: "visible" }}>
           <div
@@ -1686,23 +1747,59 @@ export function ProcessCanvas({
     [activeLanes, allLaneKeys, customLanes],
   );
 
+  const stepsById = useMemo(
+    () => new Map(steps.map(step => [step.id, step])),
+    [steps],
+  );
+
+  const manualStepIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const artifact of artifacts) {
+      if (artifact.type !== "manualExceptionBlock") continue;
+      artifact.stepIds?.forEach(stepId => ids.add(stepId));
+    }
+    return ids;
+  }, [artifacts]);
+
+  const canvasSteps = useMemo(
+    () => steps.filter(step => !manualStepIds.has(step.id)),
+    [manualStepIds, steps],
+  );
+
+  // Step-to-step connections only (not branch edges), excluding steps contained in manual blocks.
+  const stepConnections = useMemo(
+    () => connections.filter(c =>
+      !!c.fromStepId
+      && !c.fromAutomationId
+      && !manualStepIds.has(c.fromStepId)
+      && !manualStepIds.has(c.toStepId),
+    ),
+    [connections, manualStepIds],
+  );
+
+  // Branch edges only (automation -> step), excluding manual-contained targets from main-canvas rendering.
+  const branchConnections = useMemo(
+    () => connections.filter(c => !!c.fromAutomationId && !manualStepIds.has(c.toStepId)),
+    [connections, manualStepIds],
+  );
+
   const colX = useMemo(
-    () => computeColX(steps, connections, automations),
-    [steps, connections, automations],
+    () => computeColX(canvasSteps, stepConnections, automations),
+    [canvasSteps, stepConnections, automations],
   );
 
   // Dynamic lane heights and starts (only for visible lanes)
-  const laneStarts = useMemo(() => buildLaneStarts(steps, visibleTeams), [steps, visibleTeams]);
+  const laneStarts = useMemo(() => buildLaneStarts(canvasSteps, visibleTeams), [canvasSteps, visibleTeams]);
   const svgHeight  = useMemo(
-    () => visibleTeams.reduce((sum, t) => sum + laneHeightFn(t, steps), 0),
-    [steps, visibleTeams],
+    () => visibleTeams.reduce((sum, t) => sum + laneHeightFn(t, canvasSteps), 0),
+    [canvasSteps, visibleTeams],
   );
   const artifactBounds = useMemo(() => {
     return artifacts.reduce(
       (bounds, artifact) => {
         if (artifact.type !== "manualExceptionBlock") return bounds;
         const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
-        const height = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
+        const height = manualExceptionBlockHeight(artifact);
         return {
           width: Math.max(bounds.width, artifact.position.x + width + 260),
           height: Math.max(bounds.height, artifact.position.y + height + CANVAS_LEGEND_H),
@@ -1713,7 +1810,7 @@ export function ProcessCanvas({
   }, [artifacts]);
 
   const lastCol = colX.length - 1;
-  const lastColHasTask = steps.some(s => s.column === lastCol && !isEvent(s));
+  const lastColHasTask = canvasSteps.some(s => s.column === lastCol && !isEvent(s));
   // Extra trailing space so there's always room to drag/add after the last step
   const svgWidth = colX.length
     ? colX[lastCol] + (lastColHasTask ? STEP_W / 2 : EVT_R) + EDGE_PAD + BASE_COL_W * 2 + STEP_W
@@ -1767,26 +1864,14 @@ export function ProcessCanvas({
     startPosition: Pt;
   } | null>(null);
 
-  // Step-to-step connections only (not branch edges)
-  const stepConnections = useMemo(
-    () => connections.filter(c => !!c.fromStepId && !c.fromAutomationId),
-    [connections],
-  );
-
-  // Branch edges only (automation → step)
-  const branchConnections = useMemo(
-    () => connections.filter(c => !!c.fromAutomationId),
-    [connections],
-  );
-
   // Stagger offsets for parallel orthogonal connections sharing the same column corridor.
   // Groups connections by (fromColumn, toColumn). Within each group, orthogonal connections
   // (different rows) get a midX offset so their vertical segments don't overlap.
   const connOffsets = useMemo(() => {
     const groups = new Map<string, string[]>();
     for (const conn of stepConnections) {
-      const from = steps.find(s => s.id === conn.fromStepId);
-      const to   = steps.find(s => s.id === conn.toStepId);
+      const from = canvasSteps.find(s => s.id === conn.fromStepId);
+      const to   = canvasSteps.find(s => s.id === conn.toStepId);
       if (!from || !to) continue;
       if (from.team === to.team && stepRow(from) === stepRow(to)) continue; // same-row = straight, no overlap
       if (from.column === to.column) continue; // same-col = vertical, no midX
@@ -1802,14 +1887,14 @@ export function ProcessCanvas({
       });
     }
     return offsets;
-  }, [stepConnections, steps]);
+  }, [canvasSteps, stepConnections]);
 
   // Build a map of automationId → SVG dot center position
   const autoPositions = useMemo(() => {
     const map = new Map<string, Pt>();
     for (const conn of stepConnections) {
-      const from = steps.find(s => s.id === conn.fromStepId);
-      const to   = steps.find(s => s.id === conn.toStepId);
+      const from = canvasSteps.find(s => s.id === conn.fromStepId);
+      const to   = canvasSteps.find(s => s.id === conn.toStepId);
       if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) continue;
       const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
       if (!connAutos.length) continue;
@@ -1819,19 +1904,19 @@ export function ProcessCanvas({
       });
     }
     return map;
-  }, [steps, stepConnections, automations, colX, laneStarts, connOffsets]);
+  }, [canvasSteps, stepConnections, automations, colX, laneStarts, connOffsets]);
 
   const attachmentPlacements = useMemo(() => {
     return attachments.flatMap((attachment) => {
       let anchor: Pt | null = null;
 
       if (attachment.attachedTo.kind === "step") {
-        const step = steps.find(s => s.id === attachment.attachedTo.id);
+        const step = canvasSteps.find(s => s.id === attachment.attachedTo.id);
         if (step) anchor = attachmentAnchorForStep(step, colX, laneStarts);
       } else {
         const conn = stepConnections.find(c => c.id === attachment.attachedTo.id);
-        const from = conn ? steps.find(s => s.id === conn.fromStepId) : undefined;
-        const to = conn ? steps.find(s => s.id === conn.toStepId) : undefined;
+        const from = conn ? canvasSteps.find(s => s.id === conn.fromStepId) : undefined;
+        const to = conn ? canvasSteps.find(s => s.id === conn.toStepId) : undefined;
         if (conn && from && to && colX[from.column] !== undefined && colX[to.column] !== undefined) {
           anchor = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0).dotCenter;
         }
@@ -1848,7 +1933,7 @@ export function ProcessCanvas({
         },
       }];
     });
-  }, [attachments, steps, stepConnections, colX, laneStarts, connOffsets]);
+  }, [attachments, canvasSteps, stepConnections, colX, laneStarts, connOffsets]);
 
   const clientToSvg = useCallback((clientX: number, clientY: number): Pt => {
     const svg = svgRef.current;
@@ -1910,8 +1995,8 @@ export function ProcessCanvas({
       if (readOnly || !drag || !onUpdateConnectionWaypoints) return;
       const connection = connections.find(c => c.id === drag.connectionId);
       if (!connection) return;
-      const from = steps.find(s => s.id === connection.fromStepId);
-      const to = steps.find(s => s.id === connection.toStepId);
+      const from = canvasSteps.find(s => s.id === connection.fromStepId);
+      const to = canvasSteps.find(s => s.id === connection.toStepId);
       if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return;
       const waypoints = [...editableWaypointsForConnection(connection, from, to, colX, laneStarts)];
       if (drag.waypointIndex >= waypoints.length) return;
@@ -1929,7 +2014,7 @@ export function ProcessCanvas({
       window.removeEventListener("mousemove", onGlobalMove);
       window.removeEventListener("mouseup", onGlobalUp);
     };
-  }, [clientToSvg, colX, connections, laneStarts, onUpdateConnectionWaypoints, readOnly, steps]);
+  }, [canvasSteps, clientToSvg, colX, connections, laneStarts, onUpdateConnectionWaypoints, readOnly]);
 
   // Cancel drawing/dragging if mouse released outside the SVG
   useEffect(() => {
@@ -1987,10 +2072,10 @@ export function ProcessCanvas({
       if (y >= laneStarts[team]) best = team;
     }
     const laneStart = laneStarts[best];
-    const lh        = laneHeightFn(best, steps);
+    const lh        = laneHeightFn(best, canvasSteps);
     const maxR      = isEventDrag
-      ? maxRowInLaneFull(best, steps)   // events: can occupy any row including event rows
-      : maxRowInLane(best, steps);      // tasks: snap to task rows only
+      ? maxRowInLaneFull(best, canvasSteps)   // events: can occupy any row including event rows
+      : maxRowInLane(best, canvasSteps);      // tasks: snap to task rows only
 
     // Bottom 35% of the lane = insert a new row
     if (y >= laneStart + lh - ROW_H * 0.35) {
@@ -2118,7 +2203,7 @@ export function ProcessCanvas({
     const isDraggingStep = !!(dragging && !drawing && !drawingBranch);
     if (canInsert && (!dragging || isDraggingStep)) {
       // Don't show separator when cursor is over an existing step node
-      const overStep = steps.some(s => {
+      const overStep = canvasSteps.some(s => {
         const scx = colX[s.column] ?? 0;
         const scy = stepCY(s, laneStarts);
         const hw = isEvent(s) ? EVT_R + 4 : isDecision(s) ? DECISION_H + 4 : STEP_W / 2 + 4;
@@ -2131,8 +2216,8 @@ export function ProcessCanvas({
       let found = false;
       for (const team of visibleTeams) {
         const startY = laneStarts[team] ?? 0;
-        const maxR = maxRowInLane(team, steps);
-        const laneHasSteps = steps.some(s => s.team === team);
+        const maxR = maxRowInLane(team, canvasSteps);
+        const laneHasSteps = canvasSteps.some(s => s.team === team);
         for (let r = 0; r <= maxR; r++) {
           const lineY = startY + (r + 1) * ROW_H;
           if (Math.abs(pt.y - lineY) < SNAP) {
@@ -2152,10 +2237,10 @@ export function ProcessCanvas({
 
     if (drawing) {
       if (!readOnly) {
-        const portDrop = findPortDropTarget(steps, pt, colX, laneStarts, drawing.fromId);
-        const target = portDrop?.step ?? findStepBodyDropTarget(steps, pt, colX, laneStarts, drawing.fromId);
+        const portDrop = findPortDropTarget(canvasSteps, pt, colX, laneStarts, drawing.fromId);
+        const target = portDrop?.step ?? findStepBodyDropTarget(canvasSteps, pt, colX, laneStarts, drawing.fromId);
         if (target) {
-          const source = steps.find(s => s.id === drawing.fromId);
+          const source = canvasSteps.find(s => s.id === drawing.fromId);
           const targetSide = portDrop?.side ?? (source
             ? connectionSideForDrop(source, target, pt, colX, laneStarts)
             : nearestConnectionSide(target, pt, colX, laneStarts));
@@ -2170,8 +2255,8 @@ export function ProcessCanvas({
 
     if (drawingBranch) {
       if (!readOnly) {
-        const portDrop = findPortDropTarget(steps, pt, colX, laneStarts);
-        const target = portDrop?.step ?? findStepBodyDropTarget(steps, pt, colX, laneStarts);
+        const portDrop = findPortDropTarget(canvasSteps, pt, colX, laneStarts);
+        const target = portDrop?.step ?? findStepBodyDropTarget(canvasSteps, pt, colX, laneStarts);
         if (target) onAddBranch?.(drawingBranch.automationId, target.id);
       }
       setDrawingBranch(null);
@@ -2185,7 +2270,7 @@ export function ProcessCanvas({
           onInsertMoveStep(dragging.stepId, hoverSep.team, col, hoverSep.afterRow);
           setHoverSep(null);
         } else {
-          const draggingStepData = steps.find(s => s.id === dragging.stepId);
+          const draggingStepData = canvasSteps.find(s => s.id === dragging.stepId);
           const { team, row } = nearestTeamRow(dragging.curY, !!draggingStepData && isEvent(draggingStepData));
           onMoveStep?.(dragging.stepId, team, col, row);
         }
@@ -2194,7 +2279,7 @@ export function ProcessCanvas({
     }
   }
 
-  const draggingStep = dragging ? steps.find(s => s.id === dragging.stepId) : null;
+  const draggingStep = dragging ? canvasSteps.find(s => s.id === dragging.stepId) : null;
   const dragTarget = dragging?.moved
     ? (() => {
         const { col: _col, ...teamRow } = { col: nearestCol(dragging.curX), ...nearestTeamRow(dragging.curY, !!draggingStep && isEvent(draggingStep)) };
@@ -2204,7 +2289,7 @@ export function ProcessCanvas({
     : null;
 
   // Show extension zone when cursor is targeting a new row
-  const extensionTeam = dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, steps)
+  const extensionTeam = dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, canvasSteps)
     ? dragTarget.team : null;
   const legendReserve = showLegend ? CANVAS_LEGEND_H : 0;
   const effectiveSvgHeight = Math.max(canvasHeight, svgHeight + (extensionTeam ? ROW_H : 0)) + legendReserve;
@@ -2369,8 +2454,8 @@ export function ProcessCanvas({
         {visibleTeams.map((team, idx) => {
           const cfg    = getLaneConfig(team, customLanes);
           const startY = laneStarts[team];
-          const lh     = laneHeightFn(team, steps);
-          const maxR   = maxRowInLane(team, steps);
+          const lh     = laneHeightFn(team, canvasSteps);
+          const maxR   = maxRowInLane(team, canvasSteps);
 
           const laneAccent = VIEWER_LANE_COLORS[team] ?? cfg.stroke;
 
@@ -2461,7 +2546,7 @@ export function ProcessCanvas({
         {extensionTeam && (() => {
           const cfg    = getLaneConfig(extensionTeam, customLanes);
           const startY = laneStarts[extensionTeam];
-          const lh     = laneHeightFn(extensionTeam, steps);
+          const lh     = laneHeightFn(extensionTeam, canvasSteps);
           return (
             <g>
               <rect x={0} y={startY + lh} width={canvasWidth} height={ROW_H}
@@ -2479,8 +2564,8 @@ export function ProcessCanvas({
 
         {/* ── Connections (step-to-step only) ── */}
         {orderedStepConnectionsForRender(stepConnections, selectedConnectionId, readOnly).map(conn => {
-          const from = steps.find(s => s.id === conn.fromStepId);
-          const to   = steps.find(s => s.id === conn.toStepId);
+          const from = canvasSteps.find(s => s.id === conn.fromStepId);
+          const to   = canvasSteps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return null;
           const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           const isHov = hoveredConn === conn.id;
@@ -2695,8 +2780,8 @@ export function ProcessCanvas({
 
         {/* ── Automation dots ── */}
         {stepConnections.flatMap(conn => {
-          const from = steps.find(s => s.id === conn.fromStepId);
-          const to   = steps.find(s => s.id === conn.toStepId);
+          const from = canvasSteps.find(s => s.id === conn.fromStepId);
+          const to   = canvasSteps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
           const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
           if (!connAutos.length) return [];
@@ -2717,8 +2802,8 @@ export function ProcessCanvas({
 
         {/* ── Flow dots on connections ── */}
         {stepConnections.flatMap(conn => {
-          const from = steps.find(s => s.id === conn.fromStepId);
-          const to   = steps.find(s => s.id === conn.toStepId);
+          const from = canvasSteps.find(s => s.id === conn.fromStepId);
+          const to   = canvasSteps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
           const connFlows = Object.entries(flowLinks)
             .filter(([, link]) => link.fromStepId === conn.fromStepId && link.toStepId === conn.toStepId)
@@ -2746,7 +2831,7 @@ export function ProcessCanvas({
         })}
 
         {/* ── Steps & Events ── */}
-        {steps.map(step => {
+        {canvasSteps.map(step => {
           const cx = colX[step.column];
           const cy = stepCY(step, laneStarts);
           if (cx === undefined) return null;
@@ -2852,7 +2937,7 @@ export function ProcessCanvas({
 
         {/* ── Drag ghost ── */}
         {dragging?.moved && (() => {
-          const step = steps.find(s => s.id === dragging.stepId);
+          const step = canvasSteps.find(s => s.id === dragging.stepId);
           if (!step) return null;
           const gx = dragging.curX, gy = dragging.curY;
 
@@ -2877,10 +2962,10 @@ export function ProcessCanvas({
             );
           }
 
-          const isNewRow = !!(dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, steps));
+          const isNewRow = !!(dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, canvasSteps));
           const targetCY = dragTarget
             ? isNewRow
-              ? laneStarts[dragTarget.team] + laneHeightFn(dragTarget.team, steps)
+              ? laneStarts[dragTarget.team] + laneHeightFn(dragTarget.team, canvasSteps)
               : laneStarts[dragTarget.team] + dragTarget.row * ROW_H + ROW_H / 2
             : gy;
 
@@ -2947,9 +3032,9 @@ export function ProcessCanvas({
           const { col, team, row } = newStepDrag;
           const cx = getColX(col);
           if (cx === undefined) return null;
-          const isNewRow = row > maxRowInLane(team, steps);
+          const isNewRow = row > maxRowInLane(team, canvasSteps);
           const cy = isNewRow
-            ? laneStarts[team] + laneHeightFn(team, steps)
+            ? laneStarts[team] + laneHeightFn(team, canvasSteps)
             : laneStarts[team] + row * ROW_H + ROW_H / 2;
           const cfg = getLaneConfig(team, customLanes);
           return (
@@ -2973,7 +3058,7 @@ export function ProcessCanvas({
         {branchConnections.map(conn => {
           const pos = autoPositions.get(conn.fromAutomationId!);
           if (!pos) return null;
-          const target = steps.find(s => s.id === conn.toStepId);
+          const target = canvasSteps.find(s => s.id === conn.toStepId);
           if (!target || colX[target.column] === undefined) return null;
           const tx = colX[target.column];
           const ty = stepCY(target, laneStarts);
@@ -3224,7 +3309,10 @@ export function ProcessCanvas({
         {/* ── Connection preview ── */}
         {artifacts.map((artifact) => {
           if (artifact.type !== "manualExceptionBlock") return null;
-          const height = artifact.size?.height ?? MANUAL_EXCEPTION_DEFAULT_H;
+          const height = manualExceptionBlockHeight(artifact);
+          const containedSteps = (artifact.stepIds ?? [])
+            .map(stepId => stepsById.get(stepId))
+            .filter(Boolean) as ProcessStep[];
           const processAnchor = { x: LANE_HDR_W + 24, y: 24 };
           const blockAnchor = { x: artifact.position.x, y: artifact.position.y + height / 2 };
           const clickable = !readOnly && !!onUpdateArtifact;
@@ -3276,7 +3364,7 @@ export function ProcessCanvas({
                   pointerEvents: draggable || clickable || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
                 }}
               >
-                {renderManualExceptionBlock(artifact, editing, readOnly, onUpdateArtifact)}
+                {renderManualExceptionBlock(artifact, containedSteps, editing, readOnly, onUpdateArtifact)}
               </g>
             </g>
           );
@@ -3380,7 +3468,7 @@ export function ProcessCanvas({
             </button>
           )}
           {contextMenu.type === "step" && (() => {
-            const step = steps.find(s => s.id === contextMenu.stepId);
+            const step = canvasSteps.find(s => s.id === contextMenu.stepId);
             const isEvt = step?.type === "start" || step?.type === "end"
               || step?.type === "timer" || step?.type === "terminate" || step?.type === "send" || step?.type === "receive";
             return isEvt ? (
