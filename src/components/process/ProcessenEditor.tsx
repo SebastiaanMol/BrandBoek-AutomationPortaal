@@ -609,8 +609,16 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   }
 
   function handleDeleteArtifact(artifactId: string) {
+    const artifact = state.artifacts?.find(item => item.id === artifactId);
+    const containedStepIds = artifact?.stepIds ?? [];
+    if (containedStepIds.length) {
+      setFlowLinks(prev => containedStepIds.reduce(
+        (next, stepId) => removeFlowLinksForStep(next, stepId),
+        prev,
+      ));
+    }
     update(s => ({
-      ...s,
+      ...containedStepIds.reduce((next, stepId) => removeConnectionsForStep(next, stepId), s),
       artifacts: deleteProcessArtifact(s.artifacts, artifactId),
     }));
     toast.success("Manual block verwijderd; stappen zijn teruggezet zonder lijnen");

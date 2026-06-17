@@ -83,6 +83,19 @@ const savedProcessStateWithTwoManualSteps = {
   ],
 };
 
+const savedProcessStateWithManualStepAndStaleRoute = {
+  ...savedProcessStateWithIntakeRoute,
+  artifacts: [
+    {
+      id: "artifact-manual",
+      type: "manualExceptionBlock",
+      title: "Manual acties",
+      position: { x: 360, y: 220 },
+      stepIds: ["intake"],
+    },
+  ],
+};
+
 const pipelines = [
   {
     pipelineId: "pipe-1",
@@ -303,6 +316,8 @@ describe("ProcessenEditor edit mode", () => {
         ],
         connections: expect.not.arrayContaining([
           expect.objectContaining({ fromStepId: "intake" }),
+        ]),
+        connections: expect.not.arrayContaining([
           expect.objectContaining({ toStepId: "intake" }),
         ]),
         attachments: expect.not.arrayContaining([
@@ -314,6 +329,41 @@ describe("ProcessenEditor edit mode", () => {
         flowLinks: expect.not.objectContaining({
           flowRoute: expect.anything(),
         }),
+      }),
+    );
+  });
+
+  it("deletes a manual block without re-exposing stale routes for contained steps", async () => {
+    savedProcessState = savedProcessStateWithManualStepAndStaleRoute;
+    automations = [
+      {
+        id: "automationRoute",
+        naam: "Route automation",
+        fasen: ["Sales"],
+        systemen: ["HubSpot"],
+        doel: "Route follow-up",
+      },
+    ];
+
+    render(<ProcessenEditor pipelineId="pipe-1" onSwitchPipeline={() => undefined} />);
+
+    await screen.findByLabelText("Manual exception step Intake");
+    fireEvent.contextMenu(screen.getByLabelText("Manual exception block Manual acties"), {
+      clientX: 390,
+      clientY: 240,
+    });
+    fireEvent.click(screen.getByText("Artifact verwijderen"));
+    fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
+
+    await waitFor(() => expect(saveProcessStateMock).toHaveBeenCalledOnce());
+    expect(saveProcessStateMock).toHaveBeenCalledWith(
+      "pipe-1",
+      expect.objectContaining({
+        artifacts: [],
+        connections: [],
+        attachments: [],
+        autoLinks: {},
+        flowLinks: {},
       }),
     );
   });
