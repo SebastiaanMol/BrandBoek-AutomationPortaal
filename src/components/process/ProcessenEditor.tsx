@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ProcessCanvas } from "@/components/process/ProcessCanvas";
+import { BpmnToolbar } from "@/components/procesviewer/BpmnToolbar";
 import { UnassignedPanel } from "@/components/process/UnassignedPanel";
 import { AutomationDetailPanel } from "@/components/process/AutomationDetailPanel";
 import { FlowDetailPanel } from "@/components/process/FlowDetailPanel";
@@ -140,6 +141,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [renameLaneKey, setRenameLaneKey]         = useState<string | null>(null);
   const [renameLaneName, setRenameLaneName]       = useState("");
   const [selectedRouteType, setSelectedRouteType] = useState<ConnectionRouteType>("main");
+  const [editorZoom, setEditorZoom] = useState(1);
+  const [isEditorCanvasFullscreen, setIsEditorCanvasFullscreen] = useState(false);
+  const editorCanvasViewportRef = useRef<HTMLDivElement>(null);
 
   const { data: allPipelines = [] } = usePipelines();
   const pipelines = allPipelines.filter(p => p.isActive);
@@ -248,6 +252,30 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
   // Notify parent when dirty state changes
   useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setIsEditorCanvasFullscreen(document.fullscreenElement === editorCanvasViewportRef.current);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const applyEditorZoom = useCallback((delta: number) => {
+    setEditorZoom(current => Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2)))));
+  }, []);
+
+  const resetEditorZoom = useCallback(() => {
+    setEditorZoom(1);
+  }, []);
+
+  const toggleEditorCanvasFullscreen = useCallback(() => {
+    if (document.fullscreenElement === editorCanvasViewportRef.current) {
+      document.exitFullscreen?.();
+      return;
+    }
+    editorCanvasViewportRef.current?.requestFullscreen?.();
+  }, []);
 
   // ── Dirty tracking helper ──────────────────────────────────────────────────
   function update(fn: (s: ProcessState) => ProcessState) {
@@ -1302,48 +1330,72 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 Proceskaart laden…
               </div>
             ) : null}
-            <div className={`process-canvas-wrap overflow-hidden ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"} ${loading ? "hidden" : ""}`}>
-              <ProcessCanvas
-                steps={state.steps}
-                connections={state.connections}
-                automations={state.automations}
-                activeLanes={activeLanes}
-                customLanes={customLanes}
-                selectedRouteType={selectedRouteType}
-                flows={flows}
-                flowLinks={flowLinks}
-                attachments={state.attachments ?? []}
-                artifacts={state.artifacts ?? []}
-                onAttachFlow={handleAttachFlow}
-                onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
-                displayStyle={displayStyle}
-                onRenameLane={displayStyle === "viewer" ? handleOpenRenameLane : undefined}
-                onInsertRowAfter={displayStyle === "viewer" ? handleInsertRowAfter : undefined}
-                onInsertMoveStep={displayStyle === "viewer" ? handleInsertMoveStep : undefined}
-                onInsertAddStep={displayStyle === "viewer" ? handleInsertAddStep : undefined}
-                onStepClick={handleStepClick}
-                onAutomationClick={handleAutoClick}
-                onAddConnection={handleAddConnection}
-                onDeleteConnection={handleDeleteConnection}
-                onMoveStep={handleMoveStep}
-                onAttachAutomation={handleAttach}
-                onAddStep={handleAddStep}
-                onAddBranch={handleAddBranch}
-                onUpdateConnectionLabel={handleUpdateConnectionLabel}
-                onUpdateConnectionWaypoints={handleUpdateConnectionWaypoints}
-                onAddAttachment={handleAddAttachment}
-                onMoveAttachment={handleMoveAttachment}
-                onUpdateAttachment={handleUpdateAttachment}
-                onDeleteAttachment={handleDeleteAttachment}
-                onMoveArtifact={handleMoveArtifact}
-                onUpdateArtifact={handleUpdateArtifact}
-                onDeleteArtifact={handleDeleteArtifact}
-                onMoveStepToArtifact={handleMoveStepToArtifact}
-                onMoveManualStepToCanvas={handleMoveManualStepToCanvas}
-                onReorderManualArtifactStep={handleReorderManualArtifactStep}
-                onParkStep={handleParkStep}
-                onDeleteStep={handleDeleteStep}
-                onPlaceStagedStep={handlePlaceStep}
+            <div
+              ref={editorCanvasViewportRef}
+              data-testid="proceseditor-zoom-viewport"
+              className={`process-canvas-wrap relative overflow-auto ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"} ${loading ? "hidden" : ""}`}
+            >
+              <div
+                data-testid="proceseditor-zoom-viewport-inner"
+                className="inline-block origin-top-left"
+                style={{
+                  transform: `scale(${editorZoom})`,
+                  transformOrigin: "0 0",
+                  marginBottom: `${Math.max(0, editorZoom - 1) * 100}%`,
+                  marginRight: `${Math.max(0, editorZoom - 1) * 100}%`,
+                }}
+              >
+                <ProcessCanvas
+                  steps={state.steps}
+                  connections={state.connections}
+                  automations={state.automations}
+                  activeLanes={activeLanes}
+                  customLanes={customLanes}
+                  selectedRouteType={selectedRouteType}
+                  flows={flows}
+                  flowLinks={flowLinks}
+                  attachments={state.attachments ?? []}
+                  artifacts={state.artifacts ?? []}
+                  viewportScale={editorZoom}
+                  onAttachFlow={handleAttachFlow}
+                  onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
+                  displayStyle={displayStyle}
+                  onRenameLane={displayStyle === "viewer" ? handleOpenRenameLane : undefined}
+                  onInsertRowAfter={displayStyle === "viewer" ? handleInsertRowAfter : undefined}
+                  onInsertMoveStep={displayStyle === "viewer" ? handleInsertMoveStep : undefined}
+                  onInsertAddStep={displayStyle === "viewer" ? handleInsertAddStep : undefined}
+                  onStepClick={handleStepClick}
+                  onAutomationClick={handleAutoClick}
+                  onAddConnection={handleAddConnection}
+                  onDeleteConnection={handleDeleteConnection}
+                  onMoveStep={handleMoveStep}
+                  onAttachAutomation={handleAttach}
+                  onAddStep={handleAddStep}
+                  onAddBranch={handleAddBranch}
+                  onUpdateConnectionLabel={handleUpdateConnectionLabel}
+                  onUpdateConnectionWaypoints={handleUpdateConnectionWaypoints}
+                  onAddAttachment={handleAddAttachment}
+                  onMoveAttachment={handleMoveAttachment}
+                  onUpdateAttachment={handleUpdateAttachment}
+                  onDeleteAttachment={handleDeleteAttachment}
+                  onMoveArtifact={handleMoveArtifact}
+                  onUpdateArtifact={handleUpdateArtifact}
+                  onDeleteArtifact={handleDeleteArtifact}
+                  onMoveStepToArtifact={handleMoveStepToArtifact}
+                  onMoveManualStepToCanvas={handleMoveManualStepToCanvas}
+                  onReorderManualArtifactStep={handleReorderManualArtifactStep}
+                  onParkStep={handleParkStep}
+                  onDeleteStep={handleDeleteStep}
+                  onPlaceStagedStep={handlePlaceStep}
+                />
+              </div>
+              <BpmnToolbar
+                zoom={editorZoom}
+                onZoomIn={() => applyEditorZoom(0.1)}
+                onZoomOut={() => applyEditorZoom(-0.1)}
+                onReset={resetEditorZoom}
+                onFullscreen={toggleEditorCanvasFullscreen}
+                isFullscreen={isEditorCanvasFullscreen}
               />
             </div>
 

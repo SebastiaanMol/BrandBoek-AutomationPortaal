@@ -1520,6 +1520,7 @@ interface ProcessCanvasProps {
   readOnly?: boolean;
   displayStyle?: "viewer";
   showLegend?: boolean;
+  viewportScale?: number;
   selectedRouteType?: ConnectionRouteType;
   onRenameLane?: (laneKey: string) => void;
   onStepClick?: (s: ProcessStep) => void;
@@ -1724,6 +1725,7 @@ export function ProcessCanvas({
   readOnly = false,
   displayStyle,
   showLegend = true,
+  viewportScale = 1,
   selectedRouteType = "main",
   onRenameLane,
   onStepClick, onAutomationClick, onAttachmentClick,
@@ -1958,9 +1960,9 @@ export function ProcessCanvas({
     const r = svg.getBoundingClientRect();
     return {
       x: (clientX - r.left) * (canvasWidth / r.width),
-      y:  clientY - r.top,
+      y:  (clientY - r.top) / viewportScale,
     };
-  }, [canvasWidth]);
+  }, [canvasWidth, viewportScale]);
 
   const toSvg = useCallback((e: React.MouseEvent): Pt => {
     return clientToSvg(e.clientX, e.clientY);

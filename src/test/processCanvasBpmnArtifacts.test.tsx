@@ -782,6 +782,52 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(onMoveArtifact).toHaveBeenCalledWith("artifact-draggable", { x: 390, y: 180 });
   });
 
+  it("keeps artifact dragging coordinates correct when the canvas is zoomed", () => {
+    const onMoveArtifact = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        viewportScale={2}
+        artifacts={[
+          {
+            id: "artifact-scaled",
+            type: "manualExceptionBlock",
+            title: "Manual actie",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onMoveArtifact={onMoveArtifact}
+      />,
+    );
+    const svg = container.querySelector("svg") as SVGSVGElement;
+    const width = Number(svg.getAttribute("width")) || 900;
+    const height = Number(svg.getAttribute("height")) || 500;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: width * 2,
+      bottom: height * 2,
+      width: width * 2,
+      height: height * 2,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.mouseDown(screen.getByLabelText("Manual exception block Manual actie"), {
+      button: 0,
+      clientX: 740,
+      clientY: 340,
+    });
+    fireEvent.mouseMove(window, { clientX: 800, clientY: 380 });
+    fireEvent.mouseUp(window);
+
+    expect(onMoveArtifact).toHaveBeenCalledWith("artifact-scaled", { x: 390, y: 180 });
+  });
+
   it("edits manual exception block title and description in edit mode", () => {
     const onUpdateArtifact = vi.fn();
     render(

@@ -192,6 +192,30 @@ describe("ProcessenEditor edit mode", () => {
     });
   });
 
+  it("shows always-accessible zoom controls and scales the editor canvas", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
+
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zoom uit" })).toBeInTheDocument();
+    expect(viewport).toContainElement(screen.getByRole("button", { name: "Zoom in" }));
+
+    const before = canvas.style.transform;
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+
+    expect(canvas.style.transform).not.toBe(before);
+    expect(canvas.style.transform).toContain("scale(1.1)");
+  });
+
   it("updates the process state query cache after saving so the viewer sees the edit immediately", async () => {
     render(
       <ProcessenEditor
