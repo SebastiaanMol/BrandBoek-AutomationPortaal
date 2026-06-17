@@ -254,28 +254,7 @@ describe("ProcessenEditor edit mode", () => {
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 200, clientY: 120 });
 
     expect(canvas.style.transform).not.toBe(before);
-    expect(canvas.style.transform).toContain("scale(1.1052)");
-  });
-
-  it("uses proportional wheel zoom so small scroll deltas do not jump the view", async () => {
-    render(
-      <ProcessenEditor
-        pipelineId="pipe-1"
-        onSwitchPipeline={() => undefined}
-      />,
-    );
-
-    await screen.findByText("Intake");
-
-    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
-    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
-
-    fireEvent.wheel(viewport, { deltaY: -1, clientX: 200, clientY: 120 });
-
-    await waitFor(() => {
-      expect(canvas.style.transform).toContain("scale(1.001)");
-    });
-    expect(canvas.style.transform).not.toContain("scale(1.1)");
+    expect(canvas.style.transform).toContain("scale(1.1)");
   });
 
   it("keeps the mouse position anchored while wheel zooming the editor canvas", async () => {
@@ -304,8 +283,8 @@ describe("ProcessenEditor edit mode", () => {
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 500, clientY: 350 });
 
     await waitFor(() => {
-      expect(canvas.style.transform).toContain("translate(-15.56px, -5.04px)");
-      expect(canvas.style.transform).toContain("scale(1.1052)");
+      expect(canvas.style.transform).toContain("translate(-13.600000000000023px, -3.6000000000000227px)");
+      expect(canvas.style.transform).toContain("scale(1.1)");
     });
     expect(viewport.scrollLeft).toBe(0);
     expect(viewport.scrollTop).toBe(0);
@@ -339,7 +318,9 @@ describe("ProcessenEditor edit mode", () => {
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 800, clientY: 500 });
 
     await waitFor(() => {
-      expect(canvas.style.transform).toBe("translate(-90.79px, -52.88px) scale(1.2214)");
+      expect(canvas.style.transform).toContain("translate(-78.47");
+      expect(canvas.style.transform).toContain("-44.83");
+      expect(canvas.style.transform).toContain("scale(1.2)");
     });
   });
 

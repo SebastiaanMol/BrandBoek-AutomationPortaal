@@ -145,7 +145,6 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [editorPan, setEditorPan] = useState({ x: 24, y: 24 });
   const [isEditorCanvasFullscreen, setIsEditorCanvasFullscreen] = useState(false);
   const editorCanvasViewportRef = useRef<HTMLDivElement>(null);
-  const editorZoomRef = useRef(1);
   const editorPanRef = useRef<{
     startX: number;
     startY: number;
@@ -270,49 +269,35 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
-  useEffect(() => {
-    editorZoomRef.current = editorZoom;
-  }, [editorZoom]);
+  const applyEditorZoom = useCallback((delta: number, clientX?: number, clientY?: number) => {
+    setEditorZoom((current) => {
+      const next = Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2))));
+      if (next === current) return current;
 
-  const applyEditorZoom = useCallback((nextZoom: number, anchor?: { clientX: number; clientY: number }) => {
-    const current = editorZoomRef.current;
-    const next = Math.min(2, Math.max(0.5, Number(nextZoom.toFixed(4))));
-    if (next === current) return;
+      if (clientX !== undefined && clientY !== undefined && editorCanvasViewportRef.current) {
+        const rect = editorCanvasViewportRef.current.getBoundingClientRect();
+        const cx = clientX - rect.left;
+        const cy = clientY - rect.top;
+        setEditorPan((currentPan) => ({
+          x: cx - (cx - currentPan.x) * (next / current),
+          y: cy - (cy - currentPan.y) * (next / current),
+        }));
+      }
 
-    const viewport = editorCanvasViewportRef.current;
-    if (anchor && viewport) {
-      const rect = viewport.getBoundingClientRect();
-      const anchorX = anchor.clientX - rect.left;
-      const anchorY = anchor.clientY - rect.top;
-      setEditorPan(currentPan => ({
-        x: Math.round((anchorX - (anchorX - currentPan.x) * (next / current)) * 100) / 100,
-        y: Math.round((anchorY - (anchorY - currentPan.y) * (next / current)) * 100) / 100,
-      }));
-    }
-
-    editorZoomRef.current = next;
-    setEditorZoom(next);
+      return next;
+    });
   }, []);
-
-  const applyEditorZoomStep = useCallback((delta: number) => {
-    applyEditorZoom(editorZoomRef.current + delta);
-  }, [applyEditorZoom]);
-
-  const applyEditorWheelZoom = useCallback((deltaY: number, anchor: { clientX: number; clientY: number }) => {
-    const factor = Math.exp(-deltaY * 0.001);
-    applyEditorZoom(editorZoomRef.current * factor, anchor);
-  }, [applyEditorZoom]);
 
   useEffect(() => {
     const viewport = editorCanvasViewportRef.current;
     if (!viewport) return;
     function onWheel(event: WheelEvent) {
       event.preventDefault();
-      applyEditorWheelZoom(event.deltaY, { clientX: event.clientX, clientY: event.clientY });
+      applyEditorZoom(event.deltaY < 0 ? 0.1 : -0.1, event.clientX, event.clientY);
     }
     viewport.addEventListener("wheel", onWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", onWheel);
-  }, [applyEditorWheelZoom]);
+  }, [applyEditorZoom]);
 
   useEffect(() => {
     function onMouseMove(event: MouseEvent) {
@@ -339,7 +324,6 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
   const resetEditorZoom = useCallback(() => {
     setEditorZoom(1);
-    editorZoomRef.current = 1;
     setEditorPan({ x: 24, y: 24 });
   }, []);
 
@@ -1485,8 +1469,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               </div>
               <BpmnToolbar
                 zoom={editorZoom}
-                onZoomIn={() => applyEditorZoomStep(0.1)}
-                onZoomOut={() => applyEditorZoomStep(-0.1)}
+                onZoomIn={() => applyEditorZoom(0.1)}
+                onZoomOut={() => applyEditorZoom(-0.1)}
                 onReset={resetEditorZoom}
                 onFullscreen={toggleEditorCanvasFullscreen}
                 isFullscreen={isEditorCanvasFullscreen}
