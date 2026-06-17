@@ -602,6 +602,42 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(onMoveStepToArtifact).toHaveBeenCalledWith("move-me", "artifact-manual");
   });
 
+  it("highlights a manual block while a canvas step is dragged over it", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          ...steps,
+          { id: "move-me", type: "task", label: "Betalingsregeling", team: "sales", column: 2 },
+        ]}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Manual acties",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onMoveStepToArtifact={() => undefined}
+      />,
+    );
+    mockSvgRect(container);
+
+    const stepNode = container.querySelector('[data-step-id="move-me"] rect');
+    expect(stepNode).toBeInTheDocument();
+
+    fireEvent.mouseDown(stepNode!, {
+      button: 0,
+      clientX: 500,
+      clientY: 44,
+    });
+    fireEvent.mouseMove(window, { clientX: 390, clientY: 190 });
+
+    expect(container.querySelector('[data-manual-block-drop-highlight="artifact-manual"]')).toBeInTheDocument();
+  });
+
   it("calls onMoveManualStepToCanvas when dragging a manual step back to the canvas", () => {
     const onMoveManualStepToCanvas = vi.fn();
     const { container } = render(
@@ -637,9 +673,45 @@ describe("ProcessCanvas BPMN attachments", () => {
 
     expect(onMoveManualStepToCanvas).toHaveBeenCalledWith("artifact-manual", "manual-step", {
       team: "sales",
-      column: expect.any(Number),
-      row: expect.any(Number),
+      column: 0,
+      row: 0,
     });
+  });
+
+  it("does not move a manual step back to the canvas when dropped outside a valid lane area", () => {
+    const onMoveManualStepToCanvas = vi.fn();
+    const { container } = render(
+      <ProcessCanvas
+        steps={[
+          ...steps,
+          { id: "manual-step", type: "task", label: "Betalingsregeling", team: "sales", column: 2 },
+        ]}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Manual acties",
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-step"],
+          },
+        ]}
+        onMoveManualStepToCanvas={onMoveManualStepToCanvas}
+      />,
+    );
+    mockSvgRect(container);
+
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Manual stap Betalingsregeling terugplaatsen" }), {
+      button: 0,
+      clientX: 390,
+      clientY: 245,
+    });
+    fireEvent.mouseMove(window, { clientX: 20, clientY: 44 });
+    fireEvent.mouseUp(window, { clientX: 20, clientY: 44 });
+
+    expect(onMoveManualStepToCanvas).not.toHaveBeenCalled();
   });
 
   it("calls onReorderManualArtifactStep when a manual step is dropped over another manual step", () => {

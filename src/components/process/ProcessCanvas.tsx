@@ -2059,30 +2059,37 @@ export function ProcessCanvas({
     return () => window.removeEventListener("mousemove", onGlobalMove);
   }, [dragging?.stepId, clientToSvg]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const setDragCleanupState = useCallback(() => {
+    setDrawing(null);
+    setDrawingBranch(null);
+    setHoverSep(null);
+    waypointDragRef.current = null;
+  }, []);
+
   // Returns the pixel X for an existing column, or the next new column position.
   // New column is placed just after the last step's right edge + standard padding.
-  function getColX(col: number): number | undefined {
+  const getColX = useCallback((col: number): number | undefined => {
     if (col < colX.length) return colX[col];
     if (col === colX.length)
       return colX.length > 0
         ? colX[colX.length - 1] + STEP_W / 2 + EDGE_PAD * 2 + STEP_W / 2
         : LANE_HDR_W + STEP_W / 2 + EDGE_PAD;
     return undefined;
-  }
+  }, [colX]);
 
-  function nearestCol(x: number): number {
+  const nearestCol = useCallback((x: number): number => {
     let best = 0, bestDist = Infinity;
     colX.forEach((cx, i) => { const d = Math.abs(cx - x); if (d < bestDist) { bestDist = d; best = i; } });
     // Also allow snapping to a new column one step to the right
     const newCX = getColX(colX.length)!;
     if (Math.abs(newCX - x) < bestDist) return colX.length;
     return best;
-  }
+  }, [colX, getColX]);
 
   // Snap y → {team, row}, allowing one new row beyond current max.
   // preferredTeam: when dragging a step, keep it in its own lane even if the
   // cursor strays into the extension zone below that lane.
-  function nearestTeamRow(y: number, isEventDrag = false): { team: string; row: number } {
+  const nearestTeamRow = useCallback((y: number, isEventDrag = false): { team: string; row: number } => {
     // Find the lane the cursor is currently in
     let best = visibleTeams[0];
     for (const team of visibleTeams) {
@@ -2103,16 +2110,24 @@ export function ProcessCanvas({
     const rawRow = (y - laneStart - ROW_H / 2) / ROW_H;
     const halfRow = Math.max(0, Math.round(rawRow * 2) / 2);
     return { team: best, row: Math.min(halfRow, maxR) };
-  }
+  }, [canvasSteps, laneStarts, visibleTeams]);
 
-  function dropTargetFromPoint(point: Pt, step?: ProcessStep): { team: string; column: number; row: number } | null {
-    if (!visibleTeams.length) return null;
+  const isValidCanvasDropPoint = useCallback((point: Pt): boolean => {
+    return visibleTeams.length > 0
+      && point.x >= LANE_HDR_W
+      && point.x <= canvasWidth
+      && point.y >= 0
+      && point.y < svgHeight;
+  }, [canvasWidth, svgHeight, visibleTeams.length]);
+
+  const dropTargetFromPoint = useCallback((point: Pt, step?: ProcessStep): { team: string; column: number; row: number } | null => {
+    if (!isValidCanvasDropPoint(point)) return null;
     const column = nearestCol(point.x);
     const { team, row } = nearestTeamRow(point.y, !!step && isEvent(step));
     return { team, column, row };
-  }
+  }, [isValidCanvasDropPoint, nearestCol, nearestTeamRow]);
 
-  function findArtifactDropTarget(point: Pt): ProcessArtifact | null {
+  const findArtifactDropTarget = useCallback((point: Pt): ProcessArtifact | null => {
     return artifacts.find((artifact) => {
       if (artifact.type !== "manualExceptionBlock") return false;
       const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
@@ -2122,17 +2137,17 @@ export function ProcessCanvas({
         && point.y >= artifact.position.y
         && point.y <= artifact.position.y + height;
     }) ?? null;
-  }
+  }, [artifacts]);
 
-  function manualStepIndexAtPoint(artifact: ProcessArtifact, point: Pt): number {
+  const manualStepIndexAtPoint = useCallback((artifact: ProcessArtifact, point: Pt): number => {
     const count = artifact.stepIds?.length ?? 0;
     if (!count) return 0;
     const relativeY = point.y - artifact.position.y - MANUAL_EXCEPTION_STEP_TOP;
     const rawIndex = Math.floor(relativeY / (STEP_H + MANUAL_EXCEPTION_STEP_GAP));
     return Math.max(0, Math.min(rawIndex, count - 1));
-  }
+  }, []);
 
-  function completeStepDragToManualArtifact(d: NonNullable<typeof dragging>, point: Pt): boolean {
+  const completeStepDragToManualArtifact = useCallback((d: NonNullable<typeof dragging>, point: Pt): boolean => {
     if (readOnly || !d.moved || !onMoveStepToArtifact) return false;
     const artifactTarget = findArtifactDropTarget(point);
     if (!artifactTarget) return false;
@@ -2141,14 +2156,7 @@ export function ProcessCanvas({
     setDragging(null);
     setDragCleanupState();
     return true;
-  }
-
-  function setDragCleanupState() {
-    setDrawing(null);
-    setDrawingBranch(null);
-    setHoverSep(null);
-    waypointDragRef.current = null;
-  }
+  }, [findArtifactDropTarget, onMoveStepToArtifact, readOnly, setDragCleanupState]);
 
   // Global mouseup: detect drag-to-right-of-SVG to park step in staging area.
   // Uses refs for dragging and onParkStep so this stable handler always sees current values.
@@ -2211,6 +2219,7 @@ export function ProcessCanvas({
     onMoveManualStepToCanvas,
     onReorderManualArtifactStep,
     readOnly,
+    setDragCleanupState,
     stepsById,
   ]);
 
@@ -2409,6 +2418,9 @@ export function ProcessCanvas({
         const effectiveRow = teamRow.row;
         return { col: _col, team: teamRow.team, row: effectiveRow };
       })()
+    : null;
+  const manualBlockDropTarget = dragging?.moved && !readOnly && onMoveStepToArtifact
+    ? findArtifactDropTarget({ x: dragging.curX, y: dragging.curY })
     : null;
 
   // Show extension zone when cursor is targeting a new row
@@ -3491,6 +3503,22 @@ export function ProcessCanvas({
                 }}
               >
                 {renderManualExceptionBlock(artifact, containedSteps, editing, readOnly, onUpdateArtifact)}
+                {manualBlockDropTarget?.id === artifact.id && (
+                  <rect
+                    data-manual-block-drop-highlight={artifact.id}
+                    x={artifact.position.x - 5}
+                    y={artifact.position.y - 5}
+                    width={(artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W) + 10}
+                    height={height + 10}
+                    rx={12}
+                    fill="#eff6ff"
+                    fillOpacity={0.32}
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                    style={{ pointerEvents: "none" }}
+                  />
+                )}
                 {hasManualStepControls && containedSteps.map((step, index) => {
                   const stepX = artifact.position.x + (artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W) / 2;
                   const stepY = artifact.position.y
