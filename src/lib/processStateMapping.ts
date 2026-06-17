@@ -54,7 +54,7 @@ function parseAttachment(value: unknown): ProcessAttachment | null {
 function parseArtifact(value: unknown): ProcessArtifact | null {
   if (!isRecord(value)) return null;
 
-  const { id, type, title, description, position, size, association } = value;
+  const { id, type, title, description, position, size, association, stepIds } = value;
   if (typeof id !== "string") return null;
   if (type !== "manualExceptionBlock") return null;
   if (typeof title !== "string") return null;
@@ -90,6 +90,10 @@ function parseArtifact(value: unknown): ProcessArtifact | null {
     }
   }
 
+  if (Array.isArray(stepIds)) {
+    artifact.stepIds = stepIds.filter((stepId): stepId is string => typeof stepId === "string");
+  }
+
   return artifact;
 }
 
@@ -113,11 +117,19 @@ function parseFlowLinks(value: unknown): Record<string, { fromStepId: string; to
   );
 }
 
-function validArtifacts(artifacts?: unknown): ProcessArtifact[] {
+function validArtifacts(artifacts: unknown, validStepIds: Set<string>): ProcessArtifact[] {
   const values = Array.isArray(artifacts) ? artifacts : [];
+  const usedStepIds = new Set<string>();
+
   return values.flatMap((value) => {
     const artifact = parseArtifact(value);
-    return artifact ? [artifact] : [];
+    if (!artifact) return [];
+    const stepIds = (artifact.stepIds ?? []).filter((stepId) => {
+      if (!validStepIds.has(stepId) || usedStepIds.has(stepId)) return false;
+      usedStepIds.add(stepId);
+      return true;
+    });
+    return [{ ...artifact, ...(stepIds.length ? { stepIds } : {}) }];
   });
 }
 
@@ -147,6 +159,7 @@ export function buildSavedProcessState(
   customLanes: CustomLane[],
 ): SavedProcessState {
   const targetSteps = [...state.steps, ...parkedSteps];
+  const validStepIds = new Set(targetSteps.map((step) => step.id));
   const autoLinks: SavedProcessState["autoLinks"] = {};
   state.automations.forEach((automation) => {
     if (automation.fromStepId && automation.toStepId) {
@@ -166,7 +179,7 @@ export function buildSavedProcessState(
     customLanes,
     flowLinks: filterFlowLinksForSteps(state.flowLinks, state.steps.map((step) => step.id)),
     attachments: validAttachments({ ...state, steps: targetSteps }),
-    artifacts: validArtifacts(state.artifacts),
+    artifacts: validArtifacts(state.artifacts, validStepIds),
   };
 }
 
@@ -176,6 +189,7 @@ export function restoreSavedProcessState(
   parkedSteps: ProcessStep[] = [],
 ): ProcessState {
   const targetSteps = [...saved.steps, ...parkedSteps];
+  const validStepIds = new Set(targetSteps.map((step) => step.id));
   return {
     ...saved,
     automations: current.automations.map((automation) => {
@@ -193,7 +207,7 @@ export function restoreSavedProcessState(
         };
     }),
     attachments: validAttachments({ ...saved, steps: targetSteps }),
-    artifacts: validArtifacts(saved.artifacts),
+    artifacts: validArtifacts(saved.artifacts, validStepIds),
   };
 }
 
@@ -204,6 +218,7 @@ export function buildProcessStateFromSaved(
   const steps = saved.steps as ProcessStep[];
   const parkedSteps = saved.parkedSteps as ProcessStep[];
   const connections = saved.connections as Connection[];
+  const validStepIds = new Set([...steps, ...parkedSteps].map((step) => step.id));
 
   return {
     steps,
@@ -213,6 +228,6 @@ export function buildProcessStateFromSaved(
     customLanes: saved.customLanes as CustomLane[] | undefined,
     flowLinks: filterFlowLinksForSteps(parseFlowLinks(saved.flowLinks), steps.map((step) => step.id)),
     attachments: validAttachments({ steps: [...steps, ...parkedSteps], connections, attachments: saved.attachments }),
-    artifacts: validArtifacts(saved.artifacts),
+    artifacts: validArtifacts(saved.artifacts, validStepIds),
   };
 }

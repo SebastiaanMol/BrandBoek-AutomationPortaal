@@ -3,6 +3,9 @@ import type { ProcessState } from "@/data/processData";
 import {
   createManualExceptionBlock,
   deleteProcessArtifact,
+  moveStepIntoManualArtifact,
+  removeStepFromManualArtifact,
+  reorderManualArtifactStep,
   updateProcessArtifact,
 } from "@/lib/processArtifacts";
 import {
@@ -78,6 +81,50 @@ describe("processArtifacts", () => {
     const second = { ...createManualExceptionBlock({ x: 30, y: 40 }), id: "artifact-second" };
 
     expect(deleteProcessArtifact([first, second], first.id)).toEqual([second]);
+  });
+
+  it("moves a step into one manual exception block and removes it from other blocks", () => {
+    const first = {
+      ...createManualExceptionBlock({ x: 10, y: 20 }),
+      id: "artifact-first",
+      stepIds: ["existing", "move-me"],
+    };
+    const second = {
+      ...createManualExceptionBlock({ x: 30, y: 40 }),
+      id: "artifact-second",
+      stepIds: ["other"],
+    };
+
+    const updated = moveStepIntoManualArtifact([first, second], "artifact-second", "move-me");
+
+    expect(updated).toEqual([
+      expect.objectContaining({ id: "artifact-first", stepIds: ["existing"] }),
+      expect.objectContaining({ id: "artifact-second", stepIds: ["other", "move-me"] }),
+    ]);
+  });
+
+  it("removes a step from a manual exception block", () => {
+    const artifact = {
+      ...createManualExceptionBlock({ x: 10, y: 20 }),
+      id: "artifact-manual",
+      stepIds: ["one", "two"],
+    };
+
+    expect(removeStepFromManualArtifact([artifact], "artifact-manual", "one")).toEqual([
+      expect.objectContaining({ id: "artifact-manual", stepIds: ["two"] }),
+    ]);
+  });
+
+  it("reorders manual steps inside a block", () => {
+    const artifact = {
+      ...createManualExceptionBlock({ x: 10, y: 20 }),
+      id: "artifact-manual",
+      stepIds: ["one", "two", "three"],
+    };
+
+    expect(reorderManualArtifactStep([artifact], "artifact-manual", "three", 0)).toEqual([
+      expect.objectContaining({ id: "artifact-manual", stepIds: ["three", "one", "two"] }),
+    ]);
   });
 
   it("preserves valid artifacts in saved and restored process state", () => {
@@ -157,6 +204,40 @@ describe("processArtifacts", () => {
         title: "Valid",
         position: { x: 1, y: 2 },
       },
+    ]);
+  });
+
+  it("preserves valid manual step ids and removes duplicates across blocks", () => {
+    const saved: SavedProcessState = {
+      steps: [
+        { id: "s1", label: "Intake", team: "sales", column: 0 },
+        { id: "s2", label: "Betalingsregeling", team: "sales", column: 1 },
+        { id: "s3", label: "Escalatie", team: "sales", column: 2 },
+      ],
+      connections: [],
+      autoLinks: {},
+      parkedSteps: [],
+      artifacts: [
+        {
+          id: "artifact-first",
+          type: "manualExceptionBlock",
+          title: "Manual first",
+          position: { x: 10, y: 20 },
+          stepIds: ["s2", "missing", "s3"],
+        },
+        {
+          id: "artifact-second",
+          type: "manualExceptionBlock",
+          title: "Manual second",
+          position: { x: 30, y: 40 },
+          stepIds: ["s2", "s1"],
+        },
+      ],
+    };
+
+    expect(buildProcessStateFromSaved(saved, []).artifacts).toEqual([
+      expect.objectContaining({ id: "artifact-first", stepIds: ["s2", "s3"] }),
+      expect.objectContaining({ id: "artifact-second", stepIds: ["s1"] }),
     ]);
   });
 });

@@ -90,6 +90,7 @@ export interface ProcessArtifact {
     label?: string;
     anchor: "process";
   };
+  stepIds?: string[];
 }
 
 export interface ProcessState {
