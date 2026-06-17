@@ -66,7 +66,14 @@ import { exportProcessCanvasPdf, exportProcessCanvasPng } from "@/lib/processExp
 import { exportProcessBackup, importProcessBackup } from "@/lib/processBackup";
 import { buildProcessStateFromSaved, buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
 import { removeAttachmentsForTarget } from "@/lib/processAttachments";
-import { createManualExceptionBlock, deleteProcessArtifact, updateProcessArtifact } from "@/lib/processArtifacts";
+import {
+  createManualExceptionBlock,
+  deleteProcessArtifact,
+  moveStepIntoManualArtifact,
+  removeStepFromManualArtifact,
+  reorderManualArtifactStep,
+  updateProcessArtifact,
+} from "@/lib/processArtifacts";
 import { removeFlowLinksForConnection, removeFlowLinksForStep } from "@/lib/processFlowLinks";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
@@ -606,7 +613,65 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       ...s,
       artifacts: deleteProcessArtifact(s.artifacts, artifactId),
     }));
-    toast.success("Artifact verwijderd");
+    toast.success("Manual block verwijderd; stappen zijn teruggezet zonder lijnen");
+  }
+
+  function removeConnectionsForStep(current: ProcessState, stepId: string): ProcessState {
+    const removedConnectionIds = new Set(
+      current.connections
+        .filter(connection => connection.fromStepId === stepId || connection.toStepId === stepId)
+        .map(connection => connection.id),
+    );
+
+    return {
+      ...current,
+      connections: current.connections.filter(connection => !removedConnectionIds.has(connection.id)),
+      automations: current.automations.map(automation =>
+        automation.fromStepId === stepId || automation.toStepId === stepId
+          ? { ...automation, fromStepId: undefined, toStepId: undefined }
+          : automation,
+      ),
+      attachments: (current.attachments ?? []).filter(attachment =>
+        attachment.attachedTo.kind !== "connection" || !removedConnectionIds.has(attachment.attachedTo.id),
+      ),
+      flowLinks: removeFlowLinksForStep(current.flowLinks, stepId),
+    };
+  }
+
+  function handleMoveStepToArtifact(stepId: string, artifactId: string) {
+    setFlowLinks(prev => removeFlowLinksForStep(prev, stepId));
+    update(current => {
+      const cleaned = removeConnectionsForStep(current, stepId);
+      return {
+        ...cleaned,
+        artifacts: moveStepIntoManualArtifact(cleaned.artifacts, artifactId, stepId),
+      };
+    });
+    toast.info("Stap naar manual block verplaatst");
+  }
+
+  function handleMoveManualStepToCanvas(
+    artifactId: string,
+    stepId: string,
+    target: { team: string; column: number; row: number },
+  ) {
+    update(current => ({
+      ...current,
+      steps: current.steps.map(step =>
+        step.id === stepId
+          ? { ...step, team: target.team, column: target.column, row: target.row }
+          : step,
+      ),
+      artifacts: removeStepFromManualArtifact(current.artifacts, artifactId, stepId),
+    }));
+    toast.info("Manual stap teruggezet zonder lijnen");
+  }
+
+  function handleReorderManualArtifactStep(artifactId: string, stepId: string, targetIndex: number) {
+    update(current => ({
+      ...current,
+      artifacts: reorderManualArtifactStep(current.artifacts, artifactId, stepId, targetIndex),
+    }));
   }
 
   const handleAutoClick = useCallback((a: Automation) => {
@@ -1265,6 +1330,9 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 onMoveArtifact={handleMoveArtifact}
                 onUpdateArtifact={handleUpdateArtifact}
                 onDeleteArtifact={handleDeleteArtifact}
+                onMoveStepToArtifact={handleMoveStepToArtifact}
+                onMoveManualStepToCanvas={handleMoveManualStepToCanvas}
+                onReorderManualArtifactStep={handleReorderManualArtifactStep}
                 onParkStep={handleParkStep}
                 onDeleteStep={handleDeleteStep}
                 onPlaceStagedStep={handlePlaceStep}
