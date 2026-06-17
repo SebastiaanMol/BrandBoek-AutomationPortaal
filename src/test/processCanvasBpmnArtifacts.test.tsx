@@ -602,6 +602,71 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(container.querySelector("[data-manual-step-sort-control]")).not.toBeInTheDocument();
   });
 
+  it("calls the normal step click handler when a manual step is clicked in edit mode", () => {
+    const onStepClick = vi.fn();
+    const manualStep = { id: "manual-step", type: "task" as const, label: "Betalingsregeling", team: "sales", column: 1 };
+
+    render(
+      <ProcessCanvas
+        steps={[
+          { id: "start", type: "start", label: "Start", team: "sales", column: 0 },
+          manualStep,
+        ]}
+        connections={[]}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Manual acties",
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-step"],
+          },
+        ]}
+        onStepClick={onStepClick}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Manual exception step Betalingsregeling"));
+
+    expect(onStepClick).toHaveBeenCalledWith(manualStep);
+  });
+
+  it("keeps manual step clicks opening the normal step handler when return dragging is enabled", () => {
+    const onStepClick = vi.fn();
+    const onMoveManualStepToCanvas = vi.fn();
+    const manualStep = { id: "manual-step", type: "task" as const, label: "Betalingsregeling", team: "sales", column: 1 };
+
+    render(
+      <ProcessCanvas
+        steps={[
+          { id: "start", type: "start", label: "Start", team: "sales", column: 0 },
+          manualStep,
+        ]}
+        connections={[]}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-manual",
+            type: "manualExceptionBlock",
+            title: "Manual acties",
+            position: { x: 360, y: 160 },
+            stepIds: ["manual-step"],
+          },
+        ]}
+        onStepClick={onStepClick}
+        onMoveManualStepToCanvas={onMoveManualStepToCanvas}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Manual stap Betalingsregeling terugplaatsen" }));
+
+    expect(onStepClick).toHaveBeenCalledWith(manualStep);
+    expect(onMoveManualStepToCanvas).not.toHaveBeenCalled();
+  });
+
   it("calls onMoveStepToArtifact when a canvas step is dropped on a manual block", () => {
     const onMoveStepToArtifact = vi.fn();
     const { container } = render(

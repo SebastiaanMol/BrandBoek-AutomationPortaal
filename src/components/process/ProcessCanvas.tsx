@@ -1636,6 +1636,7 @@ function renderManualExceptionBlock(
   editing: boolean,
   readOnly: boolean,
   onUpdateArtifact?: ProcessCanvasProps["onUpdateArtifact"],
+  onStepClick?: ProcessCanvasProps["onStepClick"],
 ) {
   const layout = manualExceptionTextLayout(artifact, containedSteps);
   const width = layout.width;
@@ -1715,9 +1716,25 @@ function renderManualExceptionBlock(
         return (
           <g
             key={step.id}
+            role={!readOnly && onStepClick ? "button" : undefined}
+            tabIndex={!readOnly && onStepClick ? 0 : undefined}
             aria-label={`Manual exception step ${step.label}`}
             data-manual-step-id={step.id}
-            style={{ pointerEvents: "none" }}
+            onClick={!readOnly && onStepClick ? event => {
+              event.stopPropagation();
+              onStepClick(step);
+            } : undefined}
+            onMouseDown={!readOnly && onStepClick ? event => event.stopPropagation() : undefined}
+            onKeyDown={!readOnly && onStepClick ? event => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              event.stopPropagation();
+              onStepClick(step);
+            } : undefined}
+            style={{
+              cursor: !readOnly && onStepClick ? "pointer" : undefined,
+              pointerEvents: !readOnly && onStepClick ? "auto" : "none",
+            }}
           >
             <rect
               x={stepX - STEP_W / 2}
@@ -3595,7 +3612,7 @@ export function ProcessCanvas({
                   pointerEvents: draggable || clickable || hasManualStepControls || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
                 }}
               >
-                {renderManualExceptionBlock(artifact, containedSteps, editing, readOnly, onUpdateArtifact)}
+                {renderManualExceptionBlock(artifact, containedSteps, editing, readOnly, onUpdateArtifact, onStepClick)}
                 {manualBlockDropTarget?.id === artifact.id && (
                   <rect
                     data-manual-block-drop-highlight={artifact.id}
@@ -3665,6 +3682,10 @@ export function ProcessCanvas({
                           rx={8}
                           fill="transparent"
                           style={{ cursor: "grab" }}
+                          onClick={!readOnly && onStepClick ? event => {
+                            event.stopPropagation();
+                            onStepClick(step);
+                          } : undefined}
                           onMouseDown={event => handleManualStepMouseDown(event, artifact, step, "return")}
                         />
                       )}
