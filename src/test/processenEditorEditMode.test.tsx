@@ -207,7 +207,7 @@ describe("ProcessenEditor edit mode", () => {
 
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zoom uit" })).toBeInTheDocument();
-    expect(viewport).toContainElement(screen.getByRole("button", { name: "Zoom in" }));
+    expect(viewport).not.toContainElement(screen.getByRole("button", { name: "Zoom in" }));
 
     const before = canvas.style.transform;
     fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
@@ -234,6 +234,41 @@ describe("ProcessenEditor edit mode", () => {
 
     expect(canvas.style.transform).not.toBe(before);
     expect(canvas.style.transform).toContain("scale(1.1)");
+  });
+
+  it("keeps the mouse position anchored while wheel zooming the editor canvas", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    const canvas = screen.getByTestId("proceseditor-zoom-viewport-inner");
+    vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 50,
+      left: 100,
+      top: 50,
+      right: 900,
+      bottom: 650,
+      width: 800,
+      height: 600,
+      toJSON: () => ({}),
+    });
+    Object.defineProperty(viewport, "scrollLeft", { value: 300, writable: true });
+    Object.defineProperty(viewport, "scrollTop", { value: 200, writable: true });
+
+    fireEvent.wheel(viewport, { deltaY: -100, clientX: 500, clientY: 350 });
+
+    await waitFor(() => {
+      expect(canvas.style.transform).toContain("scale(1.1)");
+    });
+    expect(viewport.scrollLeft).toBe(370);
+    expect(viewport.scrollTop).toBe(250);
   });
 
   it("pans the editor canvas by dragging empty viewport space", async () => {

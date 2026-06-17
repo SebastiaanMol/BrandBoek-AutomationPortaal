@@ -144,6 +144,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [editorZoom, setEditorZoom] = useState(1);
   const [isEditorCanvasFullscreen, setIsEditorCanvasFullscreen] = useState(false);
   const editorCanvasViewportRef = useRef<HTMLDivElement>(null);
+  const editorZoomRef = useRef(1);
   const editorPanRef = useRef<{
     startX: number;
     startY: number;
@@ -268,8 +269,28 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
-  const applyEditorZoom = useCallback((delta: number) => {
-    setEditorZoom(current => Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2)))));
+  useEffect(() => {
+    editorZoomRef.current = editorZoom;
+  }, [editorZoom]);
+
+  const applyEditorZoom = useCallback((delta: number, anchor?: { clientX: number; clientY: number }) => {
+    const current = editorZoomRef.current;
+    const next = Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2))));
+    if (next === current) return;
+
+    const viewport = editorCanvasViewportRef.current;
+    if (anchor && viewport) {
+      const rect = viewport.getBoundingClientRect();
+      const anchorX = anchor.clientX - rect.left;
+      const anchorY = anchor.clientY - rect.top;
+      const canvasX = (viewport.scrollLeft + anchorX) / current;
+      const canvasY = (viewport.scrollTop + anchorY) / current;
+      viewport.scrollLeft = Math.round((canvasX * next - anchorX) * 100) / 100;
+      viewport.scrollTop = Math.round((canvasY * next - anchorY) * 100) / 100;
+    }
+
+    editorZoomRef.current = next;
+    setEditorZoom(next);
   }, []);
 
   useEffect(() => {
@@ -277,7 +298,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     if (!viewport) return;
     function onWheel(event: WheelEvent) {
       event.preventDefault();
-      applyEditorZoom(event.deltaY < 0 ? 0.1 : -0.1);
+      applyEditorZoom(event.deltaY < 0 ? 0.1 : -0.1, { clientX: event.clientX, clientY: event.clientY });
     }
     viewport.addEventListener("wheel", onWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", onWheel);
@@ -1386,13 +1407,14 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                 Proceskaart laden…
               </div>
             ) : null}
-            <div
-              ref={editorCanvasViewportRef}
-              data-testid="proceseditor-zoom-viewport"
-              className={`process-canvas-wrap relative overflow-auto ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"} ${loading ? "hidden" : ""}`}
-              onMouseDown={handleEditorViewportMouseDown}
-              style={{ cursor: isEditorPanning ? "grabbing" : "grab" }}
-            >
+            <div className={`relative ${loading ? "hidden" : ""}`}>
+              <div
+                ref={editorCanvasViewportRef}
+                data-testid="proceseditor-zoom-viewport"
+                className={`process-canvas-wrap overflow-auto ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"}`}
+                onMouseDown={handleEditorViewportMouseDown}
+                style={{ cursor: isEditorPanning ? "grabbing" : "grab" }}
+              >
               <div
                 data-testid="proceseditor-zoom-viewport-inner"
                 className="inline-block origin-top-left"
@@ -1446,6 +1468,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                   onDeleteStep={handleDeleteStep}
                   onPlaceStagedStep={handlePlaceStep}
                 />
+              </div>
               </div>
               <BpmnToolbar
                 zoom={editorZoom}
