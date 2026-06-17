@@ -144,6 +144,13 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [editorZoom, setEditorZoom] = useState(1);
   const [isEditorCanvasFullscreen, setIsEditorCanvasFullscreen] = useState(false);
   const editorCanvasViewportRef = useRef<HTMLDivElement>(null);
+  const editorPanRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+  const [isEditorPanning, setIsEditorPanning] = useState(false);
 
   const { data: allPipelines = [] } = usePipelines();
   const pipelines = allPipelines.filter(p => p.isActive);
@@ -276,6 +283,27 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     return () => viewport.removeEventListener("wheel", onWheel);
   }, [applyEditorZoom]);
 
+  useEffect(() => {
+    function onMouseMove(event: MouseEvent) {
+      const pan = editorPanRef.current;
+      const viewport = editorCanvasViewportRef.current;
+      if (!pan || !viewport) return;
+      viewport.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
+      viewport.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
+    }
+    function onMouseUp() {
+      if (!editorPanRef.current) return;
+      editorPanRef.current = null;
+      setIsEditorPanning(false);
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   const resetEditorZoom = useCallback(() => {
     setEditorZoom(1);
   }, []);
@@ -286,6 +314,23 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       return;
     }
     editorCanvasViewportRef.current?.requestFullscreen?.();
+  }, []);
+
+  const handleEditorViewportMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button,input,textarea,select,a,[role='button'],[data-step-id],[data-route-id],[data-manual-step-id],[data-automation-id],[data-attachment-id]")) {
+      return;
+    }
+    const viewport = editorCanvasViewportRef.current;
+    if (!viewport) return;
+    editorPanRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+    setIsEditorPanning(true);
   }, []);
 
   // ── Dirty tracking helper ──────────────────────────────────────────────────
@@ -1345,6 +1390,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               ref={editorCanvasViewportRef}
               data-testid="proceseditor-zoom-viewport"
               className={`process-canvas-wrap relative overflow-auto ${displayStyle === "viewer" ? "" : "border border-border rounded-[var(--radius-outer)] bg-card shadow-sm"} ${loading ? "hidden" : ""}`}
+              onMouseDown={handleEditorViewportMouseDown}
+              style={{ cursor: isEditorPanning ? "grabbing" : "grab" }}
             >
               <div
                 data-testid="proceseditor-zoom-viewport-inner"

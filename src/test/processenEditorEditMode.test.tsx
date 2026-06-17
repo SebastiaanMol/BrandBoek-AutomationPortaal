@@ -236,6 +236,51 @@ describe("ProcessenEditor edit mode", () => {
     expect(canvas.style.transform).toContain("scale(1.1)");
   });
 
+  it("pans the editor canvas by dragging empty viewport space", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    Object.defineProperty(viewport, "scrollLeft", { value: 120, writable: true });
+    Object.defineProperty(viewport, "scrollTop", { value: 80, writable: true });
+
+    fireEvent.mouseDown(viewport, { button: 0, clientX: 300, clientY: 200 });
+    fireEvent.mouseMove(window, { clientX: 250, clientY: 170 });
+    fireEvent.mouseUp(window);
+
+    expect(viewport.scrollLeft).toBe(170);
+    expect(viewport.scrollTop).toBe(110);
+  });
+
+  it("does not pan the editor canvas when dragging an interactive canvas item", async () => {
+    const { container } = render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    const viewport = screen.getByTestId("proceseditor-zoom-viewport");
+    Object.defineProperty(viewport, "scrollLeft", { value: 120, writable: true });
+    Object.defineProperty(viewport, "scrollTop", { value: 80, writable: true });
+
+    const step = container.querySelector('[data-step-id="intake"] rect') as SVGRectElement;
+    fireEvent.mouseDown(step, { button: 0, clientX: 186, clientY: 44 });
+    fireEvent.mouseMove(window, { clientX: 250, clientY: 170 });
+    fireEvent.mouseUp(window);
+
+    expect(viewport.scrollLeft).toBe(120);
+    expect(viewport.scrollTop).toBe(80);
+  });
+
   it("updates the process state query cache after saving so the viewer sees the edit immediately", async () => {
     render(
       <ProcessenEditor
