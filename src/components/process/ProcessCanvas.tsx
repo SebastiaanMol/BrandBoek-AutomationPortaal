@@ -1634,6 +1634,10 @@ function renderManualExceptionBlock(
   artifact: ProcessArtifact,
   containedSteps: ProcessStep[],
   readOnly: boolean,
+  editingField?: "title" | "description",
+  onStartEditing?: (field: "title" | "description") => void,
+  onStopEditing?: () => void,
+  onUpdateArtifact?: ProcessCanvasProps["onUpdateArtifact"],
   onStepClick?: ProcessCanvasProps["onStepClick"],
 ) {
   const layout = manualExceptionTextLayout(artifact, containedSteps);
@@ -1660,49 +1664,154 @@ function renderManualExceptionBlock(
         style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
         Manual
       </text>
-      <foreignObject
-        x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
-        y={y + MANUAL_EXCEPTION_TITLE_TOP}
-        width={layout.textWidth}
-        height={layout.titleHeight}
-        style={{ pointerEvents: "none", overflow: "visible" }}
-      >
-        <div
+      {editingField === "title" && onUpdateArtifact ? (
+        <foreignObject
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + MANUAL_EXCEPTION_TITLE_TOP - 3}
+          width={layout.textWidth}
+          height={Math.max(layout.titleHeight + 8, 28)}
+          style={{ overflow: "visible" }}
+        >
+          <input
+            aria-label="Manual exception titel"
+            autoFocus
+            value={artifact.title}
+            onMouseDown={event => event.stopPropagation()}
+            onClick={event => event.stopPropagation()}
+            onDoubleClick={event => event.stopPropagation()}
+            onChange={event => onUpdateArtifact(artifact.id, { title: event.target.value })}
+            onBlur={() => onStopEditing?.()}
+            onKeyDown={event => {
+              if (event.key !== "Enter" && event.key !== "Escape") return;
+              event.preventDefault();
+              event.stopPropagation();
+              onStopEditing?.();
+            }}
+            style={{
+              background: "rgba(255,255,255,0.96)",
+              border: "1px solid #f59e0b",
+              borderRadius: 5,
+              color: "#111827",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 12,
+              fontWeight: 800,
+              height: "100%",
+              lineHeight: `${MANUAL_EXCEPTION_TITLE_LINE_H}px`,
+              outline: "none",
+              padding: "2px 6px",
+              width: "100%",
+            }}
+          />
+        </foreignObject>
+      ) : (
+        <foreignObject
+          aria-label="Manual exception titel tekst"
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + MANUAL_EXCEPTION_TITLE_TOP}
+          width={layout.textWidth}
+          height={layout.titleHeight}
+          onMouseDown={!readOnly && onStartEditing ? event => event.stopPropagation() : undefined}
+          onDoubleClick={!readOnly && onStartEditing ? event => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStartEditing("title");
+          } : undefined}
           style={{
-            color: "#111827",
-            fontFamily: "IBM Plex Sans, system-ui, sans-serif",
-            fontSize: 12,
-            fontWeight: 800,
-            lineHeight: `${MANUAL_EXCEPTION_TITLE_LINE_H}px`,
+            cursor: !readOnly && onStartEditing ? "text" : undefined,
             overflow: "visible",
-            overflowWrap: "anywhere",
-            wordBreak: "break-word",
+            pointerEvents: !readOnly && onStartEditing ? "auto" : "none",
           }}
         >
-          {artifact.title}
-        </div>
-      </foreignObject>
-      <foreignObject
-        x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
-        y={y + layout.descriptionTop}
-        width={layout.textWidth}
-        height={layout.descriptionHeight}
-        style={{ pointerEvents: "none", overflow: "visible" }}
-      >
-        <div
+          <div
+            style={{
+              color: "#111827",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 12,
+              fontWeight: 800,
+              lineHeight: `${MANUAL_EXCEPTION_TITLE_LINE_H}px`,
+              overflow: "visible",
+              overflowWrap: "anywhere",
+              wordBreak: "break-word",
+            }}
+          >
+            {artifact.title}
+          </div>
+        </foreignObject>
+      )}
+      {editingField === "description" && onUpdateArtifact ? (
+        <foreignObject
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + layout.descriptionTop - 3}
+          width={layout.textWidth}
+          height={Math.max(layout.descriptionHeight + 10, 42)}
+          style={{ overflow: "visible" }}
+        >
+          <textarea
+            aria-label="Manual exception beschrijving"
+            autoFocus
+            value={artifact.description ?? ""}
+            onMouseDown={event => event.stopPropagation()}
+            onClick={event => event.stopPropagation()}
+            onDoubleClick={event => event.stopPropagation()}
+            onChange={event => onUpdateArtifact(artifact.id, { description: event.target.value })}
+            onBlur={() => onStopEditing?.()}
+            onKeyDown={event => {
+              if (event.key === "Escape" || (event.key === "Enter" && event.ctrlKey)) {
+                event.preventDefault();
+                event.stopPropagation();
+                onStopEditing?.();
+              }
+            }}
+            style={{
+              background: "rgba(255,255,255,0.96)",
+              border: "1px solid #f59e0b",
+              borderRadius: 5,
+              color: "#78716c",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 11,
+              height: "100%",
+              lineHeight: `${MANUAL_EXCEPTION_DESCRIPTION_LINE_H}px`,
+              outline: "none",
+              padding: "4px 6px",
+              resize: "none",
+              width: "100%",
+            }}
+          />
+        </foreignObject>
+      ) : (
+        <foreignObject
+          aria-label="Manual exception beschrijving tekst"
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + layout.descriptionTop}
+          width={layout.textWidth}
+          height={layout.descriptionHeight}
+          onMouseDown={!readOnly && onStartEditing ? event => event.stopPropagation() : undefined}
+          onDoubleClick={!readOnly && onStartEditing ? event => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStartEditing("description");
+          } : undefined}
           style={{
-            color: "#78716c",
-            fontFamily: "IBM Plex Sans, system-ui, sans-serif",
-            fontSize: 11,
-            lineHeight: `${MANUAL_EXCEPTION_DESCRIPTION_LINE_H}px`,
+            cursor: !readOnly && onStartEditing ? "text" : undefined,
             overflow: "visible",
-            overflowWrap: "anywhere",
-            wordBreak: "break-word",
+            pointerEvents: !readOnly && onStartEditing ? "auto" : "none",
           }}
         >
-          {layout.description}
-        </div>
-      </foreignObject>
+          <div
+            style={{
+              color: "#78716c",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 11,
+              lineHeight: `${MANUAL_EXCEPTION_DESCRIPTION_LINE_H}px`,
+              overflow: "visible",
+              overflowWrap: "anywhere",
+              wordBreak: "break-word",
+            }}
+          >
+            {layout.description}
+          </div>
+        </foreignObject>
+      )}
       {containedSteps.map((step, index) => {
         const stepX = x + width / 2;
         const previousHeight = layout.stepHeights
@@ -1729,6 +1838,7 @@ function renderManualExceptionBlock(
               event.stopPropagation();
               onStepClick(step);
             } : undefined}
+            onDoubleClick={!readOnly && onStepClick ? event => event.stopPropagation() : undefined}
             style={{
               cursor: !readOnly && onStepClick ? "pointer" : undefined,
               pointerEvents: !readOnly && onStepClick ? "auto" : "none",
@@ -1933,6 +2043,10 @@ export function ProcessCanvas({
     connId: string; x: number; y: number; value: string;
   } | null>(null);
   const [editingAttachmentId, setEditingAttachmentId] = useState<string | null>(null);
+  const [editingManualArtifact, setEditingManualArtifact] = useState<{
+    artifactId: string;
+    field: "title" | "description";
+  } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const panningRef = useRef<{ startX: number; scrollLeft: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -2591,6 +2705,7 @@ export function ProcessCanvas({
         onClick={() => {
           setContextMenu(null);
           setEditingAttachmentId(null);
+          setEditingManualArtifact(null);
         }}
         onMouseDown={e => {
           if (disableInternalPan) return;
@@ -3535,6 +3650,10 @@ export function ProcessCanvas({
           const manualLayout = manualExceptionTextLayout(artifact, containedSteps);
           const height = manualExceptionBlockHeight(artifact, containedSteps);
           const draggable = !readOnly && !!onMoveArtifact;
+          const editingManualField = editingManualArtifact?.artifactId === artifact.id
+            ? editingManualArtifact.field
+            : undefined;
+          const canEditManualText = !readOnly && !!onUpdateArtifact;
           const hasManualStepControls = !readOnly
             && containedSteps.length > 0
             && (!!onMoveManualStepToCanvas || !!onReorderManualArtifactStep);
@@ -3543,6 +3662,11 @@ export function ProcessCanvas({
             <g key={artifact.id}>
               <g
                 aria-label={`Manual exception block ${artifact.title}`}
+                onDoubleClick={canEditManualText ? event => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setEditingManualArtifact({ artifactId: artifact.id, field: "title" });
+                } : undefined}
                 onMouseDown={draggable ? event => handleArtifactMouseDown(event, artifact) : undefined}
                 onContextMenu={readOnly || !onDeleteArtifact ? undefined : event => {
                   event.preventDefault();
@@ -3551,10 +3675,19 @@ export function ProcessCanvas({
                 }}
                 style={{
                   cursor: draggable ? "move" : !readOnly && onDeleteArtifact ? "context-menu" : undefined,
-                  pointerEvents: draggable || hasManualStepControls || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
+                  pointerEvents: draggable || canEditManualText || hasManualStepControls || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
                 }}
               >
-                {renderManualExceptionBlock(artifact, containedSteps, readOnly, onStepClick)}
+                {renderManualExceptionBlock(
+                  artifact,
+                  containedSteps,
+                  readOnly,
+                  editingManualField,
+                  canEditManualText ? field => setEditingManualArtifact({ artifactId: artifact.id, field }) : undefined,
+                  () => setEditingManualArtifact(null),
+                  onUpdateArtifact,
+                  onStepClick,
+                )}
                 {manualBlockDropTarget?.id === artifact.id && (
                   <rect
                     data-manual-block-drop-highlight={artifact.id}

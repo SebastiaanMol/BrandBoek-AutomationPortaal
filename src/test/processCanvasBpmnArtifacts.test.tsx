@@ -960,6 +960,66 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(onUpdateArtifact).not.toHaveBeenCalled();
   });
 
+  it("edits the manual exception title inline after double clicking the block", () => {
+    const onUpdateArtifact = vi.fn();
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-editable",
+            type: "manualExceptionBlock",
+            title: "Manual actie",
+            description: "Oud",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onUpdateArtifact={onUpdateArtifact}
+      />,
+    );
+
+    fireEvent.doubleClick(screen.getByLabelText("Manual exception block Manual actie"));
+    fireEvent.change(screen.getByLabelText("Manual exception titel"), {
+      target: { value: "Betalingsregeling" },
+    });
+
+    expect(onUpdateArtifact).toHaveBeenCalledWith("artifact-editable", { title: "Betalingsregeling" });
+    expect(screen.queryByLabelText("Manual exception beschrijving")).not.toBeInTheDocument();
+  });
+
+  it("edits the manual exception description inline after double clicking the description text", () => {
+    const onUpdateArtifact = vi.fn();
+    render(
+      <ProcessCanvas
+        steps={steps}
+        connections={connections}
+        automations={[]}
+        activeLanes={["sales"]}
+        artifacts={[
+          {
+            id: "artifact-editable",
+            type: "manualExceptionBlock",
+            title: "Manual actie",
+            description: "Oud",
+            position: { x: 360, y: 160 },
+          },
+        ]}
+        onUpdateArtifact={onUpdateArtifact}
+      />,
+    );
+
+    fireEvent.doubleClick(screen.getByLabelText("Manual exception beschrijving tekst"));
+    fireEvent.change(screen.getByLabelText("Manual exception beschrijving"), {
+      target: { value: "Kan altijd gekozen worden" },
+    });
+
+    expect(onUpdateArtifact).toHaveBeenCalledWith("artifact-editable", { description: "Kan altijd gekozen worden" });
+    expect(screen.queryByLabelText("Manual exception titel")).not.toBeInTheDocument();
+  });
+
   it("does not show manual exception edit controls or drag in read-only mode", () => {
     const onMoveArtifact = vi.fn();
     const { container } = render(
