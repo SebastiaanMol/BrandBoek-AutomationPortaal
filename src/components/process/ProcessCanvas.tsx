@@ -3448,8 +3448,6 @@ export function ProcessCanvas({
           const containedSteps = (artifact.stepIds ?? [])
             .map(stepId => stepsById.get(stepId))
             .filter(Boolean) as ProcessStep[];
-          const processAnchor = { x: LANE_HDR_W + 24, y: 24 };
-          const blockAnchor = { x: artifact.position.x, y: artifact.position.y + height / 2 };
           const clickable = !readOnly && !!onUpdateArtifact;
           const draggable = !readOnly && !!onMoveArtifact;
           const editing = !readOnly && editingArtifactId === artifact.id && !!onUpdateArtifact;
@@ -3459,30 +3457,6 @@ export function ProcessCanvas({
 
           return (
             <g key={artifact.id}>
-              <line
-                data-process-association={artifact.id}
-                x1={processAnchor.x}
-                y1={processAnchor.y}
-                x2={blockAnchor.x}
-                y2={blockAnchor.y}
-                stroke="#64748b"
-                strokeWidth={1.2}
-                strokeDasharray="4 5"
-                style={{ pointerEvents: "none" }}
-              />
-              {artifact.association?.label && (
-                <text
-                  x={(processAnchor.x + blockAnchor.x) / 2}
-                  y={(processAnchor.y + blockAnchor.y) / 2 - 6}
-                  textAnchor="middle"
-                  fontSize={9}
-                  fontWeight={700}
-                  fill="#64748b"
-                  style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}
-                >
-                  {artifact.association.label}
-                </text>
-              )}
               <g
                 aria-label={`Manual exception block ${artifact.title}`}
                 role={clickable ? "button" : undefined}

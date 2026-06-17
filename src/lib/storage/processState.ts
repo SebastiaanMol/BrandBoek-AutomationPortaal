@@ -179,12 +179,7 @@ export async function saveProcessState(pipelineId: string, state: SavedProcessSt
   }
 
   if (error && isMissingOptionalColumnError(error, "artifacts")) {
-    includeArtifacts = false;
-    ({ error } = await upsertProcessState(pipelineId, state, {
-      attachments: includeAttachments,
-      flowLinks: includeFlowLinks,
-      artifacts: includeArtifacts,
-    }));
+    throw error;
   }
 
   if (error) throw error;

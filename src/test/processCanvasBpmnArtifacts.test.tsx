@@ -441,7 +441,7 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(screen.queryByLabelText("Databron toevoegen")).not.toBeInTheDocument();
   });
 
-  it("renders a manual exception block with a process-context association and no arrow marker", () => {
+  it("renders a manual exception block without a separate process association line", () => {
     const { container } = render(
       <ProcessCanvas
         steps={steps}
@@ -464,8 +464,7 @@ describe("ProcessCanvas BPMN attachments", () => {
 
     expect(screen.getByLabelText("Manual exception block Betalingsregeling")).toBeInTheDocument();
     expect(screen.getAllByText("Mogelijk vanuit elke pipeline stage").length).toBeGreaterThan(0);
-    expect(container.querySelector('[data-process-association="artifact-manual"]')).toHaveAttribute("stroke-dasharray", "4 5");
-    expect(container.querySelector('[data-process-association="artifact-manual"]')).not.toHaveAttribute("marker-end");
+    expect(container.querySelector('[data-process-association="artifact-manual"]')).not.toBeInTheDocument();
   });
 
   it("renders artifact-contained steps inside the manual block and not in the main flow", () => {
