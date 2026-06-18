@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createBrowserRouter, RouterProvider, Route, Routes, Navigate, Outlet } from "react-router-dom";
+import { RouterProvider, Route, Routes, Navigate, Outlet } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
+import { Sentry, createInstrumentedBrowserRouter } from "@/lib/sentry";
 import Dashboard from "./pages/Dashboard";
 import AutomationsPage from "./pages/AutomationsPage";
 import AutomationDetailPage from "./pages/AutomationDetailPage";
@@ -82,7 +83,7 @@ function AuthRoute() {
   return <AuthPage />;
 }
 
-const router = createBrowserRouter([
+const router = createInstrumentedBrowserRouter([
   {
     element: (
       <AuthProvider>
@@ -97,13 +98,26 @@ const router = createBrowserRouter([
 ]);
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <RouterProvider router={router} />
-    </TooltipProvider>
-  </QueryClientProvider>
+  <Sentry.ErrorBoundary
+    fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="max-w-md rounded-md border border-border bg-card p-4 text-sm">
+          <h1 className="mb-2 font-semibold text-foreground">Er ging iets mis</h1>
+          <p className="text-muted-foreground">
+            Herlaad de pagina. De fout is automatisch vastgelegd voor analyse.
+          </p>
+        </div>
+      </div>
+    }
+  >
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <RouterProvider router={router} />
+      </TooltipProvider>
+    </QueryClientProvider>
+  </Sentry.ErrorBoundary>
 );
 
 export default App;

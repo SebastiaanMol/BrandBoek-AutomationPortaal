@@ -1,0 +1,64 @@
+name: Sentry Observability
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run Sentry and process regression tests
+        run: >
+          npm test --
+          src/test/sentryConfig.test.ts
+          src/test/sentryAutomationContext.test.ts
+          src/test/sentryProcessContext.test.tsx
+          src/test/processCanvasBpmnArtifacts.test.tsx
+          src/test/processenEditorEditMode.test.tsx
+          src/test/processCanvasManualConnections.test.tsx
+          src/test/procesviewerSharedCanvas.test.tsx
+
+      - name: Build without Sentry upload
+        run: npm run build
+
+      - name: Build and upload Sentry source maps
+        env:
+          SENTRY_UPLOAD_SOURCE_MAPS: ${{ secrets.SENTRY_UPLOAD_SOURCE_MAPS }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_RELEASE: ${{ github.sha }}
+          VITE_SENTRY_TRACES_SAMPLE_RATE: "0.05"
+          VITE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE: "0.25"
+        run: |
+          if [ "$SENTRY_UPLOAD_SOURCE_MAPS" != "true" ]; then
+            echo "Skipping Sentry source-map upload build because SENTRY_UPLOAD_SOURCE_MAPS is not true."
+            exit 0
+          fi
+
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "Skipping Sentry source-map upload build because Sentry secrets are not configured."
+            exit 0
+          fi
+
+          npm run build

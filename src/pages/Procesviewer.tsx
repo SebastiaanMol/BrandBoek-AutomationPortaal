@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { usePipelines, useProcessState, useAutomatiseringen } from "@/lib/hooks";
 import { useRenameCustomPipeline } from "@/lib/queryHooks/pipelines";
 import { buildProcessStateFromSaved } from "@/lib/processStateMapping";
+import { Sentry } from "@/lib/sentry";
 import { buildLaneKeys, filterValidActiveLanes, getLaneConfig, stagesToProcessState } from "@/data/processData";
 import type { ProcessState } from "@/data/processData";
 import type { Automatisering } from "@/lib/types";
@@ -27,6 +28,10 @@ import { ProcessCanvas } from "@/components/process/ProcessCanvas";
 import { ProcessenEditor } from "@/components/process/ProcessenEditor";
 
 type Mode = "view" | "edit";
+
+function hasSavedProcessSteps(savedState: { steps?: unknown[] } | null | undefined): boolean {
+  return Array.isArray(savedState?.steps) && savedState.steps.length > 0;
+}
 
 function toCanvasAutomation(a: Automatisering, link?: { fromStepId: string; toStepId: string }) {
   return {
@@ -111,7 +116,7 @@ export default function Procesviewer(): React.ReactNode {
 
   const derivedProcessState: ProcessState | null = useMemo(() => {
     const currentPipeline = activePipelines.find((p) => p.pipelineId === selectedProcessId);
-    if (savedState) {
+    if (hasSavedProcessSteps(savedState)) {
       const autos = dbAutomations.map((a) =>
         toCanvasAutomation(a, savedState.autoLinks[a.id]),
       );
@@ -124,6 +129,24 @@ export default function Procesviewer(): React.ReactNode {
   }, [savedState, selectedProcessId, activePipelines, dbAutomations]);
 
   const processState = derivedProcessState;
+
+  useEffect(() => {
+    Sentry.setContext("process_viewer", {
+      selectedProcessId,
+      selectedProcessName: selectedPipeline?.naam ?? null,
+      steps: processState?.steps.length ?? 0,
+      connections: processState?.connections.length ?? 0,
+      activeLanes: processState?.activeLanes?.length ?? null,
+      mode,
+    });
+  }, [
+    selectedProcessId,
+    selectedPipeline?.naam,
+    processState?.steps.length,
+    processState?.connections.length,
+    processState?.activeLanes?.length,
+    mode,
+  ]);
 
   function handleEnterEdit() {
     if (!selectedProcessId) return;

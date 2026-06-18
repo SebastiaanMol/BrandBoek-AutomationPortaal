@@ -392,6 +392,74 @@ describe("ProcessCanvas BPMN attachments", () => {
     expect(onAddAttachment).toHaveBeenCalledWith("dataObject", { kind: "connection", id: "conn-1" });
   });
 
+  it("renders the context menu outside the transformed canvas tree", () => {
+    const { container } = render(
+      <div data-testid="transformed-shell" style={{ transform: "translate(120px, 80px) scale(0.8)" }}>
+        <ProcessCanvas
+          steps={addControlSteps}
+          connections={addControlConnections}
+          automations={[]}
+          activeLanes={["sales"]}
+          onAddAttachment={vi.fn()}
+        />
+      </div>,
+    );
+
+    fireEvent.contextMenu(container.querySelector('path[stroke="transparent"][stroke-width="22"]')!, {
+      clientX: 280,
+      clientY: 44,
+    });
+
+    const contextMenuButton = screen.getByLabelText("Data/document toevoegen");
+    expect(contextMenuButton.closest("[data-testid='transformed-shell']")).toBeNull();
+  });
+
+  it("counter-scales the context menu against canvas zoom within readable bounds", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={addControlSteps}
+        connections={addControlConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        viewportScale={2}
+        onAddAttachment={vi.fn()}
+      />,
+    );
+
+    fireEvent.contextMenu(container.querySelector('path[stroke="transparent"][stroke-width="22"]')!, {
+      clientX: 280,
+      clientY: 44,
+    });
+
+    expect(screen.getByLabelText("Data/document toevoegen").parentElement).toHaveStyle({
+      transform: "scale(0.85)",
+      transformOrigin: "top left",
+    });
+  });
+
+  it("keeps the context menu at normal size when zoomed out", () => {
+    const { container } = render(
+      <ProcessCanvas
+        steps={addControlSteps}
+        connections={addControlConnections}
+        automations={[]}
+        activeLanes={["sales"]}
+        viewportScale={0.5}
+        onAddAttachment={vi.fn()}
+      />,
+    );
+
+    fireEvent.contextMenu(container.querySelector('path[stroke="transparent"][stroke-width="22"]')!, {
+      clientX: 280,
+      clientY: 44,
+    });
+
+    expect(screen.getByLabelText("Data/document toevoegen").parentElement).toHaveStyle({
+      transform: "scale(1)",
+      transformOrigin: "top left",
+    });
+  });
+
   it("adds an annotation attachment from the connection context menu", () => {
     const onAddAttachment = vi.fn();
 

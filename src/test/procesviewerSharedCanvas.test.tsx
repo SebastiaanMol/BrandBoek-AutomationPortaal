@@ -14,6 +14,19 @@ const fixtures = vi.hoisted(() => ({
     isActive: true,
     source: "hubspot",
   },
+  btwPipeline: {
+    pipelineId: "pipe-btw",
+    naam: "BTW Pipeline",
+    stages: [
+      { stage_id: "btw-open", label: "Open", display_order: 0, metadata: {} },
+      { stage_id: "btw-ready", label: "Gegevens gereed", display_order: 1, metadata: {} },
+    ],
+    syncedAt: "2026-06-09T00:00:00.000Z",
+    updatedAt: "2026-06-09T00:00:00.000Z",
+    beschrijving: null,
+    isActive: true,
+    source: "hubspot",
+  },
   savedState: {
     steps: [
       { id: "s1", type: "task", label: "Betaalt op tijd", team: "sales", column: 0 },
@@ -46,13 +59,28 @@ const fixtures = vi.hoisted(() => ({
       },
     ],
   },
+  emptySavedState: {
+    steps: [],
+    connections: [],
+    autoLinks: {},
+    parkedSteps: [],
+    activeLanes: [],
+    customLanes: [],
+    flowLinks: {},
+    attachments: [],
+    artifacts: [],
+  },
 }));
 
 vi.mock("@/lib/hooks", () => ({
-  usePipelines: () => ({ data: [fixtures.pipeline] }),
+  usePipelines: () => ({ data: [fixtures.pipeline, fixtures.btwPipeline] }),
   useAutomatiseringen: () => ({ data: [] }),
   useProcessState: (pipelineId: string | null) => ({
-    data: pipelineId ? fixtures.savedState : null,
+    data: pipelineId === "pipe-btw"
+      ? fixtures.emptySavedState
+      : pipelineId
+        ? fixtures.savedState
+        : null,
   }),
 }));
 
@@ -66,13 +94,18 @@ vi.mock("@/components/procesviewer/ProcessviewerCanvas", () => ({
 
 vi.mock("@/components/process/ProcessCanvas", () => ({
   ProcessCanvas: ({
+    steps = [],
     attachments = [],
     artifacts = [],
   }: {
+    steps?: Array<{ id: string; label: string }>;
     attachments?: Array<{ id: string; label: string }>;
     artifacts?: Array<{ id: string; title: string; stepIds?: string[] }>;
   }) => (
     <div data-testid="shared-process-canvas" style={{ width: 800, height: 400 }}>
+      {steps.map((step) => (
+        <span key={step.id}>{step.label}</span>
+      ))}
       {attachments.map((attachment) => (
         <span key={attachment.id}>{attachment.label}</span>
       ))}
@@ -116,9 +149,19 @@ describe("Procesviewer canvas renderer", () => {
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zoom uit" })).toBeInTheDocument();
     expect(screen.getByText("Legenda")).toBeInTheDocument();
+    expect(screen.getByText("Hoofdroute")).toBeInTheDocument();
+    expect(screen.getByText("Correctie / optioneel")).toBeInTheDocument();
+    expect(screen.getByText("Uitzondering / einde")).toBeInTheDocument();
+    expect(screen.queryByText("Actie / correctie")).not.toBeInTheDocument();
+    expect(screen.queryByText("Uitzondering")).not.toBeInTheDocument();
+    expect(screen.getByText("Terminate")).toBeInTheDocument();
+    expect(screen.getByText("Timer")).toBeInTheDocument();
+    expect(screen.getByText("Bericht")).toBeInTheDocument();
+    expect(screen.getByText("AND gateway")).toBeInTheDocument();
     expect(screen.getByText("Notitie")).toBeInTheDocument();
     expect(screen.getByText("Data/document")).toBeInTheDocument();
     expect(screen.getByText("Databron")).toBeInTheDocument();
+    expect(screen.getByText("Manual block")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /lijn tekenen/i })).not.toBeInTheDocument();
   });
 
@@ -152,6 +195,23 @@ describe("Procesviewer canvas renderer", () => {
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
     expect(screen.getByText("Betalingsregeling:s2")).toBeInTheDocument();
+  });
+
+  it("falls back to pipeline stages when a saved process state is empty", async () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <Procesviewer />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /BTW Pipeline/i }));
+
+    expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.getByText("Gegevens gereed")).toBeInTheDocument();
   });
 
   it("zooms the shared viewer canvas without replacing the shared renderer", async () => {

@@ -52,6 +52,28 @@ describe("ProcessCanvas BPMN-like structural view", () => {
     expect(screen.getByText("Controle & Afronding")).toBeInTheDocument();
   });
 
+  it("does not render steps or routes from hidden lanes", () => {
+    render(
+      <ProcessCanvas
+        steps={[
+          { id: "marketing-step", type: "task", label: "Campagne", team: "marketing", column: 0 },
+          { id: "sales-step", type: "task", label: "Open", team: "sales", column: 1 },
+        ]}
+        connections={[
+          { id: "cross-hidden", fromStepId: "marketing-step", toStepId: "sales-step" },
+        ]}
+        automations={[]}
+        activeLanes={["sales"]}
+        customLanes={customLanes}
+        readOnly
+      />,
+    );
+
+    expect(screen.queryByText("Campagne")).not.toBeInTheDocument();
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Hoofdproces route")).not.toBeInTheDocument();
+  });
+
   it("shows the compact BPMN legend", () => {
     render(
       <ProcessCanvas
@@ -71,6 +93,15 @@ describe("ProcessCanvas BPMN-like structural view", () => {
     expect(screen.getByText("Start/einde")).toBeInTheDocument();
     expect(screen.getByText("Taak")).toBeInTheDocument();
     expect(screen.getByText("Gateway")).toBeInTheDocument();
+    expect(screen.getByText("Terminate")).toBeInTheDocument();
+    expect(screen.getByText("Timer")).toBeInTheDocument();
+    expect(screen.getByText("Bericht")).toBeInTheDocument();
+    expect(screen.getByText("Optionele taak")).toBeInTheDocument();
+    expect(screen.getByText("AND gateway")).toBeInTheDocument();
+    expect(screen.getByText("Notitie")).toBeInTheDocument();
+    expect(screen.getByText("Data/document")).toBeInTheDocument();
+    expect(screen.getByText("Databron")).toBeInTheDocument();
+    expect(screen.getByText("Manual block")).toBeInTheDocument();
   });
 
   it("reserves vertical canvas space for the bottom legend", () => {
@@ -104,7 +135,7 @@ describe("ProcessCanvas BPMN-like structural view", () => {
     expect(screen.getByLabelText("Uitzondering of einde route")).toBeInTheDocument();
   });
 
-  it("renders terminate events in red instead of the lane color", () => {
+  it("renders terminate events as solid red so they differ from normal end events", () => {
     const terminateSteps: ProcessStep[] = [
       { id: "terminate", type: "terminate", label: "Terminate", team: "sales", column: 0 },
     ];
@@ -119,14 +150,15 @@ describe("ProcessCanvas BPMN-like structural view", () => {
       />,
     );
 
-    const terminateLabel = screen.getByText("Terminate");
-    const terminateGroup = terminateLabel.closest("g");
+    const terminateLabel = Array.from(container.querySelectorAll("svg text"))
+      .find(node => node.textContent === "Terminate");
+    const terminateGroup = terminateLabel?.closest("g");
     const outerCircle = terminateGroup?.querySelector('circle[r="18"]');
     const innerCircle = terminateGroup?.querySelector('circle[r="9"]');
 
     expect(outerCircle).toHaveAttribute("stroke", "#dc2626");
-    expect(outerCircle).toHaveAttribute("fill", "#fee2e2");
-    expect(innerCircle).toHaveAttribute("fill", "#dc2626");
+    expect(outerCircle).toHaveAttribute("fill", "#dc2626");
+    expect(innerCircle).toHaveAttribute("fill", "#ffffff");
     expect(container.querySelector('circle[stroke="hsl(215 80% 50%)"]')).not.toBeInTheDocument();
   });
 

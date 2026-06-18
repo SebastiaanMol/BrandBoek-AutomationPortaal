@@ -35,6 +35,34 @@ const DEFAULT_SYMBOLS: SymbolDef[] = [
     ),
   },
   {
+    label: "Terminate",
+    render: () => (
+      <svg width="22" height="22" viewBox="0 0 22 22">
+        <circle cx="11" cy="11" r="9" stroke="#DC2626" strokeWidth="2.5" fill="#DC2626" />
+        <circle cx="11" cy="11" r="4.25" fill="#FFFFFF" />
+      </svg>
+    ),
+  },
+  {
+    label: "Timer",
+    render: () => (
+      <svg width="22" height="22" viewBox="0 0 22 22">
+        <circle cx="11" cy="11" r="8" stroke="#64748B" strokeWidth="1.5" fill="#FFFFFF" />
+        <line x1="11" y1="11" x2="11" y2="6.5" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="11" y1="11" x2="15" y2="11" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    label: "Bericht",
+    render: () => (
+      <svg width="28" height="18" viewBox="0 0 28 18">
+        <rect x="4" y="3" width="20" height="12" rx="2" stroke="#64748B" strokeWidth="1.5" fill="#FFFFFF" />
+        <path d="M5 4.5l9 6 9-6" stroke="#64748B" strokeWidth="1.4" fill="none" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     label: "Taak",
     render: () => (
       <svg width="42" height="18" viewBox="0 0 42 18">
@@ -65,6 +93,22 @@ const DEFAULT_SYMBOLS: SymbolDef[] = [
         />
         <line x1="7.5" y1="7.5" x2="14.5" y2="14.5" stroke="#3B82F6" strokeWidth="1.5" />
         <line x1="14.5" y1="7.5" x2="7.5" y2="14.5" stroke="#3B82F6" strokeWidth="1.5" />
+      </svg>
+    ),
+  },
+  {
+    label: "AND gateway",
+    render: () => (
+      <svg width="22" height="22" viewBox="0 0 22 22">
+        <rect
+          x="11" y="2"
+          width="13" height="13"
+          rx="0"
+          transform="rotate(45 11 11)"
+          stroke="#3B82F6" strokeWidth="1.5" fill="#EFF6FF"
+        />
+        <line x1="11" y1="6.5" x2="11" y2="15.5" stroke="#3B82F6" strokeWidth="1.5" />
+        <line x1="6.5" y1="11" x2="15.5" y2="11" stroke="#3B82F6" strokeWidth="1.5" />
       </svg>
     ),
   },
@@ -113,6 +157,23 @@ const DEFAULT_SYMBOLS: SymbolDef[] = [
       </svg>
     ),
   },
+  {
+    label: "Manual block",
+    render: () => (
+      <svg width="32" height="20" viewBox="0 0 32 20">
+        <rect
+          x="2.5" y="3"
+          width="27"
+          height="14"
+          rx="2.5"
+          stroke="#F59E0B"
+          strokeWidth="1.5"
+          strokeDasharray="4 2"
+          fill="#FFFBEB"
+        />
+      </svg>
+    ),
+  },
 ];
 
 export function BpmnLegend({ lanes, symbols = DEFAULT_SYMBOLS }: BpmnLegendProps): React.ReactNode {
@@ -125,7 +186,7 @@ export function BpmnLegend({ lanes, symbols = DEFAULT_SYMBOLS }: BpmnLegendProps
     >
       {open ? (
         <div
-          className="bg-white rounded-[12px] p-4 w-[340px]"
+          className="bg-white rounded-[12px] p-4 w-[380px]"
           style={{
             border: "0.5px solid #E2E8F0",
             boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
@@ -156,9 +217,9 @@ export function BpmnLegend({ lanes, symbols = DEFAULT_SYMBOLS }: BpmnLegendProps
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Routes</p>
                 <div className="flex flex-col gap-1.5">
-                  <RouteRow color="#3B82F6" label="Hoofdproces" dashed={false} />
-                  <RouteRow color="#F97316" label="Actie / correctie" dashed />
-                  <RouteRow color="#DC2626" label="Uitzondering" dashed={false} />
+                  <RouteRow color="#3B82F6" label="Hoofdroute" dashed={false} />
+                  <RouteRow color="#F97316" label="Correctie / optioneel" dashed />
+                  <RouteRow color="#DC2626" label="Uitzondering / einde" dashed={false} />
                 </div>
               </div>
 
@@ -182,7 +243,7 @@ export function BpmnLegend({ lanes, symbols = DEFAULT_SYMBOLS }: BpmnLegendProps
             {/* Right column — Symbolen */}
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Symbolen</p>
-              <div className="flex flex-col gap-2">
+              <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
                 {symbols.map((sym) => (
                   <div key={sym.label} className="flex items-center gap-2">
                     <div className="shrink-0 flex items-center justify-center" style={{ width: 44 }}>

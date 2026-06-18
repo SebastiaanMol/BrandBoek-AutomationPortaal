@@ -1,4 +1,5 @@
 import { useRef, useMemo, useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import type {
   ProcessStep,
   Connection,
@@ -93,6 +94,10 @@ function isDecision(step: ProcessStep) {
 
 function stepRow(step: ProcessStep) {
   return step.row ?? 0;
+}
+
+function clampContextMenuScale(scale: number): number {
+  return Math.min(1, Math.max(0.85, scale));
 }
 
 // ── Lane / row layout helpers ─────────────────────────────────────────────────
@@ -1271,7 +1276,7 @@ function TerminateCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onCl
 }) {
   const [hov, setHov] = useState(false);
   const str = ROUTE_END;
-  const fill = "#fee2e2";
+  const fill = str;
   const label = step.label.length > 14 ? step.label.slice(0, 13) + "…" : step.label;
 
   return (
@@ -1284,7 +1289,7 @@ function TerminateCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onCl
       )}
       <circle cx={cx} cy={cy} r={EVT_R} fill={fill} stroke={str} strokeWidth="3"
         style={{ filter: hov ? `drop-shadow(0 2px 8px ${str}88)` : undefined }} />
-      <circle cx={cx} cy={cy} r={EVT_R * 0.5} fill={str} style={{ pointerEvents: "none" }} />
+      <circle cx={cx} cy={cy} r={EVT_R * 0.5} fill="#ffffff" style={{ pointerEvents: "none" }} />
       <text x={cx} y={cy + EVT_R + 10} textAnchor="middle" dominantBaseline="middle"
         fontSize="8" fontWeight="600" fill={str}
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
@@ -1533,6 +1538,7 @@ function AndDiamond({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDo
 
 function ProcessCanvasLegend() {
   const itemClass = "flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap";
+  const iconClass = "relative inline-flex h-4 w-6 shrink-0 items-center justify-center";
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-border bg-card/95 px-4 py-2 backdrop-blur-sm">
       <div className="flex items-center gap-4 overflow-x-auto">
@@ -1554,12 +1560,64 @@ function ProcessCanvasLegend() {
           Start/einde
         </span>
         <span className={itemClass}>
+          <span className="h-3 w-3 rounded-full border-2 border-red-600 bg-red-600">
+            <span className="m-[3px] block h-1.5 w-1.5 rounded-full bg-white" />
+          </span>
+          Terminate
+        </span>
+        <span className={itemClass}>
+          <span className="relative h-3.5 w-3.5 rounded-full border border-slate-500 bg-white">
+            <span className="absolute left-1/2 top-1.5 h-1.5 w-px -translate-x-1/2 bg-slate-500" />
+            <span className="absolute left-1/2 top-1/2 h-px w-1.5 bg-slate-500" />
+          </span>
+          Timer
+        </span>
+        <span className={itemClass}>
+          <span className={iconClass}>
+            <span className="h-3 w-4 rounded-sm border border-slate-500 bg-white" />
+            <span className="absolute left-[6px] top-[5px] h-1.5 w-2 rotate-45 border-b border-r border-slate-500" />
+          </span>
+          Bericht
+        </span>
+        <span className={itemClass}>
           <span className="h-3 w-5 rounded-sm border border-slate-300 bg-white" />
           Taak
         </span>
         <span className={itemClass}>
+          <span className="h-3 w-5 rounded-sm border border-dashed border-orange-500 bg-white" />
+          Optionele taak
+        </span>
+        <span className={itemClass}>
           <span className="h-3 w-3 rotate-45 border border-blue-500 bg-white" />
           Gateway
+        </span>
+        <span className={itemClass}>
+          <span className="relative h-3 w-3 rotate-45 border border-blue-500 bg-white">
+            <span className="absolute left-1/2 top-0.5 h-2 w-px -translate-x-1/2 bg-blue-500" />
+            <span className="absolute left-0.5 top-1/2 h-px w-2 -translate-y-1/2 bg-blue-500" />
+          </span>
+          AND gateway
+        </span>
+        <span className={itemClass}>
+          <span className="h-3 w-4 rounded-sm border border-slate-400 bg-slate-50" />
+          Notitie
+        </span>
+        <span className={itemClass}>
+          <span className={iconClass}>
+            <span className="h-4 w-3 rounded-[2px] border border-blue-500 bg-blue-50" />
+            <span className="absolute right-[7px] top-0 h-1.5 w-1.5 border-b border-l border-blue-500 bg-white" />
+          </span>
+          Data/document
+        </span>
+        <span className={itemClass}>
+          <span className="flex h-4 w-3 items-center justify-center rounded-[50%/18%] border border-violet-500 bg-violet-50">
+            <span className="h-2 w-2 rounded-[50%/18%] border border-violet-500" />
+          </span>
+          Databron
+        </span>
+        <span className={itemClass}>
+          <span className="h-3.5 w-6 rounded border border-dashed border-amber-500 bg-amber-50" />
+          Manual block
         </span>
       </div>
     </div>
@@ -1955,8 +2013,11 @@ export function ProcessCanvas({
   }, [artifacts]);
 
   const canvasSteps = useMemo(
-    () => steps.filter(step => !manualStepIds.has(step.id)),
-    [manualStepIds, steps],
+    () => {
+      const visibleTeamSet = new Set(visibleTeams);
+      return steps.filter(step => visibleTeamSet.has(step.team) && !manualStepIds.has(step.id));
+    },
+    [manualStepIds, steps, visibleTeams],
   );
 
   // Step-to-step connections only (not branch edges), excluding steps contained in manual blocks.
@@ -3816,10 +3877,15 @@ export function ProcessCanvas({
       {showLegend && <ProcessCanvasLegend />}
 
       {/* ── Context menu ── */}
-      {!readOnly && contextMenu && (
+      {!readOnly && contextMenu && createPortal(
         <div
           className="fixed z-50 bg-white border border-border rounded-lg shadow-lg py-1 min-w-[160px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            transform: `scale(${clampContextMenuScale(1 / viewportScale)})`,
+            transformOrigin: "top left",
+          }}
           onMouseLeave={() => setContextMenu(null)}
         >
           {contextMenu.type === "conn" && (
@@ -3890,7 +3956,7 @@ export function ProcessCanvas({
             );
           })()}
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }

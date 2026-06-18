@@ -19,6 +19,7 @@ import { KLANT_FASEN } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SyncReviewDialog } from "@/components/SyncReviewDialog";
 import type { SyncPreviewResult, SyncReviewChangeItem } from "@/lib/storage/edgeFunctions";
+import { Sentry } from "@/lib/sentry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,28 @@ function hasImportSyncReviewItems(result: SyncPreviewResult): result is SyncPrev
   changeItems: SyncReviewChangeItem[];
 } {
   return typeof result.syncRunId === "string" && Array.isArray(result.changeItems) && result.changeItems.length > 0;
+}
+
+function captureImportAutomationException(
+  error: unknown,
+  item: PendingAutomation,
+  action: "import_approve" | "import_reject" | "update",
+) {
+  Sentry.captureException(error, {
+    tags: {
+      area: "automation",
+      automation_action: action,
+      automation_id: item.id,
+      automation_source: item.import_source ?? "unknown",
+      automation_status: item.status ?? "unknown",
+    },
+    extra: {
+      proposalId: item.id,
+      externalId: item.external_id,
+      importStatus: item.import_status,
+      sourceRecordType: item.source_record_type,
+    },
+  });
 }
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
@@ -445,13 +468,19 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
   const approve = useMutation({
     mutationFn: () => approveAutomation(item),
     onSuccess:  () => { toast.success(`"${item.naam}" goedgekeurd`); refresh(); },
-    onError:    () => toast.error("Goedkeuren mislukt"),
+    onError:    (error) => {
+      captureImportAutomationException(error, item, "import_approve");
+      toast.error("Goedkeuren mislukt");
+    },
   });
 
   const reject = useMutation({
     mutationFn: () => rejectAutomation(item, rejectReason),
     onSuccess:  () => { toast.success("Voorstel afgewezen"); setRejectOpen(false); refresh(); },
-    onError:    () => toast.error("Afwijzen mislukt"),
+    onError:    (error) => {
+      captureImportAutomationException(error, item, "import_reject");
+      toast.error("Afwijzen mislukt");
+    },
   });
 
   async function handleSave(): Promise<void> {
@@ -468,7 +497,8 @@ function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
       toast.success("Wijzigingen opgeslagen");
       refresh();
       setEditing(false);
-    } catch {
+    } catch (error) {
+      captureImportAutomationException(error, item, "update");
       toast.error("Opslaan mislukt");
     } finally {
       setSaving(false);
@@ -792,7 +822,14 @@ export default function Imports(): React.ReactNode {
       }
 
       toast.success(`Geen HubSpot wijzigingen om toe te passen - ${result.proposed ?? result.inserted ?? 0} nieuw voorstel`);
-    } catch {
+    } catch (error) {
+      Sentry.captureException(error, {
+        tags: {
+          area: "automation",
+          automation_action: "sync_hubspot",
+          automation_source: "hubspot",
+        },
+      });
       toast.error("Synchronisatie mislukt. Controleer je HubSpot token via Instellingen.");
     }
   }
@@ -807,7 +844,14 @@ export default function Imports(): React.ReactNode {
       }
 
       toast.success(`Geen GitLab wijzigingen om toe te passen - ${result.proposed ?? result.inserted ?? 0} nieuw voorstel`);
-    } catch {
+    } catch (error) {
+      Sentry.captureException(error, {
+        tags: {
+          area: "automation",
+          automation_action: "sync_gitlab",
+          automation_source: "gitlab",
+        },
+      });
       toast.error("GitLab synchronisatie mislukt. Controleer je token via Instellingen.");
     }
   }
@@ -825,6 +869,17 @@ export default function Imports(): React.ReactNode {
       setSyncReview(null);
       qc.invalidateQueries({ queryKey: ["pending"] });
     } catch (error: unknown) {
+      Sentry.captureException(error, {
+        tags: {
+          area: "automation",
+          automation_action: "import_approve",
+          automation_source: syncReview.source,
+        },
+        extra: {
+          syncRunId: syncReview.syncRunId,
+          selectedChangeItemIds,
+        },
+      });
       toast.error(error instanceof Error ? error.message : "Sync toepassen mislukt");
     }
   }

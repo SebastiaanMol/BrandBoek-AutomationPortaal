@@ -13,6 +13,7 @@ import {
 } from "../types";
 import { normalizeAutomationSteps } from "../automationSteps";
 import { toFriendlyDbError } from "./errors";
+import { captureAutomationException } from "@/lib/sentry";
 
 interface ImportProposalShape {
   beschrijving_in_simpele_taal?: string[];
@@ -173,45 +174,9 @@ function readGitLabEndpoint(importProposal: ImportProposalShape | null): GitLabE
 }
 
 export async function insertAutomatisering(item: Automatisering): Promise<void> {
-  const { error } = await supabase.from("automatiseringen").insert({
-    id: item.id,
-    naam: item.naam,
-    categorie: item.categorie,
-    doel: item.doel,
-    trigger_beschrijving: item.trigger,
-    systemen: item.systemen,
-    stappen: item.stappen,
-    afhankelijkheden: item.afhankelijkheden,
-    owner: item.owner,
-    status: item.status,
-    verbeterideeen: readVerbeterideeen(item),
-    mermaid_diagram: item.mermaidDiagram,
-    fasen: item.fasen,
-  });
-  if (error) throw toFriendlyDbError(error);
-
-  if (item.koppelingen.length > 0) {
-    const { error: kopError } = await supabase.from("koppelingen").insert(
-      item.koppelingen.map((k) => ({
-        bron_id: item.id,
-        doel_id: k.doelId,
-        label: k.label,
-      }))
-    );
-    if (kopError) throw kopError;
-  }
-}
-
-export async function updateAutomatisering(item: Automatisering): Promise<void> {
-  const { data: beforeRow, error: beforeError } = await supabase
-    .from("automatiseringen")
-    .select("naam,categorie,doel,trigger_beschrijving,systemen,stappen,afhankelijkheden,owner,status,verbeterideeen,mermaid_diagram,fasen")
-    .eq("id", item.id)
-    .maybeSingle();
-  if (beforeError) throw beforeError;
-
-  const [{ error }, { error: delError }] = await Promise.all([
-    supabase.from("automatiseringen").update({
+  try {
+    const { error } = await supabase.from("automatiseringen").insert({
+      id: item.id,
       naam: item.naam,
       categorie: item.categorie,
       doel: item.doel,
@@ -224,38 +189,90 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
       verbeterideeen: readVerbeterideeen(item),
       mermaid_diagram: item.mermaidDiagram,
       fasen: item.fasen,
-    }).eq("id", item.id),
-    supabase.from("koppelingen").delete().eq("bron_id", item.id),
-  ]);
+    });
+    if (error) throw toFriendlyDbError(error);
 
-  if (error) throw toFriendlyDbError(error);
-  if (delError) throw delError;
-
-  if (item.koppelingen.length > 0) {
-    const { error: kopError } = await supabase.from("koppelingen").insert(
-      item.koppelingen.map((k) => ({
-        bron_id: item.id,
-        doel_id: k.doelId,
-        label: k.label,
-      }))
-    );
-    if (kopError) throw kopError;
+    if (item.koppelingen.length > 0) {
+      const { error: kopError } = await supabase.from("koppelingen").insert(
+        item.koppelingen.map((k) => ({
+          bron_id: item.id,
+          doel_id: k.doelId,
+          label: k.label,
+        }))
+      );
+      if (kopError) throw kopError;
+    }
+  } catch (error) {
+    captureAutomationException(error, item, "create", {
+      koppelingen: item.koppelingen.length,
+      fasen: item.fasen.length,
+    });
+    throw error;
   }
+}
 
-  await logAutomationAuditEvents(item.id, beforeRow, {
-    naam: item.naam,
-    categorie: item.categorie,
-    doel: item.doel,
-    trigger_beschrijving: item.trigger,
-    systemen: item.systemen,
-    stappen: item.stappen,
-    afhankelijkheden: item.afhankelijkheden,
-    owner: item.owner,
-    status: item.status,
-    verbeterideeen: readVerbeterideeen(item),
-    mermaid_diagram: item.mermaidDiagram,
-    fasen: item.fasen,
-  });
+export async function updateAutomatisering(item: Automatisering): Promise<void> {
+  try {
+    const { data: beforeRow, error: beforeError } = await supabase
+      .from("automatiseringen")
+      .select("naam,categorie,doel,trigger_beschrijving,systemen,stappen,afhankelijkheden,owner,status,verbeterideeen,mermaid_diagram,fasen")
+      .eq("id", item.id)
+      .maybeSingle();
+    if (beforeError) throw beforeError;
+
+    const [{ error }, { error: delError }] = await Promise.all([
+      supabase.from("automatiseringen").update({
+        naam: item.naam,
+        categorie: item.categorie,
+        doel: item.doel,
+        trigger_beschrijving: item.trigger,
+        systemen: item.systemen,
+        stappen: item.stappen,
+        afhankelijkheden: item.afhankelijkheden,
+        owner: item.owner,
+        status: item.status,
+        verbeterideeen: readVerbeterideeen(item),
+        mermaid_diagram: item.mermaidDiagram,
+        fasen: item.fasen,
+      }).eq("id", item.id),
+      supabase.from("koppelingen").delete().eq("bron_id", item.id),
+    ]);
+
+    if (error) throw toFriendlyDbError(error);
+    if (delError) throw delError;
+
+    if (item.koppelingen.length > 0) {
+      const { error: kopError } = await supabase.from("koppelingen").insert(
+        item.koppelingen.map((k) => ({
+          bron_id: item.id,
+          doel_id: k.doelId,
+          label: k.label,
+        }))
+      );
+      if (kopError) throw kopError;
+    }
+
+    await logAutomationAuditEvents(item.id, beforeRow, {
+      naam: item.naam,
+      categorie: item.categorie,
+      doel: item.doel,
+      trigger_beschrijving: item.trigger,
+      systemen: item.systemen,
+      stappen: item.stappen,
+      afhankelijkheden: item.afhankelijkheden,
+      owner: item.owner,
+      status: item.status,
+      verbeterideeen: readVerbeterideeen(item),
+      mermaid_diagram: item.mermaidDiagram,
+      fasen: item.fasen,
+    });
+  } catch (error) {
+    captureAutomationException(error, item, "update", {
+      koppelingen: item.koppelingen.length,
+      fasen: item.fasen.length,
+    });
+    throw error;
+  }
 }
 
 export async function setCleanupDeleteCandidate(id: string, marked: boolean): Promise<void> {
@@ -282,44 +299,54 @@ export async function setCleanupDeleteCandidate(id: string, marked: boolean): Pr
 }
 
 export async function deleteAutomatisering(id: string): Promise<void> {
-  const { data: row, error: fetchError } = await supabase
-    .from("automatiseringen")
-    .select("reviewer_overrides")
-    .eq("id", id)
-    .single();
-  if (fetchError) throw fetchError;
+  try {
+    const { data: row, error: fetchError } = await supabase
+      .from("automatiseringen")
+      .select("reviewer_overrides")
+      .eq("id", id)
+      .single();
+    if (fetchError) throw fetchError;
 
-  const now = new Date().toISOString();
-  const reviewerOverrides = {
-    ...((row?.reviewer_overrides as Record<string, unknown> | null) ?? {}),
-    archived_at: now,
-    archived_reason: "Handmatig gearchiveerd via portaal",
-  };
+    const now = new Date().toISOString();
+    const reviewerOverrides = {
+      ...((row?.reviewer_overrides as Record<string, unknown> | null) ?? {}),
+      archived_at: now,
+      archived_reason: "Handmatig gearchiveerd via portaal",
+    };
 
-  const { error } = await supabase
-    .from("automatiseringen")
-    .update({ reviewer_overrides: reviewerOverrides, status: "Uitgeschakeld" })
-    .eq("id", id);
-  if (error) throw error;
+    const { error } = await supabase
+      .from("automatiseringen")
+      .update({ reviewer_overrides: reviewerOverrides, status: "Uitgeschakeld" })
+      .eq("id", id);
+    if (error) throw error;
 
-  await insertAuditEvent({
-    action: "archive",
-    objectType: "automation",
-    objectId: id,
-    fieldName: "reviewer_overrides.archived_at",
-    oldValue: null,
-    newValue: now,
-  });
+    await insertAuditEvent({
+      action: "archive",
+      objectType: "automation",
+      objectId: id,
+      fieldName: "reviewer_overrides.archived_at",
+      oldValue: null,
+      newValue: now,
+    });
+  } catch (error) {
+    captureAutomationException(error, { id, naam: id }, "archive");
+    throw error;
+  }
 }
 
 export async function verifieerAutomatisering(id: string, door: string, status?: string): Promise<void> {
-  const update: { laatst_geverifieerd: string; geverifieerd_door: string; status?: string } = {
-    laatst_geverifieerd: new Date().toISOString(),
-    geverifieerd_door: door,
-  };
-  if (status) update.status = status;
-  const { error } = await supabase.from("automatiseringen").update(update).eq("id", id);
-  if (error) throw error;
+  try {
+    const update: { laatst_geverifieerd: string; geverifieerd_door: string; status?: string } = {
+      laatst_geverifieerd: new Date().toISOString(),
+      geverifieerd_door: door,
+    };
+    if (status) update.status = status;
+    const { error } = await supabase.from("automatiseringen").update(update).eq("id", id);
+    if (error) throw error;
+  } catch (error) {
+    captureAutomationException(error, { id, naam: id, status }, "verify", { verifier: door });
+    throw error;
+  }
 }
 
 export async function generateNextId(): Promise<string> {

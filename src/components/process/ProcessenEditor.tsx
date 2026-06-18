@@ -67,6 +67,11 @@ import { exportProcessCanvasPdf, exportProcessCanvasPng } from "@/lib/processExp
 import { exportProcessBackup, importProcessBackup } from "@/lib/processBackup";
 import { buildProcessStateFromSaved, buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
 import { removeAttachmentsForTarget } from "@/lib/processAttachments";
+import { Sentry } from "@/lib/sentry";
+import {
+  translateWaypointsForLaneOrderChange,
+  translateWaypointsForLaneVisibilityChange,
+} from "@/lib/processLaneWaypoints";
 import {
   createManualExceptionBlock,
   deleteProcessArtifact,
@@ -373,6 +378,18 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       queryClient.setQueryData(["processState", pipelineId], persistedSnapshot);
       queryClient.invalidateQueries({ queryKey: ["processState", pipelineId] });
     } catch (err) {
+      Sentry.captureException(err, {
+        tags: {
+          area: "process_editor",
+          action: "save_process_state",
+        },
+        extra: {
+          pipelineId,
+          steps: state.steps.length,
+          connections: state.connections.length,
+          activeLanes,
+        },
+      });
       console.error(err);
       toast.error("Opslaan mislukt — controleer de database");
     }
@@ -391,6 +408,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       await exportProcessCanvasPng();
       toast.success("PNG gedownload");
     } catch (err) {
+      Sentry.captureException(err, {
+        tags: {
+          area: "process_editor",
+          action: "export_process_canvas_png",
+        },
+        extra: {
+          pipelineId,
+          steps: state.steps.length,
+          connections: state.connections.length,
+        },
+      });
       toast.error(err instanceof Error ? err.message : "Export mislukt");
       if (!(err instanceof Error) || err.message !== "Canvas niet gevonden") console.error(err);
     }
@@ -401,6 +429,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       await exportProcessCanvasPdf();
       toast.success("PDF gedownload");
     } catch (err) {
+      Sentry.captureException(err, {
+        tags: {
+          area: "process_editor",
+          action: "export_process_canvas_pdf",
+        },
+        extra: {
+          pipelineId,
+          steps: state.steps.length,
+          connections: state.connections.length,
+        },
+      });
       toast.error(err instanceof Error ? err.message : "Export mislukt");
       if (!(err instanceof Error) || err.message !== "Canvas niet gevonden") console.error(err);
     }
@@ -458,6 +497,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       setIsDirty(true);
       toast.success("Backup geladen — controleer en klik Opslaan om op te slaan");
     } catch (err) {
+      Sentry.captureException(err, {
+        tags: {
+          area: "process_editor",
+          action: "import_process_backup",
+        },
+        extra: {
+          pipelineId,
+          fileName: file.name,
+          fileSize: file.size,
+        },
+      });
       toast.error(err instanceof Error ? err.message : "Importeren mislukt");
     }
   }
@@ -887,22 +937,32 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   function handleToggleLane(laneKey: string) {
     const isActive = activeLanes.includes(laneKey);
     if (isActive) {
+      const nextActiveLanes = activeLanes.filter(l => l !== laneKey);
       // Park steps that belong to this lane before hiding it
       const stepsInLane = state.steps.filter(s => s.team === laneKey);
+      const stepIds = new Set(stepsInLane.map(step => step.id));
       if (stepsInLane.length > 0) {
-        const stepIds = new Set(stepsInLane.map(step => step.id));
         setFlowLinks(prev => stepsInLane.reduce(
           (links, step) => removeFlowLinksForStep(links, step.id),
           prev,
         ));
-        update(s => ({
+        setParkedSteps(prev => [...prev, ...stepsInLane]);
+      }
+      update(s => {
+        const remainingConnections = s.connections.filter(c =>
+          !stepIds.has(c.fromStepId ?? "") && !stepIds.has(c.toStepId)
+        );
+        return {
           ...s,
           steps: s.steps.filter(x => x.team !== laneKey),
-          connections: s.connections.filter(c =>
-            !stepsInLane.some(sl => sl.id === c.fromStepId || sl.id === c.toStepId)
-          ),
+          connections: translateWaypointsForLaneVisibilityChange({
+            connections: remainingConnections,
+            steps: s.steps,
+            previousLaneOrder: activeLanes,
+            nextLaneOrder: nextActiveLanes,
+          }),
           automations: s.automations.map(a =>
-            stepsInLane.some(sl => sl.id === a.fromStepId || sl.id === a.toStepId)
+            stepIds.has(a.fromStepId ?? "") || stepIds.has(a.toStepId ?? "")
               ? { ...a, fromStepId: undefined, toStepId: undefined }
               : a,
           ),
@@ -912,14 +972,27 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               (remaining, connection) => removeAttachmentsForTarget(remaining, { kind: "connection", id: connection.id }),
               s.attachments ?? [],
             ),
-        }));
-        setParkedSteps(prev => [...prev, ...stepsInLane]);
-      }
-      setActiveLanes(prev => prev.filter(l => l !== laneKey));
+        };
+      });
+      setActiveLanes(nextActiveLanes);
     } else {
       // Re-add the lane — preserve current order, append if new
       const allKeys = buildLaneKeys(customLanes);
-      setActiveLanes(allKeys.filter(l => l === laneKey || activeLanes.includes(l)));
+      const nextActiveLanes = allKeys.filter(l => l === laneKey || activeLanes.includes(l));
+      const stepsForNextLayout = [
+        ...state.steps,
+        ...parkedSteps.filter(step => step.team === laneKey),
+      ];
+      update(s => ({
+        ...s,
+        connections: translateWaypointsForLaneVisibilityChange({
+          connections: s.connections,
+          steps: stepsForNextLayout,
+          previousLaneOrder: activeLanes,
+          nextLaneOrder: nextActiveLanes,
+        }),
+      }));
+      setActiveLanes(nextActiveLanes);
     }
     setIsDirty(true);
   }
@@ -1013,16 +1086,22 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   }
 
   function handleMoveLane(laneKey: string, direction: -1 | 1) {
-    setActiveLanes(prev => {
-      const idx = prev.indexOf(laneKey);
-      if (idx === -1) return prev;
-      const newIdx = idx + direction;
-      if (newIdx < 0 || newIdx >= prev.length) return prev;
-      const next = [...prev];
-      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
-      return next;
-    });
-    setIsDirty(true);
+    const idx = activeLanes.indexOf(laneKey);
+    if (idx === -1) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= activeLanes.length) return;
+    const next = [...activeLanes];
+    [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+    update(s => ({
+      ...s,
+      connections: translateWaypointsForLaneOrderChange({
+        connections: s.connections,
+        steps: s.steps,
+        previousLaneOrder: activeLanes,
+        nextLaneOrder: next,
+      }),
+    }));
+    setActiveLanes(next);
   }
 
   function handleDeleteCustomLane(laneKey: string) {

@@ -13,6 +13,7 @@ import { RefreshCw, Link2, Link2Off, AlertCircle, CheckCircle2, Loader2, Save } 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
+import { Sentry } from "@/lib/sentry";
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -49,6 +50,22 @@ function formatPreviewToast(result: SyncPreviewResult): string {
   const proposed = result.proposed ?? result.inserted ?? 0;
   const findings = result.findings ?? 0;
   return `Geen wijzigingen om toe te passen - ${proposed} nieuw voorstel, ${findings} bronwaarschuwingen`;
+}
+
+function captureAutomationSyncException(
+  error: unknown,
+  source: string,
+  action: string,
+  extra?: Record<string, unknown>,
+): void {
+  Sentry.captureException(error, {
+    tags: {
+      area: "automation",
+      automation_action: action,
+      automation_source: source,
+    },
+    extra,
+  });
 }
 
 // ── Portal settings ────────────────────────────────────────────────────────────
@@ -345,6 +362,7 @@ function IntegrationCard({
 
       toast.success(formatPreviewToast(result));
     } catch (e: unknown) {
+      captureAutomationSyncException(e, type, `sync_${type}`);
       toast.error(e instanceof Error ? e.message : "Sync mislukt");
     }
   }
@@ -361,6 +379,10 @@ function IntegrationCard({
       toast.success(`Sync toegepast - ${result.applied ?? selectedChangeItemIds.length} toegepast, ${result.skipped ?? 0} overgeslagen`);
       setSyncReview(null);
     } catch (e: unknown) {
+      captureAutomationSyncException(e, syncReview.source, `sync_${syncReview.source}`, {
+        syncRunId: syncReview.syncRunId,
+        selectedChangeItemIds,
+      });
       toast.error(e instanceof Error ? e.message : "Sync toepassen mislukt");
     }
   }
@@ -505,6 +527,11 @@ function ZapierJsonImportForm(): React.ReactNode {
 
       toast.success(formatPreviewToast(result));
     } catch (error: unknown) {
+      captureAutomationSyncException(error, "zapier", "sync_zapier", {
+        inputMode: "json_import",
+        fileName: file.name,
+        fileSize: file.size,
+      });
       toast.error(error instanceof Error ? error.message : "Zapier JSON import mislukt");
     } finally {
       input.value = "";
@@ -523,6 +550,11 @@ function ZapierJsonImportForm(): React.ReactNode {
       toast.success(`Zapier import toegepast - ${result.applied ?? selectedChangeItemIds.length} toegepast, ${result.skipped ?? 0} overgeslagen`);
       setSyncReview(null);
     } catch (error: unknown) {
+      captureAutomationSyncException(error, "zapier", "sync_zapier", {
+        inputMode: "json_import_apply",
+        syncRunId: syncReview.syncRunId,
+        selectedChangeItemIds,
+      });
       toast.error(error instanceof Error ? error.message : "Zapier import toepassen mislukt");
     }
   }
@@ -655,6 +687,9 @@ export default function Instellingen(): React.ReactNode {
       const result = await hubspotPipelinesSync.mutateAsync();
       toast.success(`Pipelines gesynchroniseerd — ${result.upserted} pipeline(s) bijgewerkt`);
     } catch (e: unknown) {
+      captureAutomationSyncException(e, "hubspot", "sync_hubspot", {
+        target: "pipelines",
+      });
       toast.error(e instanceof Error ? e.message : "Sync mislukt");
     }
   }
