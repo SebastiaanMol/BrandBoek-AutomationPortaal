@@ -11,6 +11,7 @@ import {
   extractHubSpotWebhookPaths as extractHubSpotWebhookPathsFromActions,
   extractHubSpotWebhookUrl,
 } from "../_shared/hubspot-webhook-url.ts";
+import { extractPipelineStage } from "../_shared/hubspot-workflow-stage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -83,35 +84,6 @@ const WORKFLOW_TYPE_TRIGGER_MAP: Record<string, string> = {
 };
 
 // ── Pipeline + stage extraction from trigger conditions ───────────────────────
-function extractPipelineStage(wf: any): { pipelineId: string | null; stageId: string | null } {
-  const PIPELINE_PROPS = new Set(["pipeline", "hs_pipeline"]);
-  const STAGE_PROPS    = new Set(["dealstage", "hs_pipeline_stage"]);
-
-  let pipelineId: string | null = null;
-  let stageId:    string | null = null;
-
-  function checkFilter(f: any) {
-    const prop = (f.property ?? f.propertyName ?? "").toLowerCase();
-    const raw = f.value ?? f.propertyValue;
-    const val = (raw == null) ? "" : String(raw);
-    if (!val || val === "null" || val === "undefined") return;
-    if (PIPELINE_PROPS.has(prop)) pipelineId = val;
-    if (STAGE_PROPS.has(prop))    stageId    = val;
-  }
-
-  for (const sources of [wf.triggerSets ?? [], wf.reEnrollmentTriggerSets ?? []]) {
-    for (const ts of sources) {
-      for (const f of ts.filters ?? []) checkFilter(f);
-    }
-  }
-  for (const group of wf.segmentCriteria ?? []) {
-    const filters = Array.isArray(group) ? group : [group];
-    for (const f of filters) checkFilter(f);
-  }
-
-  return { pipelineId, stageId };
-}
-
 function msToHuman(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60)    return `${s} seconden`;

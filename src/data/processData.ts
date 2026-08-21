@@ -30,15 +30,55 @@ export interface ProcessStep {
   type?: "task" | "optional" | "start" | "end" | "timer" | "decision" | "terminate" | "send" | "receive" | "and";
 }
 
+export type CanvasPlacement =
+  | {
+      kind: "connection";
+      fromStepId: string;
+      toStepId: string;
+      order?: number;
+      position?: number;
+    }
+  | {
+      kind: "step";
+      stepId: string;
+      order?: number;
+    }
+  | {
+      kind: "pipeline_wide";
+      order?: number;
+      syncTiming?: string;
+      checksSummary?: string;
+      actionSummary?: string;
+      affectedStageIds?: string[];
+    };
+
+export type ProcessPlacementLink = CanvasPlacement | { fromStepId: string; toStepId: string; order?: number; position?: number };
+
 export interface Automation {
   id: string;
   name: string;
   team: TeamKey;
   tool: string;
   goal: string;
+  status?: string;
   link?: string;
   fromStepId?: string;  // step this automation sits ON (for dot position)
   toStepId?: string;    // step this automation sits ON (for dot position)
+  placement?: CanvasPlacement;
+  syncTiming?: string;
+  checksSummary?: string;
+  actionSummary?: string;
+  affectedStageIds?: string[];
+}
+
+export type ProcessActionType = "wait" | "email" | "task" | "message" | "webhook";
+
+export interface ProcessAction {
+  id: string;
+  type: ProcessActionType;
+  label: string;
+  detail?: string;
+  placement?: CanvasPlacement;
 }
 
 export type ConnectionRouteType = "main" | "optional" | "end";
@@ -77,7 +117,7 @@ export interface ProcessAttachment {
   offset?: { x: number; y: number };
 }
 
-export type ProcessArtifactType = "manualExceptionBlock";
+export type ProcessArtifactType = "manualExceptionBlock" | "automaticSyncBlock";
 
 export interface ProcessArtifact {
   id: string;
@@ -91,17 +131,19 @@ export interface ProcessArtifact {
     anchor: "process";
   };
   stepIds?: string[];
+  automationIds?: string[];
 }
 
 export interface ProcessState {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
+  processActions?: ProcessAction[];
   attachments?: ProcessAttachment[];
   artifacts?: ProcessArtifact[];
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
   customLanes?: CustomLane[];
-  flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
+  flowLinks?: Record<string, ProcessPlacementLink>;
 }
 
 export const TEAM_CONFIG: Record<TeamKey, {
@@ -155,6 +197,13 @@ export function buildLaneKeys(customLanes: CustomLane[] = []): string[] {
 export function filterValidActiveLanes(activeLanes: string[] = [], customLanes: CustomLane[] = []): string[] {
   const validKeys = new Set(buildLaneKeys(customLanes));
   return activeLanes.filter((laneKey) => validKeys.has(laneKey));
+}
+
+export function resolveActiveLanes(activeLanes: string[] | undefined, customLanes: CustomLane[] = []): string[] {
+  const allLaneKeys = buildLaneKeys(customLanes);
+  if (!activeLanes?.length) return allLaneKeys;
+  const validActiveLanes = filterValidActiveLanes(activeLanes, customLanes);
+  return validActiveLanes.length ? validActiveLanes : allLaneKeys;
 }
 
 export function upsertCustomLaneConfig(customLanes: CustomLane[], lane: CustomLane): CustomLane[] {

@@ -9,6 +9,7 @@ interface FlowDetailPanelProps {
   fromStep?: { id: string; label: string };
   toStep?:   { id: string; label: string };
   isAttached: boolean;
+  placementLabel?: string;
   onClose: () => void;
   onDetach?: (flowId: string) => void;
   readOnly?: boolean;
@@ -28,10 +29,13 @@ export function FlowDetailPanel({
   fromStep,
   toStep,
   isAttached,
+  placementLabel,
   onClose,
   onDetach,
   readOnly = false,
 }: FlowDetailPanelProps): React.ReactNode {
+  const detachLabel = placementLabel ? `Loskoppelen van ${placementLabel}` : "Loskoppelen";
+
   return (
     <div
       className="w-80 shrink-0 border-l border-border bg-card flex flex-col h-full"
@@ -88,13 +92,19 @@ export function FlowDetailPanel({
         )}
 
         {/* Gekoppeld aan */}
-        {isAttached && fromStep && toStep && (
+        {isAttached && (
           <Section label="Gekoppeld aan">
-            <div className="flex items-center gap-2 text-xs bg-secondary rounded-md px-3 py-2">
-              <span className="font-medium text-foreground truncate">{fromStep.label}</span>
-              <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="font-medium text-foreground truncate">{toStep.label}</span>
-            </div>
+            {placementLabel ? (
+              <div className="text-xs bg-secondary rounded-md px-3 py-2 font-medium text-foreground">
+                {placementLabel}
+              </div>
+            ) : fromStep && toStep ? (
+              <div className="flex items-center gap-2 text-xs bg-secondary rounded-md px-3 py-2">
+                <span className="font-medium text-foreground truncate">{fromStep.label}</span>
+                <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="font-medium text-foreground truncate">{toStep.label}</span>
+              </div>
+            ) : null}
           </Section>
         )}
 
@@ -110,7 +120,7 @@ export function FlowDetailPanel({
             onClick={() => { onDetach(flow.id); onClose(); }}
           >
             <Unlink className="h-3.5 w-3.5 mr-2" />
-            Loskoppelen
+            {detachLabel}
           </Button>
         </div>
       )}

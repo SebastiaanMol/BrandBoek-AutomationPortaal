@@ -11,6 +11,13 @@ type SyncResult = {
   missing?: number;
   changed?: number;
   syncRunId?: string;
+  failedItems?: Array<{
+    id: string;
+    title: string;
+    externalId: string | null;
+    changeType: string;
+    errorMessage: string;
+  }>;
 };
 
 export type SyncReviewChangeItem = {
@@ -28,6 +35,33 @@ export type SyncReviewChangeItem = {
   newValue?: unknown;
   payload?: unknown;
   selectedByDefault: boolean;
+  errorMessage?: string | null;
+};
+
+export type SyncReviewSourceFilter = "all" | "hubspot" | "gitlab" | "zapier" | "typeform";
+export type SyncReviewTypeFilter = "all" | "new" | "changed" | "warnings";
+export type SyncReviewSelectedFilter = "all" | "selected" | "unselected";
+
+export type SyncReviewFilters = {
+  source: SyncReviewSourceFilter;
+  type: SyncReviewTypeFilter;
+  selected: SyncReviewSelectedFilter;
+  search: string;
+};
+
+export type FetchPendingSyncReviewItemsParams = Partial<SyncReviewFilters> & {
+  page?: number;
+  pageSize?: number;
+};
+
+export type PaginatedSyncReviewItems = {
+  items: SyncReviewChangeItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  from: number;
+  to: number;
 };
 
 export type SyncPreviewResult = SyncResult & {
@@ -123,6 +157,82 @@ export async function applySourceSyncReview(
     syncRunId,
     selectedChangeItemIds,
   });
+}
+
+export async function fetchPendingSyncReviewItems(
+  params: FetchPendingSyncReviewItemsParams = {},
+): Promise<PaginatedSyncReviewItems> {
+  const page = Math.max(1, params.page ?? 1);
+  const pageSize = Math.max(1, params.pageSize ?? 50);
+  const rangeFrom = (page - 1) * pageSize;
+  const rangeTo = rangeFrom + pageSize - 1;
+
+  let query = (supabase as any)
+    .from("source_sync_change_items")
+    .select("id,sync_run_id,source,external_id,automation_id,change_type,status,title,summary,impact,old_value_sanitized,new_value_sanitized,payload_sanitized,selected_by_default,error_message_sanitized", { count: "exact" })
+    .in("status", ["pending", "failed"]);
+
+  if (params.source && params.source !== "all") {
+    query = query.eq("source", params.source);
+  }
+
+  if (params.type === "new") {
+    query = query.eq("change_type", "new_automation");
+  } else if (params.type === "changed") {
+    query = query.in("change_type", ["metadata_changed", "route_changed"]);
+  } else if (params.type === "warnings") {
+    query = query.in("change_type", ["source_data_incomplete", "source_missing", "legacy_gitlab_record"]);
+  }
+
+  if (params.selected === "selected") {
+    query = query.eq("selected_by_default", true);
+  } else if (params.selected === "unselected") {
+    query = query.eq("selected_by_default", false);
+  }
+
+  const search = params.search?.trim();
+  if (search) {
+    query = query.or(`title.ilike.%${search}%,external_id.ilike.%${search}%`);
+  }
+
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(rangeFrom, rangeTo);
+
+  if (error) throw error;
+
+  const items = ((data ?? []) as Array<Record<string, unknown>>).map((item): SyncReviewChangeItem => ({
+    id: String(item.id),
+    syncRunId: typeof item.sync_run_id === "string" ? item.sync_run_id : undefined,
+    source: String(item.source ?? ""),
+    externalId: typeof item.external_id === "string" ? item.external_id : null,
+    automationId: typeof item.automation_id === "string" ? item.automation_id : null,
+    changeType: String(item.change_type ?? ""),
+    status: typeof item.status === "string" ? item.status : undefined,
+    title: String(item.title ?? ""),
+    summary: String(item.summary ?? ""),
+    impact: String(item.impact ?? ""),
+    oldValue: item.old_value_sanitized,
+    newValue: item.new_value_sanitized,
+    payload: item.payload_sanitized,
+    selectedByDefault: item.selected_by_default !== false,
+    errorMessage: typeof item.error_message_sanitized === "string" ? item.error_message_sanitized : null,
+  }));
+
+  const total = typeof count === "number" ? count : items.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const visibleFrom = total === 0 ? 0 : rangeFrom + 1;
+  const visibleTo = total === 0 ? 0 : Math.min(rangeTo + 1, total);
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+    pageCount,
+    from: visibleFrom,
+    to: visibleTo,
+  };
 }
 
 export async function triggerGitlabBackfillDryRun(): Promise<GitLabBackfillResult> {

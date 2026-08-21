@@ -460,6 +460,7 @@ export type Database = {
           connections: Json
           custom_lanes: Json | null
           id: string
+          manual_status: string
           parked_steps: Json
           steps: Json
           updated_at: string | null
@@ -471,6 +472,7 @@ export type Database = {
           connections?: Json
           custom_lanes?: Json | null
           id?: string
+          manual_status?: string
           parked_steps?: Json
           steps?: Json
           updated_at?: string | null
@@ -482,6 +484,7 @@ export type Database = {
           connections?: Json
           custom_lanes?: Json | null
           id?: string
+          manual_status?: string
           parked_steps?: Json
           steps?: Json
           updated_at?: string | null

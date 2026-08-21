@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { AppBreadcrumbs } from "@/components/AppBreadcrumbs";
+import { NotificationBell } from "@/components/NotificationBell";
 import {
   LayoutDashboard,
   PlusCircle,
@@ -215,6 +216,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
           <div className="ml-3 min-w-0 lg:ml-0">
             <AppBreadcrumbs />
+          </div>
+          <div className="ml-auto flex items-center">
+            <NotificationBell />
           </div>
         </header>
         <main className={`flex-1 w-full ${

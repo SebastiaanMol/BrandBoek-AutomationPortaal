@@ -7,7 +7,6 @@ import { insertAutomatisering, generateNextId } from "@/lib/supabaseStorage";
 import { Upload, FileText, Loader2, FileSpreadsheet, ChevronDown, Check } from "lucide-react";
 import { StatusBadge, CategorieBadge, SystemBadge } from "@/components/Badges";
 import { supabase } from "@/integrations/supabase/client";
-import { Sentry, captureAutomationException } from "@/lib/sentry";
 
 type Tab = "tekst" | "bestand";
 
@@ -209,17 +208,6 @@ export default function AIUpload() {
       });
       toast.success("AI heeft velden geëxtraheerd. Controleer en sla op.");
     } catch (e: any) {
-      Sentry.captureException(e, {
-        tags: {
-          area: "automation",
-          automation_action: "ai_extract",
-          automation_source: "ai_upload",
-        },
-        extra: {
-          inputMode: "text",
-          inputLength: text.length,
-        },
-      });
       console.error("AI extraction error:", e);
       toast.error(e?.message || "AI-extractie mislukt. Probeer opnieuw.");
     } finally {
@@ -334,19 +322,6 @@ export default function AIUpload() {
             });
           }
         } catch (e: any) {
-          Sentry.captureException(e, {
-            tags: {
-              area: "automation",
-              automation_action: "ai_extract",
-              automation_source: "ai_upload",
-            },
-            extra: {
-              inputMode: "json_batch",
-              batchStart: i,
-              batchSize: batch.length,
-              totalRows: rows.length,
-            },
-          });
           console.error(`AI JSON batch ${i} error:`, e);
         }
       }
@@ -368,17 +343,6 @@ export default function AIUpload() {
       setLoading(false);
       toast.success(`${fallbackResults.length} automatisering(en) gevonden in JSON (lokaal)`);
     } catch (e) {
-      Sentry.captureException(e, {
-        tags: {
-          area: "automation",
-          automation_action: "ai_extract",
-          automation_source: "ai_upload",
-        },
-        extra: {
-          inputMode: "json_parse",
-          inputLength: content.length,
-        },
-      });
       console.error("JSON parse error:", e);
       toast.error("Ongeldig JSON-bestand. Controleer het formaat.");
       setLoading(false);
@@ -440,17 +404,6 @@ export default function AIUpload() {
         return;
       }
     } catch (e: any) {
-      Sentry.captureException(e, {
-        tags: {
-          area: "automation",
-          automation_action: "ai_extract",
-          automation_source: "ai_upload",
-        },
-        extra: {
-          inputMode: "csv",
-          rows: rows.length,
-        },
-      });
       console.error("AI CSV extraction error:", e);
       toast.warning("AI-analyse niet beschikbaar, lokale extractie gebruikt.");
     }
@@ -526,15 +479,6 @@ export default function AIUpload() {
       if (!options?.silent) {
         toast.error(err.message || "Opslaan mislukt");
       }
-      captureAutomationException(err, {
-        id: String(item.mapped.id ?? item.mapped.naam ?? `csv-row-${idx}`),
-        naam: item.mapped.naam ?? `CSV rij ${idx + 1}`,
-        source: "ai_upload",
-        status: item.mapped.status,
-        systemen: item.mapped.systemen,
-      }, "batch_save", {
-        rowIndex: idx,
-      });
       return "error";
     }
   };

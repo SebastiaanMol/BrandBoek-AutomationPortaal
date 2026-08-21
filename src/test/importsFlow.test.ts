@@ -13,6 +13,10 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const importsSource = readFileSync(resolve(process.cwd(), "src/pages/Imports.tsx"), "utf8");
 
 // ── Duplicated pure logic from supabase/functions/hubspot-sync/index.ts ────────
 // Copy of inferFasen for testability.
@@ -159,5 +163,15 @@ describe("handleSave patch shape", () => {
     expect("trigger_beschrijving" in patch).toBe(true);
     expect("trigger" in patch).toBe(false);
     expect(patch.trigger_beschrijving).toBe("Form ingediend");
+  });
+});
+
+describe("imports page sync-review route", () => {
+  it("does not render or fetch the legacy pending proposal model", () => {
+    expect(importsSource).not.toContain('from("automation_import_proposals")');
+    expect(importsSource).not.toContain("ProposalCard");
+    expect(importsSource).not.toContain("ApprovalList");
+    expect(importsSource).not.toContain("TabsTrigger");
+    expect(importsSource).toContain("SyncReviewPanel");
   });
 });

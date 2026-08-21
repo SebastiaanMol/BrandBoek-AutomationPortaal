@@ -36,6 +36,26 @@ vi.mock("@/lib/queryHooks/portalSettings", () => ({
   usePortalSettings: () => ({ data: { verificatiePeriodeDagen: 90 } }),
 }));
 
+vi.mock("@/lib/queryHooks/sentryIssues", () => ({
+  useAutomationSentryIssueOverview: () => ({ data: undefined, isLoading: false, error: null }),
+}));
+
+vi.mock("@/lib/queryHooks/notificationCenter", () => ({
+  useNotificationCenter: () => ({
+    model: {
+      items: [],
+      openItems: [],
+      seenItems: [],
+      archivedItems: [],
+      unseenCount: 0,
+    },
+    isLoading: false,
+    isError: false,
+    markOpenNotificationsSeen: vi.fn(),
+    archiveNotification: vi.fn(),
+  }),
+}));
+
 const fullData: Automatisering = {
   id: "auto-1",
   naam: "Test automation",

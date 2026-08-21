@@ -28,4 +28,9 @@ describe("source sync change items migration", () => {
     expect(migration).toContain("'applied'");
     expect(migration).toContain("'skipped'");
   });
+
+  it("adds GitLab legacy cleanup columns used by the deployed sync function", () => {
+    expect(migration).toContain("cleanup_delete_candidate");
+    expect(migration).toContain("cleanup_delete_candidate_at");
+  });
 });

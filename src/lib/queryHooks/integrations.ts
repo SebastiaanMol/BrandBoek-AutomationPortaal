@@ -50,6 +50,7 @@ function useIntegrationSync(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
       queryClient.invalidateQueries({ queryKey: ["pending"] });
+      queryClient.invalidateQueries({ queryKey: ["source-sync-review-items"] });
       queryClient.invalidateQueries({ queryKey: ["rejected-hubspot-automations"] });
       queryClient.invalidateQueries({ queryKey: ["integration", integrationKey] });
     },
@@ -71,6 +72,7 @@ export function useZapierJsonImport(): UseMutationResult<SyncPreviewResult, Erro
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
       queryClient.invalidateQueries({ queryKey: ["pending"] });
+      queryClient.invalidateQueries({ queryKey: ["source-sync-review-items"] });
       queryClient.invalidateQueries({ queryKey: ["integration", "zapier"] });
     },
   });
@@ -95,6 +97,7 @@ export function useApplySourceSyncReview() {
     onSuccess: (_data, { source }) => {
       queryClient.invalidateQueries({ queryKey: ["automatiseringen"] });
       queryClient.invalidateQueries({ queryKey: ["pending"] });
+      queryClient.invalidateQueries({ queryKey: ["source-sync-review-items"] });
       queryClient.invalidateQueries({ queryKey: ["rejected-hubspot-automations"] });
       queryClient.invalidateQueries({ queryKey: ["integration", source] });
     },

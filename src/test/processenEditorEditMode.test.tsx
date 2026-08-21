@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProcessenEditor } from "@/components/process/ProcessenEditor";
 
@@ -27,6 +28,7 @@ function createSavedProcessState() {
 
 let savedProcessState = createSavedProcessState();
 let automations: unknown[] = [];
+let flows: unknown[] = [];
 
 const savedProcessStateWithIntakeRoute = {
   steps: [
@@ -55,6 +57,13 @@ const savedProcessStateWithIntakeRoute = {
   ],
 };
 
+const savedProcessStateWithStepAutomation = {
+  ...createSavedProcessState(),
+  autoLinks: {
+    automationRoute: { kind: "step", stepId: "intake", order: 0 },
+  },
+};
+
 const savedProcessStateWithManualStep = {
   ...createSavedProcessState(),
   connections: [],
@@ -67,6 +76,26 @@ const savedProcessStateWithManualStep = {
       stepIds: ["intake"],
     },
   ],
+};
+
+const savedProcessStateWithAutomaticSyncArtifact = {
+  ...createSavedProcessState(),
+  artifacts: [
+    {
+      id: "artifact-sync",
+      type: "automaticSyncBlock",
+      title: "Pipeline-brede automatische sync",
+      position: { x: 360, y: 220 },
+      automationIds: [],
+    },
+  ],
+};
+
+const savedProcessStateWithPipelineWideFlow = {
+  ...savedProcessStateWithAutomaticSyncArtifact,
+  flowLinks: {
+    flowRoute: { kind: "pipeline_wide" },
+  },
 };
 
 const savedProcessStateWithTwoManualSteps = {
@@ -119,6 +148,9 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("react-router-dom", () => ({
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
+    <a href={to} {...props}>{children}</a>
+  ),
   useBlocker: () => ({ state: "unblocked" }),
 }));
 
@@ -137,7 +169,7 @@ vi.mock("@/lib/queryHooks/pipelines", () => ({
 }));
 
 vi.mock("@/lib/queryHooks/flows", () => ({
-  useFlows: () => ({ data: emptyList }),
+  useFlows: () => ({ data: flows }),
 }));
 
 vi.mock("@/lib/queryHooks/automations", () => ({
@@ -155,6 +187,7 @@ describe("ProcessenEditor edit mode", () => {
   beforeEach(() => {
     savedProcessState = createSavedProcessState();
     automations = [];
+    flows = [];
     queryClient.invalidateQueries.mockClear();
     queryClient.setQueryData.mockClear();
     saveProcessStateMock.mockReset();
@@ -179,6 +212,30 @@ describe("ProcessenEditor edit mode", () => {
     return svg;
   }
 
+  function dropNewCanvasStep(svg: SVGSVGElement, type: string, clientX: number, clientY: number) {
+    const event = createEvent.drop(svg, {
+      dataTransfer: {
+        types: ["newstep"],
+        getData: (key: string) => (key === "newStep" ? type : ""),
+      },
+    });
+    Object.defineProperty(event, "clientX", { value: clientX });
+    Object.defineProperty(event, "clientY", { value: clientY });
+    fireEvent(svg, event);
+  }
+
+  function dropFlowOnCanvas(svg: SVGSVGElement, flowId: string, clientX: number, clientY: number) {
+    const event = createEvent.drop(svg, {
+      dataTransfer: {
+        types: ["flowid"],
+        getData: (key: string) => (key === "flowId" ? flowId : ""),
+      },
+    });
+    Object.defineProperty(event, "clientX", { value: clientX });
+    Object.defineProperty(event, "clientY", { value: clientY });
+    fireEvent(svg, event);
+  }
+
   it("mounts saved process state without runtime reference errors", async () => {
     render(
       <ProcessenEditor
@@ -190,6 +247,87 @@ describe("ProcessenEditor edit mode", () => {
     await waitFor(() => {
       expect(screen.getByText("Intake")).toBeInTheDocument();
     });
+  });
+
+  it("loads step-card automation placements and detaches them from the detail panel", async () => {
+    savedProcessState = savedProcessStateWithStepAutomation;
+    automations = [
+      {
+        id: "automationRoute",
+        naam: "Stap automation",
+        fasen: ["Sales"],
+        systemen: ["HubSpot"],
+        doel: "Controle",
+      },
+    ];
+
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    const placedAutomation = await screen.findByLabelText("Automation Stap automation op stap Intake");
+    fireEvent.click(placedAutomation.querySelector("circle") as SVGCircleElement);
+
+    fireEvent.click(screen.getByRole("button", { name: /Loskoppelen/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
+
+    await waitFor(() => {
+      expect(saveProcessStateMock).toHaveBeenCalledOnce();
+    });
+    expect(saveProcessStateMock).toHaveBeenCalledWith(
+      "pipe-1",
+      expect.objectContaining({
+        autoLinks: expect.not.objectContaining({
+          automationRoute: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it("places an automation as a pipeline-wide hub from the detail panel", async () => {
+    automations = [
+      {
+        id: "nightly-sync",
+        naam: "Nachtelijke debiteuren sync",
+        fasen: ["Sales"],
+        systemen: ["HubSpot"],
+        doel: "Controleert open deals en zet ze goed",
+        status: "Actief",
+      },
+    ];
+
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Losse automations/i }));
+    fireEvent.click(screen.getByText("Nachtelijke debiteuren sync"));
+    fireEvent.click(screen.getByRole("button", { name: /Plaats als pipeline-brede sync/i }));
+
+    expect(screen.getByRole("button", { name: "Pipeline-brede automation Nachtelijke debiteuren sync openen" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
+
+    await waitFor(() => {
+      expect(saveProcessStateMock).toHaveBeenCalledOnce();
+    });
+    expect(saveProcessStateMock).toHaveBeenCalledWith(
+      "pipe-1",
+      expect.objectContaining({
+        autoLinks: expect.objectContaining({
+          "nightly-sync": expect.objectContaining({
+            kind: "pipeline_wide",
+            checksSummary: "Controleert open deals en zet ze goed",
+          }),
+        }),
+      }),
+    );
   });
 
   it("fills the available height when embedded as the procesviewer editor", async () => {
@@ -391,6 +529,44 @@ describe("ProcessenEditor edit mode", () => {
       }),
     );
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["processState", "pipe-1"] });
+  });
+
+  it("keeps dropped start and end events on the target row when saving", async () => {
+    savedProcessState = {
+      ...createSavedProcessState(),
+      steps: [
+        { id: "intake", label: "Intake", team: "sales", column: 0, row: 0 },
+        { id: "event-row-anchor", label: "Start", type: "start", team: "sales", column: 0, row: 2 },
+      ],
+      activeLanes: ["sales"],
+    };
+
+    const { container } = render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+    const svg = mockCanvasRect(container);
+
+    dropNewCanvasStep(svg, "end", 180, 220);
+
+    fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
+
+    await waitFor(() => {
+      expect(saveProcessStateMock).toHaveBeenCalledOnce();
+    });
+
+    expect(queryClient.setQueryData).toHaveBeenCalledWith(
+      ["processState", "pipe-1"],
+      expect.objectContaining({
+        steps: expect.arrayContaining([
+          expect.objectContaining({ type: "end", label: "Einde", team: "sales", row: 2 }),
+        ]),
+      }),
+    );
   });
 
   it("saves newly drawn manual routes with snapped sides and default waypoints", async () => {
@@ -645,5 +821,115 @@ describe("ProcessenEditor edit mode", () => {
         ],
       }),
     );
+  });
+
+  it("adds and saves an automatic sync artifact", async () => {
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+
+    fireEvent.click(screen.getByRole("button", { name: /Toevoegen/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Automatic sync/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
+
+    await waitFor(() => {
+      expect(saveProcessStateMock).toHaveBeenCalledOnce();
+    });
+    expect(saveProcessStateMock).toHaveBeenCalledWith(
+      "pipe-1",
+      expect.objectContaining({
+        artifacts: [
+          expect.objectContaining({
+            type: "automaticSyncBlock",
+            title: "Pipeline-brede automatische sync",
+            automationIds: [],
+            association: expect.objectContaining({
+              anchor: "process",
+              label: "Pipeline-brede automatische actie",
+            }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("links a process journey when dropped on an automatic sync artifact", async () => {
+    savedProcessState = savedProcessStateWithAutomaticSyncArtifact;
+
+    const { container } = render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    await screen.findByText("Intake");
+    const svg = mockCanvasRect(container);
+
+    dropFlowOnCanvas(svg, "flowRoute", 390, 250);
+    fireEvent.click(screen.getByRole("button", { name: /Opslaan/i }));
+
+    await waitFor(() => {
+      expect(saveProcessStateMock).toHaveBeenCalledOnce();
+    });
+    expect(saveProcessStateMock).toHaveBeenCalledWith(
+      "pipe-1",
+      expect.objectContaining({
+        flowLinks: {
+          flowRoute: { kind: "pipeline_wide" },
+        },
+      }),
+    );
+  });
+
+  it("shows pipeline-wide process journeys on the automatic sync artifact", async () => {
+    savedProcessState = savedProcessStateWithPipelineWideFlow;
+    flows = [
+      {
+        id: "flowRoute",
+        naam: "Route journey",
+        status: "active",
+        automationIds: [],
+      },
+    ];
+
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    expect(await screen.findByLabelText("Procesreis Route journey op Automatic sync")).toBeInTheDocument();
+  });
+
+  it("opens the automatic sync detail panel from the canvas block", async () => {
+    savedProcessState = savedProcessStateWithPipelineWideFlow;
+    flows = [
+      {
+        id: "flowRoute",
+        naam: "Route journey",
+        status: "active",
+        automationIds: [],
+      },
+    ];
+
+    render(
+      <ProcessenEditor
+        pipelineId="pipe-1"
+        onSwitchPipeline={() => undefined}
+      />,
+    );
+
+    fireEvent.click(await screen.findByLabelText("Automatic sync block Pipeline-brede automatische sync"));
+
+    expect(screen.getByRole("heading", { name: "Pipeline-brede automatische sync" })).toBeInTheDocument();
+    expect(screen.getByText("Route journey")).toBeInTheDocument();
+    expect(screen.getByText("Deze items zijn pipeline-breed en hangen niet aan een enkele stap of pijl.")).toBeInTheDocument();
   });
 });

@@ -21,6 +21,7 @@ describe("detectDrift", () => {
     const result = detectDrift(steps, pipeline);
     expect(result.driftNew).toHaveLength(0);
     expect(result.driftRenamed).toHaveLength(0);
+    expect(result.driftDeleted).toHaveLength(0);
   });
 
   it("detects a new stage not on canvas", () => {
@@ -33,6 +34,31 @@ describe("detectDrift", () => {
     expect(result.driftNew).toHaveLength(1);
     expect(result.driftNew[0].stage_id).toBe("s2");
     expect(result.driftNew[0].label).toBe("Offerte");
+  });
+
+  it("does not report a HubSpot stage as new when it is parked", () => {
+    const steps = [makeStep("s1", "Intake")];
+    const parkedSteps = [makeStep("s2", "Offerte")];
+    const pipeline = makePipeline([
+      { stage_id: "s1", label: "Intake" },
+      { stage_id: "s2", label: "Offerte" },
+    ]);
+
+    const result = detectDrift(steps, pipeline, parkedSteps);
+
+    expect(result.driftNew).toHaveLength(0);
+  });
+
+  it("detects renamed HubSpot stages while they are parked", () => {
+    const steps: ProcessStep[] = [];
+    const parkedSteps = [makeStep("s1", "Intake")];
+    const pipeline = makePipeline([{ stage_id: "s1", label: "Kennismaking" }]);
+
+    const result = detectDrift(steps, pipeline, parkedSteps);
+
+    expect(result.driftRenamed).toEqual([
+      { stepId: "stage-s1", oldLabel: "Intake", newLabel: "Kennismaking" },
+    ]);
   });
 
   it("detects a renamed stage", () => {
@@ -59,11 +85,14 @@ describe("detectDrift", () => {
     expect(result.driftRenamed).toHaveLength(0);
   });
 
-  it("ignores deleted stages — no driftDeleted (they stay on canvas)", () => {
+  it("detects deleted source stages while keeping them available for canvas warning", () => {
     const steps = [makeStep("s1", "Intake"), makeStep("s2", "Offerte")];
     const pipeline = makePipeline([{ stage_id: "s1", label: "Intake" }]);
     const result = detectDrift(steps, pipeline);
     expect(result.driftNew).toHaveLength(0);
     expect(result.driftRenamed).toHaveLength(0);
+    expect(result.driftDeleted).toEqual([
+      { stepId: "stage-s2", label: "Offerte", stageId: "s2" },
+    ]);
   });
 });

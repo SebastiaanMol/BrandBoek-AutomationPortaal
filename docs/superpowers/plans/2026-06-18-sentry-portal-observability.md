@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Superseded for current implementation:** For the active read-only Sentry issue portal use case, use `docs/superpowers/specs/2026-06-18-read-only-sentry-issues-portal-design.md` instead of this browser observability plan. Browser telemetry, replay, tracing, `captureException` instrumentation, and source-map uploads are not part of the active implementation.
+
 **Goal:** Add Sentry to the automation portal so production frontend crashes, process-canvas failures, automation-specific failures, Supabase call failures, and hard-to-reproduce user sessions become diagnosable.
 
 **Architecture:** Use Sentry as a client-side observability layer, not as a replacement for the existing domain runtime telemetry. Initialize Sentry before app render, wrap the React 18 tree with `Sentry.ErrorBoundary`, instrument React Router v6 navigation, upload production source maps from Vite, and manually capture high-value failures where the app currently only shows a toast or writes `console.error`.

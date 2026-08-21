@@ -7,3 +7,4 @@ export * from "./queryHooks/pipelines";
 export * from "./queryHooks/processState";
 export * from "./queryHooks/flows";
 export * from "./queryHooks/processJourneyCuration";
+export * from "./queryHooks/sentryIssues";

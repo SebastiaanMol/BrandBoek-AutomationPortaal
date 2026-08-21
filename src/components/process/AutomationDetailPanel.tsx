@@ -4,7 +4,7 @@ import { GitLabLocationCard } from "@/components/GitLabLocationCard";
 import { AutomationFunnel } from "@/components/AutomationFunnel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { X, Zap, ExternalLink, Unlink, ArrowRight, User, Clock, Layers, Lightbulb } from "lucide-react";
+import { X, Zap, ExternalLink, Unlink, ArrowRight, User, Clock, Layers, Lightbulb, RefreshCw } from "lucide-react";
 import type { Automation, Connection } from "@/data/processData";
 import { TEAM_CONFIG } from "@/data/processData";
 import type { Automatisering } from "@/lib/types";
@@ -18,6 +18,7 @@ interface AutomationDetailPanelProps {
   branchConnections: Connection[];   // connections where fromAutomationId === automation.id
   onClose: () => void;
   onDetach?: (id: string) => void;
+  onPlacePipelineWide?: (id: string) => void;
   readOnly?: boolean;
 }
 
@@ -46,6 +47,7 @@ export function AutomationDetailPanel({
   branchConnections,
   onClose,
   onDetach,
+  onPlacePipelineWide,
   readOnly = false,
 }: AutomationDetailPanelProps): React.ReactNode {
 
@@ -74,9 +76,15 @@ export function AutomationDetailPanel({
   if (!automation) return null;
 
   const cfg        = TEAM_CONFIG[automation.team];
-  const fromStep   = steps.find(s => s.id === automation.fromStepId);
-  const toStep     = steps.find(s => s.id === automation.toStepId);
-  const isAttached = !!(automation.fromStepId && automation.toStepId);
+  const connectionPlacement = automation.placement?.kind === "connection" ? automation.placement : undefined;
+  const stepPlacement = automation.placement?.kind === "step" ? automation.placement : undefined;
+  const pipelineWidePlacement = automation.placement?.kind === "pipeline_wide" ? automation.placement : undefined;
+  const fromStepId = connectionPlacement?.fromStepId ?? automation.fromStepId;
+  const toStepId = connectionPlacement?.toStepId ?? automation.toStepId;
+  const fromStep   = steps.find(s => s.id === fromStepId);
+  const toStep     = steps.find(s => s.id === toStepId);
+  const attachedStep = stepPlacement ? steps.find(s => s.id === stepPlacement.stepId) : undefined;
+  const isAttached = !!(pipelineWidePlacement || stepPlacement || (fromStepId && toStepId));
 
   return (
     <div
@@ -283,11 +291,22 @@ export function AutomationDetailPanel({
         {/* Gekoppeld aan */}
         {isAttached && (
           <Section label="Gekoppeld aan">
-            <div className="flex items-center gap-2 text-xs bg-secondary rounded-md px-3 py-2">
-              <span className="font-medium text-foreground truncate">{fromStep?.label ?? automation.fromStepId}</span>
-              <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="font-medium text-foreground truncate">{toStep?.label ?? automation.toStepId}</span>
-            </div>
+            {pipelineWidePlacement ? (
+              <div className="flex flex-col gap-1 text-xs bg-sky-50 border border-sky-100 rounded-md px-3 py-2">
+                <span className="font-semibold text-sky-800">Pipeline-brede sync hub</span>
+                <span className="text-sky-700">Centrale actie boven de procesflow.</span>
+              </div>
+            ) : stepPlacement ? (
+              <div className="flex items-center gap-2 text-xs bg-secondary rounded-md px-3 py-2">
+                <span className="font-medium text-foreground truncate">{attachedStep?.label ?? stepPlacement.stepId}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs bg-secondary rounded-md px-3 py-2">
+                <span className="font-medium text-foreground truncate">{fromStep?.label ?? fromStepId}</span>
+                <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="font-medium text-foreground truncate">{toStep?.label ?? toStepId}</span>
+              </div>
+            )}
           </Section>
         )}
 
@@ -350,17 +369,30 @@ export function AutomationDetailPanel({
       </div>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
-      {isAttached && !readOnly && onDetach && (
-        <div className="p-4 border-t border-border">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full text-muted-foreground hover:text-foreground"
-            onClick={() => { onDetach(automation.id); onClose(); }}
-          >
-            <Unlink className="h-3.5 w-3.5 mr-2" />
-            Loskoppelen
-          </Button>
+      {!readOnly && (onPlacePipelineWide || (isAttached && onDetach)) && (
+        <div className="p-4 border-t border-border space-y-2">
+          {onPlacePipelineWide && !pipelineWidePlacement && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start text-sky-700 hover:text-sky-800"
+              onClick={() => onPlacePipelineWide(automation.id)}
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-2" />
+              Plaats als pipeline-brede sync
+            </Button>
+          )}
+          {isAttached && onDetach && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-muted-foreground hover:text-foreground"
+              onClick={() => { onDetach(automation.id); onClose(); }}
+            >
+              <Unlink className="h-3.5 w-3.5 mr-2" />
+              Loskoppelen
+            </Button>
+          )}
         </div>
       )}
 

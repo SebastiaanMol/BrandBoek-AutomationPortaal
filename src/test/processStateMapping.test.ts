@@ -36,11 +36,81 @@ describe("process state mapping", () => {
     expect(payload.steps).toBe(baseState.steps);
     expect(payload.connections).toBe(baseState.connections);
     expect(payload.autoLinks).toEqual({
-      "auto-1": { fromStepId: "step-1", toStepId: "step-2" },
+      "auto-1": { kind: "connection", fromStepId: "step-1", toStepId: "step-2", order: 0 },
     });
     expect(payload.parkedSteps).toEqual([]);
     expect(payload.activeLanes).toEqual(["sales"]);
     expect(payload.customLanes).toEqual([]);
+  });
+
+  it("preserves pipeline-wide automation placement metadata", () => {
+    const stateWithPipelineHub: ProcessState = {
+      ...baseState,
+      automations: [
+        {
+          ...baseState.automations[1],
+          placement: {
+            kind: "pipeline_wide",
+            order: 0,
+            syncTiming: "Dagelijks 02:00",
+            checksSummary: "Controleert open debiteuren",
+            actionSummary: "Zet deals terug op de juiste plek",
+            affectedStageIds: ["open", "herinnering", "betaald"],
+          },
+        },
+      ],
+    };
+
+    const saved = buildSavedProcessState(stateWithPipelineHub, [], ["sales"], []);
+    const mapped = buildProcessStateFromSaved(saved, stateWithPipelineHub.automations);
+
+    expect(saved.autoLinks["auto-2"]).toEqual({
+      kind: "pipeline_wide",
+      order: 0,
+      syncTiming: "Dagelijks 02:00",
+      checksSummary: "Controleert open debiteuren",
+      actionSummary: "Zet deals terug op de juiste plek",
+      affectedStageIds: ["open", "herinnering", "betaald"],
+    });
+    expect(mapped.automations[0].placement).toEqual(saved.autoLinks["auto-2"]);
+    expect(mapped.automations[0].fromStepId).toBeUndefined();
+    expect(mapped.automations[0].toStepId).toBeUndefined();
+  });
+
+  it("preserves automatic sync artifacts with optional linked automation ids", () => {
+    const stateWithSyncArtifact: ProcessState = {
+      ...baseState,
+      artifacts: [
+        {
+          id: "artifact-sync",
+          type: "automaticSyncBlock",
+          title: "Nachtelijke VPB sync",
+          description: "Controleert de hele pipeline en corrigeert dealposities.",
+          position: { x: 48, y: 180 },
+          size: { width: 280, height: 132 },
+          association: { anchor: "process", label: "Pipeline-brede automatische controle" },
+          automationIds: ["auto-1"],
+        },
+      ],
+    };
+
+    const saved = buildSavedProcessState(stateWithSyncArtifact, [], ["sales"], []);
+    const mapped = buildProcessStateFromSaved(saved, stateWithSyncArtifact.automations);
+
+    expect(saved.artifacts).toEqual([
+      expect.objectContaining({
+        type: "automaticSyncBlock",
+        title: "Nachtelijke VPB sync",
+        automationIds: ["auto-1"],
+      }),
+    ]);
+    expect(mapped.artifacts).toEqual([
+      expect.objectContaining({
+        type: "automaticSyncBlock",
+        title: "Nachtelijke VPB sync",
+        automationIds: ["auto-1"],
+      }),
+    ]);
   });
 
   it("restores saved step state while preserving current automation records", () => {
@@ -68,11 +138,13 @@ describe("process state mapping", () => {
         ...baseState.automations[0],
         fromStepId: "saved-from",
         toStepId: "saved-to",
+        placement: { kind: "connection", fromStepId: "saved-from", toStepId: "saved-to", order: 0 },
       },
       {
         ...baseState.automations[1],
         fromStepId: undefined,
         toStepId: undefined,
+        placement: undefined,
       },
     ]);
   });
@@ -98,7 +170,18 @@ describe("process state mapping", () => {
 
     expect(mapped.steps).toBe(saved.steps);
     expect(mapped.connections).toBe(saved.connections);
-    expect(mapped.automations).toBe(baseState.automations);
+    expect(mapped.automations).toEqual([
+      {
+        ...baseState.automations[0],
+        placement: { kind: "connection", fromStepId: "step-1", toStepId: "step-2", order: 0 },
+      },
+      {
+        ...baseState.automations[1],
+        fromStepId: undefined,
+        toStepId: undefined,
+        placement: undefined,
+      },
+    ]);
     expect(mapped.activeLanes).toEqual(["sales"]);
     expect(mapped.customLanes).toEqual(saved.customLanes);
   });
@@ -140,7 +223,7 @@ describe("process state mapping", () => {
 
     expect(() => buildProcessStateFromSaved(saved, baseState.automations)).not.toThrow();
     expect(buildProcessStateFromSaved(saved, baseState.automations).flowLinks).toEqual({
-      valid: { fromStepId: "step-1", toStepId: "step-2" },
+      valid: { kind: "connection", fromStepId: "step-1", toStepId: "step-2", order: 0 },
     });
   });
 

@@ -1,86 +1,42 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { SyncReviewPanel } from "@/components/SyncReviewPanel";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
+  PageCommandBar,
+  PageHeaderAction,
+  PageHeaderMetric,
+  PageHeaderMetrics,
+  PageHeaderShell,
+} from "@/components/layout/PageHeader";
+import { useApplySourceSyncReview, useGitlabSync, useHubSpotSync } from "@/lib/hooks";
 import {
-  CheckCircle2, XCircle, ChevronDown, ChevronUp,
-  RefreshCw, Zap, ArrowRight, BookOpen, ChevronRight, Upload, Clock, GitBranch,
-} from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useHubSpotSync, useGitlabSync, useApplySourceSyncReview } from "@/lib/hooks";
-import { KLANT_FASEN } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { SyncReviewDialog } from "@/components/SyncReviewDialog";
-import type { SyncPreviewResult, SyncReviewChangeItem } from "@/lib/storage/edgeFunctions";
-import { Sentry } from "@/lib/sentry";
+  fetchPendingSyncReviewItems,
+  type PaginatedSyncReviewItems,
+  type SyncPreviewResult,
+  type SyncReviewChangeItem,
+  type SyncReviewFilters,
+} from "@/lib/storage/edgeFunctions";
+import { formatSyncApplyToast, formatSyncPreviewImportedToast } from "@/lib/syncReviewToast";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+const DEFAULT_PAGE_SIZE = 50;
 
-interface Confidence {
-  naam: string; status: string; trigger: string;
-  systemen: string; stappen: string; branches: string;
-  categorie: string; doel: string;
-  beschrijving_in_simpele_taal?: string;
-  fasen?: string;
-}
+const DEFAULT_FILTERS: SyncReviewFilters = {
+  source: "all",
+  type: "all",
+  selected: "all",
+  search: "",
+};
 
-interface ImportProposal {
-  confidence: Confidence;
-  trigger?: string;
-  beschrijving?: string;
-  beschrijving_in_simpele_taal?: string[];
-  enrollment?: {
-    isSegmentBased?: boolean;
-    allowContactToTriggerMultipleTimes?: boolean;
-    workflowType?: string;
-  };
-  gitlab_endpoint?: {
-    method?: string;
-    endpoint?: string;
-    api_file?: string;
-    handler?: string;
-  };
-}
-
-interface PendingAutomation {
-  id: string;
-  source_record_type?: "automation" | "proposal";
-  naam: string;
-  status: string;
-  doel: string;
-  trigger_beschrijving: string;
-  systemen: string[];
-  stappen: string[];
-  branches: { id: string; label: string; toStepId: string }[];
-  categorie: string;
-  import_source: string;
-  import_status: string;
-  import_proposal: ImportProposal;
-  created_at: string;
-  external_id: string | null;
-  gitlab_file_path: string | null;
-  last_synced_at: string | null;
-  hubspot_last_run_at: string | null;
-  hubspot_run_count_365d: number | null;
-  rejection_reason: string | null;
-  rejected_at: string | null;
-  fasen: string[];
-  owner: string;
-}
-
-type ImportSyncReviewSource = "hubspot" | "gitlab";
-
-type ImportSyncReviewState = {
-  source: ImportSyncReviewSource;
-  syncRunId: string;
-  items: SyncReviewChangeItem[];
+const EMPTY_SYNC_REVIEW_PAGE: PaginatedSyncReviewItems = {
+  items: [],
+  total: 0,
+  page: 1,
+  pageSize: DEFAULT_PAGE_SIZE,
+  pageCount: 1,
+  from: 0,
+  to: 0,
 };
 
 function hasImportSyncReviewItems(result: SyncPreviewResult): result is SyncPreviewResult & {
@@ -90,710 +46,8 @@ function hasImportSyncReviewItems(result: SyncPreviewResult): result is SyncPrev
   return typeof result.syncRunId === "string" && Array.isArray(result.changeItems) && result.changeItems.length > 0;
 }
 
-function captureImportAutomationException(
-  error: unknown,
-  item: PendingAutomation,
-  action: "import_approve" | "import_reject" | "update",
-) {
-  Sentry.captureException(error, {
-    tags: {
-      area: "automation",
-      automation_action: action,
-      automation_id: item.id,
-      automation_source: item.import_source ?? "unknown",
-      automation_status: item.status ?? "unknown",
-    },
-    extra: {
-      proposalId: item.id,
-      externalId: item.external_id,
-      importStatus: item.import_status,
-      sourceRecordType: item.source_record_type,
-    },
-  });
-}
-
-// ── Data fetching ─────────────────────────────────────────────────────────────
-
-async function fetchPending(): Promise<PendingAutomation[]> {
-  const { data, error } = await supabase
-    .from("automatiseringen")
-    .select("id,naam,status,doel,trigger_beschrijving,systemen,stappen,branches,categorie,import_source,import_status,import_proposal,created_at,external_id,gitlab_file_path,last_synced_at,hubspot_last_run_at,hubspot_run_count_365d,fasen,owner")
-    .eq("import_status", "pending_approval")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  const legacyPending = ((data ?? []) as unknown as PendingAutomation[])
-    .map((item) => ({ ...item, source_record_type: "automation" as const }))
-    .filter((item) => !isLegacyGitlabFileRecord(item.import_source, item.external_id));
-
-  const { data: proposals, error: proposalsError } = await (supabase as any)
-    .from("automation_import_proposals")
-    .select("*")
-    .eq("status", "pending")
-    .order("created_at", { ascending: false });
-  if (proposalsError) throw proposalsError;
-
-  const proposalPending = ((proposals ?? []) as any[]).map((proposal): PendingAutomation => {
-    const details = (proposal.details_sanitized ?? {}) as Record<string, any>;
-    const payload = (details.payload ?? {}) as Record<string, any>;
-    return {
-      id: proposal.id,
-      source_record_type: "proposal",
-      naam: proposal.proposed_name,
-      status: String(payload.status ?? "In review"),
-      doel: proposal.proposed_description ?? String(payload.doel ?? ""),
-      trigger_beschrijving: String(payload.trigger_beschrijving ?? ""),
-      systemen: proposal.proposed_systems ?? payload.systemen ?? [],
-      stappen: payload.stappen ?? [],
-      branches: payload.branches ?? [],
-      categorie: proposal.proposed_category ?? String(payload.categorie ?? "Anders"),
-      import_source: proposal.source,
-      import_status: "pending_approval",
-      import_proposal: (payload.import_proposal ?? details) as ImportProposal,
-      created_at: proposal.created_at,
-      external_id: proposal.external_id,
-      gitlab_file_path: payload.gitlab_file_path ?? null,
-      last_synced_at: payload.last_synced_at ?? null,
-      hubspot_last_run_at: payload.hubspot_last_run_at ?? null,
-      hubspot_run_count_365d: payload.hubspot_run_count_365d ?? null,
-      rejection_reason: null,
-      rejected_at: null,
-      fasen: payload.fasen ?? [],
-      owner: String(payload.owner ?? ""),
-    };
-  });
-
-  return [...proposalPending, ...legacyPending];
-}
-
-function isLegacyGitlabFileRecord(source: string | null | undefined, externalId: string | null): boolean {
-  return source?.toLowerCase() === "gitlab" && (!externalId || !externalId.includes("::"));
-}
-
-async function approveAutomation(item: PendingAutomation): Promise<void> {
-  if (item.source_record_type === "proposal") {
-    const { data: proposal, error: proposalError } = await (supabase as any)
-      .from("automation_import_proposals")
-      .select("*")
-      .eq("id", item.id)
-      .single();
-    if (proposalError) throw proposalError;
-
-    const details = (proposal.details_sanitized ?? {}) as Record<string, any>;
-    const payload = (details.payload ?? {}) as Record<string, any>;
-    const { data: generatedId } = await supabase.rpc("generate_auto_id");
-    const source = String(proposal.source ?? payload.source ?? "");
-    const externalId = String(proposal.external_id ?? payload.external_id ?? "");
-    const id = source === "hubspot" && externalId
-      ? `AUTO-HS-${externalId}`
-      : generatedId || `AUTO-${crypto.randomUUID()}`;
-    const now = new Date().toISOString();
-
-    const { error: insertError } = await supabase.from("automatiseringen").insert({
-      id,
-      naam: proposal.proposed_name,
-      status: payload.status ?? "Actief",
-      doel: proposal.proposed_description ?? payload.doel ?? "",
-      trigger_beschrijving: payload.trigger_beschrijving ?? "",
-      systemen: proposal.proposed_systems ?? payload.systemen ?? [],
-      stappen: payload.stappen ?? [],
-      branches: payload.branches ?? null,
-      categorie: proposal.proposed_category ?? payload.categorie ?? "Anders",
-      afhankelijkheden: payload.afhankelijkheden ?? "",
-      owner: payload.owner ?? "",
-      verbeterideeen: payload.verbeterideeen ?? "",
-      mermaid_diagram: payload.mermaid_diagram ?? "",
-      fasen: payload.fasen ?? [],
-      webhook_paths: payload.webhook_paths ?? [],
-      endpoints: payload.endpoints ?? [],
-      external_id: externalId || null,
-      source: source || null,
-      import_source: source || null,
-      import_status: "approved",
-      import_proposal: payload.import_proposal ?? details,
-      gitlab_file_path: payload.gitlab_file_path ?? null,
-      gitlab_last_commit: payload.gitlab_last_commit ?? null,
-      pipeline_id: payload.pipeline_id ?? null,
-      stage_id: payload.stage_id ?? null,
-      hubspot_last_run_at: payload.hubspot_last_run_at ?? null,
-      hubspot_run_count_365d: payload.hubspot_run_count_365d ?? null,
-      last_synced_at: payload.last_synced_at ?? null,
-      approved_by: "portaal-gebruiker",
-      approved_at: now,
-    });
-    if (insertError) throw insertError;
-
-    const { data: authData } = await supabase.auth.getUser();
-    const { error: updateError } = await (supabase as any)
-      .from("automation_import_proposals")
-      .update({
-        status: "confirmed",
-        confirmed_by: authData.user?.id ?? null,
-        confirmed_at: now,
-        updated_at: now,
-      })
-      .eq("id", item.id);
-    if (updateError) throw updateError;
-    return;
-  }
-
-  const { error } = await supabase
-    .from("automatiseringen")
-    .update({
-      import_status: "approved",
-      approved_by:   "portaal-gebruiker",
-      approved_at:   new Date().toISOString(),
-    })
-    .eq("id", item.id);
-  if (error) throw error;
-}
-
-async function rejectAutomation(item: PendingAutomation, reason: string): Promise<void> {
-  if (item.source_record_type === "proposal") {
-    const { data: authData } = await supabase.auth.getUser();
-    const { error } = await (supabase as any)
-      .from("automation_import_proposals")
-      .update({
-        status: "rejected",
-        rejected_by: authData.user?.id ?? null,
-        rejected_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", item.id);
-    if (error) throw error;
-    return;
-  }
-
-  const { error } = await supabase
-    .from("automatiseringen")
-    .update({ import_status: "rejected", rejection_reason: reason })
-    .eq("id", item.id);
-  if (error) throw error;
-}
-
-async function updateField(item: PendingAutomation, patch: Record<string, unknown>): Promise<void> {
-  if (item.source_record_type === "proposal") {
-    const { data: proposal, error: proposalError } = await (supabase as any)
-      .from("automation_import_proposals")
-      .select("details_sanitized")
-      .eq("id", item.id)
-      .single();
-    if (proposalError) throw proposalError;
-
-    const details = (proposal.details_sanitized ?? {}) as Record<string, any>;
-    const payload = {
-      ...((details.payload ?? {}) as Record<string, any>),
-      ...patch,
-    };
-
-    const { error } = await (supabase as any)
-      .from("automation_import_proposals")
-      .update({
-        proposed_name: patch.naam ?? item.naam,
-        proposed_description: patch.doel ?? item.doel,
-        proposed_category: patch.categorie ?? item.categorie,
-        proposed_systems: patch.systemen ?? item.systemen,
-        details_sanitized: { ...details, payload },
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", item.id);
-    if (error) throw error;
-    return;
-  }
-
-  const { error } = await supabase
-    .from("automatiseringen")
-    .update(patch)
-    .eq("id", item.id);
-  if (error) throw error;
-}
-
-// ── Confidence badge ──────────────────────────────────────────────────────────
-
-function ConfBadge({ level }: { level?: string }): React.ReactNode {
-  if (level === "high")   return <span className="text-[10px] text-emerald-600 font-medium">✓ zeker</span>;
-  if (level === "medium") return <span className="text-[10px] text-amber-500 font-medium">~ nakijken</span>;
-  return <span className="text-[10px] text-red-500 font-medium">⚠ invullen</span>;
-}
-
-function FieldLabel({ label, conf }: { label: string; conf?: string }): React.ReactNode {
-  return (
-    <div className="flex items-center gap-2 mb-1">
-      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
-      {conf && <ConfBadge level={conf} />}
-    </div>
-  );
-}
-
-function Field({ label, conf, children, className = "" }: {
-  label: string; conf?: string; children: React.ReactNode; className?: string;
-}): React.ReactNode {
-  return (
-    <div className={className}>
-      <FieldLabel label={label} conf={conf} />
-      {children}
-    </div>
-  );
-}
-
-// ── Plain-language story block ─────────────────────────────────────────────────
-
-function formatHubSpotUsage(item: PendingAutomation): string | null {
-  if (!isHubSpotImport(item)) return null;
-
-  if (item.hubspot_last_run_at) {
-    const lastRun = new Date(item.hubspot_last_run_at);
-    const dateLabel = Number.isNaN(lastRun.getTime())
-      ? null
-      : lastRun.toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
-    const countLabel = typeof item.hubspot_run_count_365d === "number"
-      ? `${new Intl.NumberFormat("nl-NL").format(item.hubspot_run_count_365d)} runs in 365 dagen`
-      : null;
-
-    return [dateLabel ? `Laatst gedraaid: ${dateLabel}` : null, countLabel]
-      .filter(Boolean)
-      .join(" · ");
-  }
-
-  if (item.hubspot_run_count_365d === 0) return "Geen runs gevonden in de afgelopen 365 dagen";
-  return "Run-data niet beschikbaar via de HubSpot API · behandelen als verouderd";
-}
-
-function SimpeleTaalBlock({ sentences }: { sentences: string[] }): React.ReactNode {
-  const [open, setOpen] = useState(true);
-
-  if (!sentences || sentences.length === 0) return null;
-
-  const [intro, ...steps] = sentences;
-
-  return (
-    <div className="rounded-lg border border-blue-100 bg-blue-50/60 overflow-hidden">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-blue-50 transition-colors"
-      >
-        <BookOpen className="h-4 w-4 text-blue-500 shrink-0" />
-        <span className="text-sm font-semibold text-blue-800 flex-1">
-          Wat doet deze automatisering?
-        </span>
-        <span className="text-[10px] text-blue-400 font-medium mr-1">
-          {sentences.length} stap{sentences.length !== 1 ? "pen" : ""}
-        </span>
-        {open
-          ? <ChevronUp className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-          : <ChevronDown className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-        }
-      </button>
-
-      {open && (
-        <div className="px-4 pb-4 pt-1 space-y-2.5">
-          <p className="text-sm text-blue-700 italic border-b border-blue-100 pb-2.5">
-            {intro}
-          </p>
-
-          <div className="space-y-2">
-            {steps.map((sentence, i) => {
-              const isWarning = sentence.startsWith("Let op:");
-              const isNote    = !sentence.match(/^Stap \d+:/i) && !isWarning;
-
-              if (isWarning) {
-                return (
-                  <div key={i} className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                    <span className="text-base shrink-0 mt-0.5">⚠️</span>
-                    <p className="text-xs text-amber-800 leading-relaxed">{sentence}</p>
-                  </div>
-                );
-              }
-
-              if (isNote) {
-                return (
-                  <div key={i} className="flex items-start gap-2.5 bg-white/70 rounded-md px-3 py-2 border border-blue-100">
-                    <ChevronRight className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
-                    <p className="text-xs text-blue-700 leading-relaxed">{sentence}</p>
-                  </div>
-                );
-              }
-
-              const stepMatch = sentence.match(/^(Stap \d+): (.+)$/s);
-              const stepLabel = stepMatch?.[1] ?? `Stap ${i + 1}`;
-              const stepText  = stepMatch?.[2] ?? sentence;
-
-              return (
-                <div key={i} className="flex items-start gap-2.5">
-                  <span className="shrink-0 mt-0.5 min-w-[52px] text-[10px] font-bold text-blue-500 uppercase tracking-wide pt-0.5">
-                    {stepLabel}
-                  </span>
-                  <p className="text-xs text-blue-900 leading-relaxed">{stepText}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Proposal card ─────────────────────────────────────────────────────────────
-
-function ProposalCard({ item }: { item: PendingAutomation }): React.ReactNode {
-  const conf    = item.import_proposal?.confidence ?? {};
-  const trigger = item.import_proposal?.trigger ?? item.trigger_beschrijving ?? "";
-  const simpeleTaal: string[] = item.import_proposal?.beschrijving_in_simpele_taal ?? [];
-  const hubSpotUsage = formatHubSpotUsage(item);
-  const gitlabLocation = item.import_source?.toLowerCase() === "gitlab"
-    ? item.external_id ?? item.gitlab_file_path
-    : null;
-
-  const [expanded,        setExpanded]        = useState(false);
-  const [editing,         setEditing]         = useState(false);
-  const [draft,           setDraft]           = useState({
-    naam:      item.naam,
-    doel:      item.doel,
-    trigger,
-    categorie: item.categorie,
-    fasen:     item.fasen ?? [],
-    owner:     item.owner ?? "",
-  });
-  const [rejectOpen,      setRejectOpen]      = useState(false);
-  const [rejectReason,    setRejectReason]    = useState("");
-  const [saving,          setSaving]          = useState(false);
-  const [stappenWarnOpen, setStappenWarnOpen] = useState(false);
-
-  const qc = useQueryClient();
-  const refresh = (): void => {
-    qc.invalidateQueries({ queryKey: ["pending"] });
-    qc.invalidateQueries({ queryKey: ["automatiseringen"] });
-  };
-
-  const approve = useMutation({
-    mutationFn: () => approveAutomation(item),
-    onSuccess:  () => { toast.success(`"${item.naam}" goedgekeurd`); refresh(); },
-    onError:    (error) => {
-      captureImportAutomationException(error, item, "import_approve");
-      toast.error("Goedkeuren mislukt");
-    },
-  });
-
-  const reject = useMutation({
-    mutationFn: () => rejectAutomation(item, rejectReason),
-    onSuccess:  () => { toast.success("Voorstel afgewezen"); setRejectOpen(false); refresh(); },
-    onError:    (error) => {
-      captureImportAutomationException(error, item, "import_reject");
-      toast.error("Afwijzen mislukt");
-    },
-  });
-
-  async function handleSave(): Promise<void> {
-    setSaving(true);
-    try {
-      await updateField(item, {
-        naam:                 draft.naam,
-        doel:                 draft.doel,
-        trigger_beschrijving: draft.trigger,
-        categorie:            draft.categorie,
-        fasen:                draft.fasen,
-        owner:                draft.owner,
-      });
-      toast.success("Wijzigingen opgeslagen");
-      refresh();
-      setEditing(false);
-    } catch (error) {
-      captureImportAutomationException(error, item, "update");
-      toast.error("Opslaan mislukt");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleApproveClick(): void {
-    if (!item.stappen || item.stappen.length === 0) {
-      setStappenWarnOpen(true);
-      return;
-    }
-    approve.mutate();
-  }
-
-  return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-4">
-        <div className="w-9 h-9 rounded-full bg-amber-50 border-2 border-amber-400 flex items-center justify-center shrink-0">
-          <Zap className="h-4 w-4 text-amber-500" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate">{item.naam}</p>
-          <div className="flex items-center gap-2 mt-0.5">
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{item.import_source}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {new Date(item.created_at).toLocaleDateString("nl-NL")}
-            </span>
-          </div>
-          {hubSpotUsage && (
-            <div className={cn(
-              "mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
-              item.hubspot_last_run_at
-                ? "border-blue-100 bg-blue-50 text-blue-700"
-                : "border-yellow-200 bg-yellow-50 text-yellow-800",
-            )}>
-              <Clock className="h-3.5 w-3.5 shrink-0" />
-              <span className="shrink-0 font-semibold">HubSpot runs</span>
-              <span className="min-w-0 truncate opacity-80">{hubSpotUsage}</span>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => setExpanded(v => !v)}>
-            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {expanded ? "Inklappen" : "Bekijken"}
-          </Button>
-          <Button size="sm" variant="outline"
-            className="h-8 text-xs gap-1 text-destructive border-destructive/30 hover:text-destructive"
-            onClick={() => setRejectOpen(true)}>
-            <XCircle className="h-3.5 w-3.5" /> Afwijzen
-          </Button>
-          <Button size="sm" className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
-            onClick={handleApproveClick}
-            disabled={approve.isPending}>
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            {approve.isPending ? "Bezig…" : "Goedkeuren"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Body */}
-      {expanded && (
-        <div className="border-t border-border px-5 py-4 space-y-5">
-
-          {simpeleTaal.length > 0 && (
-            <SimpeleTaalBlock sentences={simpeleTaal} />
-          )}
-
-          {hubSpotUsage && (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm text-foreground">
-              <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">HubSpot gebruik</p>
-                <p>{hubSpotUsage}</p>
-              </div>
-            </div>
-          )}
-
-          {gitlabLocation && (
-            <div className="rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 text-sm">
-              <div className="mb-1 flex items-center gap-1.5 text-orange-700">
-                <GitBranch className="h-3.5 w-3.5" />
-                <span className="text-[10px] font-semibold uppercase tracking-wider">Terug te vinden in GitLab</span>
-              </div>
-              <p className="break-all font-mono text-xs leading-relaxed text-orange-950">{gitlabLocation}</p>
-              {item.gitlab_file_path && item.external_id !== item.gitlab_file_path && (
-                <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-orange-800/80">
-                  Bestand: {item.gitlab_file_path}
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Technisch voorstel</p>
-            {editing ? (
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditing(false)}>Annuleren</Button>
-                <Button size="sm" className="h-7 text-xs" onClick={handleSave} disabled={saving}>
-                  {saving ? "Opslaan…" : "Opslaan"}
-                </Button>
-              </div>
-            ) : (
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditing(true)}>Bewerken</Button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Naam" conf={conf.naam}>
-              {editing
-                ? <Input value={draft.naam} onChange={e => setDraft(d => ({ ...d, naam: e.target.value }))} className="h-8 text-sm" />
-                : <p className="text-sm font-medium">{item.naam}</p>}
-            </Field>
-            <Field label="Status" conf={conf.status}>
-              <p className="text-sm">{item.status}</p>
-            </Field>
-            <Field label="Trigger" conf={conf.trigger}>
-              {editing
-                ? <Input value={draft.trigger} onChange={e => setDraft(d => ({ ...d, trigger: e.target.value }))} className="h-8 text-sm" />
-                : <p className="text-sm">{trigger || "—"}</p>}
-            </Field>
-            <Field label="Categorie" conf={conf.categorie}>
-              {editing
-                ? <Input value={draft.categorie} onChange={e => setDraft(d => ({ ...d, categorie: e.target.value }))} className="h-8 text-sm" />
-                : <p className="text-sm">{item.categorie || "—"}</p>}
-            </Field>
-            <Field label="Doel" conf={item.doel ? undefined : "low"} className="col-span-2">
-              {editing
-                ? <Textarea value={draft.doel} onChange={e => setDraft(d => ({ ...d, doel: e.target.value }))} className="text-sm resize-none" rows={2} />
-                : <p className="text-sm text-muted-foreground">
-                    {item.doel || <span className="italic">Nog niet ingevuld — verplicht nakijken</span>}
-                  </p>}
-            </Field>
-          </div>
-
-          <Field label="Fasen" conf={(editing ? draft.fasen.length > 0 : item.fasen && item.fasen.length > 0) ? undefined : "low"}>
-            {editing ? (
-              <div className="flex flex-wrap gap-1.5">
-                {KLANT_FASEN.map(fase => (
-                  <button
-                    key={fase}
-                    type="button"
-                    onClick={() => setDraft(d => ({
-                      ...d,
-                      fasen: d.fasen.includes(fase)
-                        ? d.fasen.filter(f => f !== fase)
-                        : [...d.fasen, fase],
-                    }))}
-                    className={cn(
-                      "text-xs px-2 py-0.5 rounded-full border transition-colors",
-                      draft.fasen.includes(fase)
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-secondary text-muted-foreground border-border hover:border-primary/50",
-                    )}
-                  >
-                    {fase}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {item.fasen && item.fasen.length > 0
-                  ? item.fasen.map(f => <Badge key={f} variant="secondary" className="text-xs">{f}</Badge>)
-                  : <span className="text-xs text-muted-foreground italic">Geen fase toegewezen</span>}
-              </div>
-            )}
-          </Field>
-
-          <Field label="Verantwoordelijke" conf={item.owner ? undefined : "low"}>
-            {editing ? (
-              <Input
-                value={draft.owner}
-                onChange={e => setDraft(d => ({ ...d, owner: e.target.value }))}
-                placeholder="Naam verantwoordelijke"
-                className="h-8 text-sm"
-              />
-            ) : (
-              <p className="text-sm">
-                {item.owner || <span className="italic text-muted-foreground">Nog niet ingevuld</span>}
-              </p>
-            )}
-          </Field>
-
-          {item.systemen?.length > 0 && (
-            <div>
-              <FieldLabel label="Gekoppelde systemen" conf={conf.systemen} />
-              <div className="flex flex-wrap gap-1.5">
-                {item.systemen.map(s => <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>)}
-              </div>
-            </div>
-          )}
-
-          {item.stappen?.length > 0 && (
-            <div>
-              <FieldLabel label="Technische stappen" conf={conf.stappen} />
-              <ol className="space-y-1">
-                {item.stappen.map((s, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-secondary text-[10px] font-semibold flex items-center justify-center mt-0.5">{i + 1}</span>
-                    <span className="text-muted-foreground">{s}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          {item.branches?.length > 0 && (
-            <div>
-              <FieldLabel label="Uitgaande paden" conf={conf.branches} />
-              <div className="space-y-1.5 mt-1">
-                {item.branches.map((b, i) => (
-                  <div key={b.id} className="flex items-center gap-2 text-xs bg-secondary rounded-md px-2.5 py-1.5">
-                    <span className="text-muted-foreground w-4 shrink-0">{i + 1}.</span>
-                    <span className="font-medium text-amber-700 flex-1">{b.label}</span>
-                    <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground italic">{b.toStepId || "koppel in proceskaart"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Reject dialog */}
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Voorstel afwijzen</DialogTitle></DialogHeader>
-          <Textarea placeholder="Optionele toelichting…" value={rejectReason}
-            onChange={e => setRejectReason(e.target.value)} className="resize-none" rows={3} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectOpen(false)}>Annuleren</Button>
-            <Button variant="destructive" onClick={() => reject.mutate()} disabled={reject.isPending}>Afwijzen</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Warn when approving an automation without steps */}
-      <Dialog open={stappenWarnOpen} onOpenChange={setStappenWarnOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Geen stappen gevonden</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Deze automatisering heeft nog geen stappen. Wil je toch goedkeuren?
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStappenWarnOpen(false)}>Annuleren</Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => { setStappenWarnOpen(false); approve.mutate(); }}
-              disabled={approve.isPending}
-            >
-              Toch goedkeuren
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
-
-function isHubSpotImport(item: PendingAutomation): boolean {
-  return item.import_source?.toLowerCase() === "hubspot";
-}
-
-function ApprovalList({
-  items,
-  isLoading,
-  emptyMessage,
-}: {
-  items: PendingAutomation[];
-  isLoading: boolean;
-  emptyMessage: string;
-}): React.ReactNode {
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground py-8 text-center">Laden...</p>;
-  }
-
-  if (items.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground py-10 text-center border border-dashed border-border rounded-lg">
-        {emptyMessage}
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {items.map(item => <ProposalCard key={item.id} item={item} />)}
-    </div>
-  );
+function isApplyableSyncSource(source: string): source is "hubspot" | "zapier" | "typeform" | "gitlab" {
+  return source === "hubspot" || source === "zapier" || source === "typeform" || source === "gitlab";
 }
 
 export default function Imports(): React.ReactNode {
@@ -801,35 +55,36 @@ export default function Imports(): React.ReactNode {
   const hubspotSync = useHubSpotSync();
   const gitlabSync = useGitlabSync();
   const applySyncReview = useApplySourceSyncReview();
-  const [syncReview, setSyncReview] = useState<ImportSyncReviewState | null>(null);
+  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<SyncReviewFilters>(DEFAULT_FILTERS);
 
-  const { data: pending = [], isLoading } = useQuery({
-    queryKey: ["pending"],
-    queryFn:  fetchPending,
+  const syncReviewQuery = useQuery({
+    queryKey: ["source-sync-review-items", { page, pageSize: DEFAULT_PAGE_SIZE, ...filters }],
+    queryFn: () => fetchPendingSyncReviewItems({ page, pageSize: DEFAULT_PAGE_SIZE, ...filters }),
   });
 
-  const hubspotPending = pending.filter(isHubSpotImport);
-  const gitlabPending = pending.filter(item => item.import_source?.toLowerCase() === "gitlab");
-  const zapierPending = pending.filter(item => item.import_source?.toLowerCase() === "zapier");
+  const syncReviewPage = syncReviewQuery.data ?? {
+    ...EMPTY_SYNC_REVIEW_PAGE,
+    page,
+    pageSize: DEFAULT_PAGE_SIZE,
+  };
+
+  function updateFilters(nextFilters: SyncReviewFilters): void {
+    setFilters(nextFilters);
+    setPage(1);
+  }
 
   async function handleSync(): Promise<void> {
     try {
       const result = await hubspotSync.mutateAsync();
       if (hasImportSyncReviewItems(result)) {
-        setSyncReview({ source: "hubspot", syncRunId: result.syncRunId, items: result.changeItems });
-        toast.info(`HubSpot sync-preview klaar - ${result.changeItems.length} wijziging${result.changeItems.length === 1 ? "" : "en"} controleren`);
+        await qc.invalidateQueries({ queryKey: ["source-sync-review-items"] });
+        toast.info(formatSyncPreviewImportedToast("HubSpot", result.changeItems));
         return;
       }
 
       toast.success(`Geen HubSpot wijzigingen om toe te passen - ${result.proposed ?? result.inserted ?? 0} nieuw voorstel`);
-    } catch (error) {
-      Sentry.captureException(error, {
-        tags: {
-          area: "automation",
-          automation_action: "sync_hubspot",
-          automation_source: "hubspot",
-        },
-      });
+    } catch {
       toast.error("Synchronisatie mislukt. Controleer je HubSpot token via Instellingen.");
     }
   }
@@ -838,163 +93,121 @@ export default function Imports(): React.ReactNode {
     try {
       const result = await gitlabSync.mutateAsync();
       if (hasImportSyncReviewItems(result)) {
-        setSyncReview({ source: "gitlab", syncRunId: result.syncRunId, items: result.changeItems });
-        toast.info(`GitLab sync-preview klaar - ${result.changeItems.length} wijziging${result.changeItems.length === 1 ? "" : "en"} controleren`);
+        await qc.invalidateQueries({ queryKey: ["source-sync-review-items"] });
+        toast.info(formatSyncPreviewImportedToast("GitLab", result.changeItems));
         return;
       }
 
       toast.success(`Geen GitLab wijzigingen om toe te passen - ${result.proposed ?? result.inserted ?? 0} nieuw voorstel`);
-    } catch (error) {
-      Sentry.captureException(error, {
-        tags: {
-          area: "automation",
-          automation_action: "sync_gitlab",
-          automation_source: "gitlab",
-        },
-      });
+    } catch {
       toast.error("GitLab synchronisatie mislukt. Controleer je token via Instellingen.");
     }
   }
 
   async function handleApplySyncReview(selectedChangeItemIds: string[]): Promise<void> {
-    if (!syncReview) return;
+    const selectedItems = syncReviewPage.items.filter((item) => selectedChangeItemIds.includes(item.id));
+    if (selectedItems.length === 0) return;
+
+    const groups = new Map<string, {
+      source: "hubspot" | "zapier" | "typeform" | "gitlab";
+      syncRunId: string;
+      ids: string[];
+    }>();
+
+    for (const item of selectedItems) {
+      if (!item.syncRunId || !isApplyableSyncSource(item.source)) continue;
+      const key = `${item.source}:${item.syncRunId}`;
+      const group = groups.get(key) ?? { source: item.source, syncRunId: item.syncRunId, ids: [] };
+      group.ids.push(item.id);
+      groups.set(key, group);
+    }
+
+    if (groups.size === 0) {
+      toast.error("Geen toepasbare sync-regels geselecteerd");
+      return;
+    }
 
     try {
-      const result = await applySyncReview.mutateAsync({
-        source: syncReview.source,
-        syncRunId: syncReview.syncRunId,
-        selectedChangeItemIds,
-      });
-      toast.success(`Sync toegepast - ${result.applied ?? selectedChangeItemIds.length} toegepast, ${result.skipped ?? 0} overgeslagen`);
-      setSyncReview(null);
-      qc.invalidateQueries({ queryKey: ["pending"] });
+      const results = await Promise.all([...groups.values()].map((group) => applySyncReview.mutateAsync({
+        source: group.source,
+        syncRunId: group.syncRunId,
+        selectedChangeItemIds: group.ids,
+      })));
+      const aggregated = results.reduce<Partial<SyncPreviewResult>>((acc, result) => {
+        acc.inserted = (acc.inserted ?? 0) + (result.inserted ?? 0);
+        acc.updated = (acc.updated ?? 0) + (result.updated ?? 0);
+        acc.findings = (acc.findings ?? 0) + (result.findings ?? 0);
+        acc.skipped = (acc.skipped ?? 0) + (result.skipped ?? 0);
+        acc.failed = (acc.failed ?? 0) + (result.failed ?? 0);
+        acc.deactivated = (acc.deactivated ?? 0) + (result.deactivated ?? 0);
+        acc.applied = (acc.applied ?? 0) + (result.applied ?? 0);
+        acc.failedItems = [...(acc.failedItems ?? []), ...(result.failedItems ?? [])];
+        return acc;
+      }, {});
+      toast.success(formatSyncApplyToast(aggregated, selectedChangeItemIds.length));
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["source-sync-review-items"] }),
+        qc.invalidateQueries({ queryKey: ["pending"] }),
+        qc.invalidateQueries({ queryKey: ["automatiseringen"] }),
+      ]);
     } catch (error: unknown) {
-      Sentry.captureException(error, {
-        tags: {
-          area: "automation",
-          automation_action: "import_approve",
-          automation_source: syncReview.source,
-        },
-        extra: {
-          syncRunId: syncReview.syncRunId,
-          selectedChangeItemIds,
-        },
-      });
       toast.error(error instanceof Error ? error.message : "Sync toepassen mislukt");
     }
   }
 
   return (
     <div className="min-h-screen bg-background">
-      <SyncReviewDialog
-        open={!!syncReview}
-        source={syncReview?.source ?? "hubspot"}
-        syncRunId={syncReview?.syncRunId}
-        items={syncReview?.items ?? []}
-        isApplying={applySyncReview.isPending}
-        onOpenChange={(open) => {
-          if (!open) setSyncReview(null);
-        }}
-        onApply={(selectedChangeItemIds) => {
-          void handleApplySyncReview(selectedChangeItemIds);
-        }}
-      />
       <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10 lg:py-10 animate-fade-in">
-        <Tabs defaultValue="hubspot">
-          <div className="rounded-2xl border border-border overflow-hidden mb-8">
-            <header className="relative bg-primary-soft px-8 py-8">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
-                  <Upload className="w-4 h-4" />
-                </span>
-                <span className="text-[11px] uppercase tracking-[0.14em] font-semibold text-primary">
-                  Automatiseringsportaal
-                </span>
-              </div>
-              <div className="flex items-end justify-between gap-4 flex-wrap">
-                <div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-foreground">Imports</h1>
-                  <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-                    Nieuwe imports wachten hier op goedkeuring voordat ze actief worden.
-                  </p>
-                </div>
-                <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-2">
-                  <button
-                    type="button"
-                    className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 sm:w-44"
-                    onClick={handleSync}
-                    disabled={hubspotSync.isPending}
-                  >
-                    <RefreshCw className={cn("w-3.5 h-3.5", hubspotSync.isPending && "animate-spin")} />
-                    {hubspotSync.isPending ? "Bezig…" : "HubSpot synchroniseren"}
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 sm:w-44"
-                    onClick={handleGitlabSync}
-                    disabled={gitlabSync.isPending}
-                  >
-                    <RefreshCw className={cn("w-3.5 h-3.5", gitlabSync.isPending && "animate-spin")} />
-                    {gitlabSync.isPending ? "Bezig…" : "GitLab synchroniseren"}
-                  </button>
-                </div>
-              </div>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <StatBadge label="In behandeling" value={pending.length} />
-                <StatBadge label="HubSpot" value={hubspotPending.length} />
-                <StatBadge label="GitLab" value={gitlabPending.length} />
-                <StatBadge label="Zapier" value={zapierPending.length} />
-              </div>
-            </header>
-            <div className="border-t border-border bg-card px-6">
-              <TabsList className="h-auto flex-wrap justify-start bg-transparent p-0 gap-0 rounded-none">
-                <TabsTrigger value="hubspot" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium gap-2">
-                  HubSpot
-                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{hubspotPending.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="gitlab" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium gap-2">
-                  GitLab
-                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{gitlabPending.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="zapier" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium gap-2">
-                  Zapier
-                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{zapierPending.length}</Badge>
-                </TabsTrigger>
-              </TabsList>
-            </div>
-          </div>
+        <PageHeaderShell
+          icon={Upload}
+          eyebrow="Imports"
+          title="Imports"
+          description="Controleer bronwijzigingen uit synchronisaties per pagina en pas alleen de geselecteerde regels toe."
+          actions={(
+            <>
+              <PageHeaderAction onClick={handleSync} disabled={hubspotSync.isPending}>
+                <RefreshCw className={`w-3.5 h-3.5 ${hubspotSync.isPending ? "animate-spin" : ""}`} />
+                {hubspotSync.isPending ? "Bezig..." : "HubSpot synchroniseren"}
+              </PageHeaderAction>
+              <PageHeaderAction onClick={handleGitlabSync} disabled={gitlabSync.isPending}>
+                <RefreshCw className={`w-3.5 h-3.5 ${gitlabSync.isPending ? "animate-spin" : ""}`} />
+                {gitlabSync.isPending ? "Bezig..." : "GitLab synchroniseren"}
+              </PageHeaderAction>
+            </>
+          )}
+          metrics={(
+            <PageHeaderMetrics>
+              <PageHeaderMetric label="open bronwijzigingen" value={syncReviewPage.total} />
+              <PageHeaderMetric label="deze pagina" value={syncReviewPage.items.length} />
+              <PageHeaderMetric label="pagina" value={`${syncReviewPage.page}/${syncReviewPage.pageCount}`} />
+            </PageHeaderMetrics>
+          )}
+        >
+          <PageCommandBar>
+            <p className="text-sm text-muted-foreground">
+              Filters, selectie en paginering staan in de sync-review inbox hieronder.
+            </p>
+          </PageCommandBar>
+        </PageHeaderShell>
 
-          {isLoading && <p className="text-sm text-muted-foreground py-8 text-center">Laden…</p>}
-
-          <TabsContent value="hubspot" className="mt-0">
-            <ApprovalList
-              items={hubspotPending}
-              isLoading={isLoading}
-              emptyMessage='Geen HubSpot voorstellen wachten op goedkeuring. Klik "HubSpot synchroniseren" om te vernieuwen.' />
-          </TabsContent>
-
-          <TabsContent value="gitlab" className="mt-0">
-            <ApprovalList
-              items={gitlabPending}
-              isLoading={isLoading}
-              emptyMessage="Geen GitLab voorstellen wachten op goedkeuring." />
-          </TabsContent>
-
-          <TabsContent value="zapier" className="mt-0">
-            <ApprovalList
-              items={zapierPending}
-              isLoading={isLoading}
-              emptyMessage="Geen Zapier voorstellen wachten op goedkeuring." />
-          </TabsContent>
-        </Tabs>
+        <SyncReviewPanel
+          items={syncReviewPage.items}
+          total={syncReviewPage.total}
+          page={syncReviewPage.page}
+          pageSize={syncReviewPage.pageSize}
+          pageCount={syncReviewPage.pageCount}
+          from={syncReviewPage.from}
+          to={syncReviewPage.to}
+          filters={filters}
+          isLoading={syncReviewQuery.isLoading}
+          isApplying={applySyncReview.isPending}
+          onFiltersChange={updateFilters}
+          onPageChange={(nextPage) => setPage(Math.min(Math.max(1, nextPage), syncReviewPage.pageCount))}
+          onApply={(selectedChangeItemIds) => {
+            void handleApplySyncReview(selectedChangeItemIds);
+          }}
+        />
       </div>
     </div>
   );
 }
-
-const StatBadge = ({ label, value }: { label: string; value: number }) => (
-  <div className="rounded-xl bg-card/80 backdrop-blur-sm border border-border px-4 py-2.5">
-    <p className="text-xl font-semibold text-foreground tabular-nums leading-tight">{value}</p>
-    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
-  </div>
-);

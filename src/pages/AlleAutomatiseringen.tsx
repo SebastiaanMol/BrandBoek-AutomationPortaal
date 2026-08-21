@@ -21,6 +21,7 @@ import {
   type AutomationCatalogRowPresentation,
 } from "@/lib/automationCatalogPresentation";
 import { sortAutomationsForList, type AutomationListSortOrder } from "@/lib/automationListSort";
+import type { AutomationSentryIssueSummary } from "@/lib/sentryIssueMatching";
 import { HubSpotWorkflowCanvas } from "@/components/HubSpotWorkflowCanvas";
 import { TypeformProcessCard } from "@/components/flows/TypeformProcessCard";
 import { ZapierProcessCard } from "@/components/flows/ZapierProcessCard";
@@ -51,6 +52,7 @@ interface AlleAutomatiseringenProps {
   sourceFilter?: SourceFilter;
   sourceTabs?: Array<{ value: SourceFilter; label: string; count: number }>;
   onSourceFilterChange?: (value: SourceFilter) => void;
+  sentrySummaries?: Record<string, AutomationSentryIssueSummary>;
 }
 
 interface AutomationCatalogMemory {
@@ -71,6 +73,7 @@ export default function AlleAutomatiseringen({
   sourceFilter = "alle",
   sourceTabs = [],
   onSourceFilterChange,
+  sentrySummaries = {},
 }: AlleAutomatiseringenProps) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -84,7 +87,7 @@ export default function AlleAutomatiseringen({
     isAutomationListSortOrder(rememberedCatalog?.sortOrder) ? rememberedCatalog.sortOrder : "created_at",
   );
   const [settingsApplied, setSettingsApplied] = useState(Boolean(rememberedCatalog));
-  const [query, setQuery] = useState(getRememberedString(rememberedCatalog?.query));
+  const [query, setQuery] = useState(getInitialCatalogQuery(rememberedCatalog?.query));
   const [catFilter, setCatFilter] = useState<string>(getRememberedString(rememberedCatalog?.catFilter, "alle"));
   const [sysFilter, setSysFilter] = useState<string>(getRememberedString(rememberedCatalog?.sysFilter, "alle"));
   const [statusFilter, setStatusFilter] = useState<string>(getRememberedString(rememberedCatalog?.statusFilter, "alle"));
@@ -492,6 +495,7 @@ export default function AlleAutomatiseringen({
                 presentation={isExpanded ? expandedPresentation : null}
                 onToggle={handleToggleAutomation}
                 onRememberNavigation={rememberCatalogNavigation}
+                sentrySummary={sentrySummaries[a.id]}
               />
             );
           })}
@@ -514,13 +518,14 @@ export default function AlleAutomatiseringen({
   );
 }
 
-const AutomationCatalogRow = memo(function AutomationCatalogRow({
+export const AutomationCatalogRow = memo(function AutomationCatalogRow({
   automation,
   catalog,
   isExpanded,
   presentation,
   onToggle,
   onRememberNavigation,
+  sentrySummary,
 }: {
   automation: Automatisering;
   catalog: AutomationCatalogRowPresentation;
@@ -528,6 +533,7 @@ const AutomationCatalogRow = memo(function AutomationCatalogRow({
   presentation: AutomationOverviewPresentation | null;
   onToggle: (automationId: string) => void;
   onRememberNavigation: (automationId: string) => void;
+  sentrySummary?: AutomationSentryIssueSummary;
 }) {
   const sourceFinding = getActiveSourceWarningFinding(automation);
   const sourceFindingIsCritical = sourceFinding?.severity === "critical" || sourceFinding?.type === "source_missing";
@@ -536,6 +542,10 @@ const AutomationCatalogRow = memo(function AutomationCatalogRow({
       ? "bg-red-50/60 ring-1 ring-inset ring-red-200"
       : "bg-amber-50/60 ring-1 ring-inset ring-amber-200"
     : "";
+  const isInactive = automation.status === "Uitgeschakeld";
+  const hasSentrySignal = Boolean(
+    (sentrySummary?.linkedIssueCount ?? 0) > 0 || (sentrySummary?.possibleIssueCount ?? 0) > 0,
+  );
   const toggleExpanded = () => onToggle(automation.id);
 
   return (
@@ -551,22 +561,30 @@ const AutomationCatalogRow = memo(function AutomationCatalogRow({
             toggleExpanded();
           }
         }}
-        className={`grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30 md:grid-cols-[minmax(280px,1.6fr)_130px_130px_160px_112px] md:items-center md:gap-4 md:px-5 ${sourceFindingRowClass} cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset`}
+        className={`grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30 md:grid-cols-[minmax(280px,1.6fr)_130px_130px_160px_112px] md:items-center md:gap-4 md:px-5 ${sourceFindingRowClass} ${isInactive ? "bg-slate-100/70 text-muted-foreground opacity-75 [background-image:repeating-linear-gradient(135deg,rgba(148,163,184,0.14)_0,rgba(148,163,184,0.14)_6px,transparent_6px,transparent_12px)]" : "text-foreground"} cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset`}
       >
         <div role="cell" className="col-span-2 min-w-0 md:col-span-1">
           <div className="flex min-w-0 flex-col gap-1">
             <span className="truncate text-sm font-semibold text-foreground" title={catalog.displayName}>
               {catalog.displayName}
             </span>
-            {sourceFinding && (
-              <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                sourceFindingIsCritical
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700"
-              }`}>
-                <AlertTriangle className="h-3 w-3" />
-                Bronwaarschuwing
-              </span>
+            {(sourceFinding || hasSentrySignal) && (
+              <div className="flex flex-wrap gap-1.5">
+                {sourceFinding && (
+                  <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                    sourceFindingIsCritical
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-amber-200 bg-amber-50 text-amber-700"
+                  }`}>
+                    <AlertTriangle className="h-3 w-3" />
+                    Bronwaarschuwing
+                  </span>
+                )}
+                <SentryIssueBadge
+                  linkedIssueCount={sentrySummary?.linkedIssueCount ?? 0}
+                  possibleIssueCount={sentrySummary?.possibleIssueCount ?? 0}
+                />
+              </div>
             )}
             <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
               {catalog.shortDescription}
@@ -631,6 +649,34 @@ const AutomationCatalogRow = memo(function AutomationCatalogRow({
     </Fragment>
   );
 });
+
+export function SentryIssueBadge({
+  linkedIssueCount,
+  possibleIssueCount,
+}: {
+  linkedIssueCount: number;
+  possibleIssueCount: number;
+}) {
+  if (linkedIssueCount > 0) {
+    return (
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+        <AlertTriangle className="h-3 w-3" />
+        {new Intl.NumberFormat("nl-NL").format(linkedIssueCount)} Sentry
+      </span>
+    );
+  }
+
+  if (possibleIssueCount > 0) {
+    return (
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+        <AlertTriangle className="h-3 w-3" />
+        Mogelijke Sentry match
+      </span>
+    );
+  }
+
+  return null;
+}
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
@@ -962,6 +1008,15 @@ function isTypeformAutomation(a: Automatisering): boolean {
 
 function getRememberedString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
+}
+
+function getInitialCatalogQuery(value: unknown): string {
+  const remembered = getRememberedString(value);
+  return isInternalAutomationIdQuery(remembered) ? "" : remembered;
+}
+
+function isInternalAutomationIdQuery(value: string): boolean {
+  return /^AUTO-[A-Z0-9]+-[A-Z0-9_-]+$/i.test(value.trim());
 }
 
 function isAutomationListSortOrder(value: unknown): value is AutomationListSortOrder {

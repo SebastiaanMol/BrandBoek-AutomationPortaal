@@ -98,7 +98,7 @@ describe("ProcessCanvas manual connections in edit mode", () => {
     expect(dragHandle).toHaveAttribute("r", "7");
   });
 
-  it("does not apply edit route focus styling in read-only mode", () => {
+  it("highlights a selected route in read-only mode without showing edit handles", () => {
     const { container } = render(
       <ProcessCanvas
         steps={steps}
@@ -112,9 +112,40 @@ describe("ProcessCanvas manual connections in edit mode", () => {
 
     fireEvent.click(screen.getByLabelText("Handmatige correctie/optioneel route"));
 
-    expect(container.querySelector('[data-route-selected="true"]')).not.toBeInTheDocument();
-    expect(container.querySelector('[data-route-focus-outline="true"]')).not.toBeInTheDocument();
+    const selectedRoute = container.querySelector('[data-route-id="manual-front"]');
+    expect(selectedRoute).toHaveAttribute("data-route-selected", "true");
+    expect(selectedRoute?.querySelector('[data-route-viewer-highlight="true"]')).toBeInTheDocument();
+    expect(selectedRoute?.querySelector('[data-route-flow-dot="true"] animateMotion')).toBeInTheDocument();
+    expect(selectedRoute?.querySelector('[data-route-visible-path="true"]')).toHaveAttribute("stroke-width", "1.7");
     expect(screen.queryByRole("button", { name: /Sleep knikpunt/ })).not.toBeInTheDocument();
+
+    const svg = container.querySelector("svg") as SVGSVGElement;
+    fireEvent.click(svg);
+
+    expect(container.querySelector('[data-route-selected="true"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-route-flow-dot="true"]')).not.toBeInTheDocument();
+  });
+
+  it("slows the selected route flow dot down on long read-only routes", () => {
+    const longSteps: ProcessStep[] = [
+      { id: "start", type: "task", label: "Start", team: "sales", column: 0, row: 0 },
+      { id: "end", type: "task", label: "Eind", team: "sales", column: 7, row: 0 },
+    ];
+    const { container } = render(
+      <ProcessCanvas
+        steps={longSteps}
+        connections={[{ id: "long-route", fromStepId: "start", toStepId: "end", manual: true }]}
+        automations={[]}
+        activeLanes={["sales"]}
+        readOnly
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Handmatige hoofdroute route"));
+
+    const motion = container.querySelector('[data-route-flow-dot="true"] animateMotion');
+    expect(motion).toBeInTheDocument();
+    expect(Number(motion?.getAttribute("dur")?.replace("s", ""))).toBeGreaterThan(1.6);
   });
 
   it("adds a manual route with the selected route type from the edit canvas", () => {

@@ -13,7 +13,7 @@ import {
   BrandyMind,
 } from "@/lib/brandy";
 import { detectSignalen, type Signaal } from "@/lib/signalen";
-import { useAutomatiseringen, usePortalSettings } from "@/lib/hooks";
+import { useAutomatiseringenIncludingLegacyGitlab, usePortalSettings } from "@/lib/hooks";
 import { toast } from "sonner";
 
 const SUGGESTED_QUESTIONS = [
@@ -33,7 +33,7 @@ const ERNST_CLASSES: Record<string, string> = {
 
 export default function Brandy() {
   const [searchParams] = useSearchParams();
-  const { data: automations = [] } = useAutomatiseringen();
+  const { data: automations = [] } = useAutomatiseringenIncludingLegacyGitlab();
   const { data: portalSettings } = usePortalSettings();
 
   // Mind state

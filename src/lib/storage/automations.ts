@@ -13,7 +13,6 @@ import {
 } from "../types";
 import { normalizeAutomationSteps } from "../automationSteps";
 import { toFriendlyDbError } from "./errors";
-import { captureAutomationException } from "@/lib/sentry";
 
 interface ImportProposalShape {
   beschrijving_in_simpele_taal?: string[];
@@ -34,6 +33,7 @@ interface ImportProposalShape {
 interface ReviewerOverridesShape {
   cleanup_delete_candidate?: boolean;
   cleanup_delete_candidate_at?: string | null;
+  source_deleted_at?: string | null;
 }
 
 type AutomationWithLegacyImprovementField = Automatisering & {
@@ -109,6 +109,7 @@ async function fetchAutomatiseringenBase(includeLegacyGitlabFiles: boolean): Pro
 
   return (rows || [])
     .filter((r) => includeLegacyGitlabFiles || !isLegacyGitlabFileRecord(r.source, r.external_id))
+    .filter((r) => !isSourceDeletedAutomation(r))
     .map((r) => {
     const reviewerOverrides = (r.reviewer_overrides ?? {}) as ReviewerOverridesShape;
 
@@ -146,8 +147,8 @@ async function fetchAutomatiseringenBase(includeLegacyGitlabFiles: boolean): Pro
     gitlabLastCommit: r.gitlab_last_commit ?? undefined,
     aiDescription: r.ai_description ?? undefined,
     aiDescriptionUpdatedAt: r.ai_description_updated_at ?? undefined,
-    cleanupDeleteCandidate: reviewerOverrides.cleanup_delete_candidate ?? false,
-    cleanupDeleteCandidateAt: reviewerOverrides.cleanup_delete_candidate_at ?? undefined,
+    cleanupDeleteCandidate: reviewerOverrides.cleanup_delete_candidate ?? r.cleanup_delete_candidate ?? false,
+    cleanupDeleteCandidateAt: reviewerOverrides.cleanup_delete_candidate_at ?? r.cleanup_delete_candidate_at ?? undefined,
     sourceFindings: findingsMap[r.id] ?? [],
     pipelineId: r.pipeline_id ?? undefined,
     stageId: r.stage_id ?? undefined,
@@ -157,6 +158,16 @@ async function fetchAutomatiseringenBase(includeLegacyGitlabFiles: boolean): Pro
 
 function isLegacyGitlabFileRecord(source: string | null, externalId: string | null): boolean {
   return source === "gitlab" && (!externalId || !externalId.includes("::"));
+}
+
+function isSourceDeletedAutomation(row: {
+  cleanup_delete_candidate?: boolean | null;
+  reviewer_overrides?: unknown;
+}): boolean {
+  const reviewerOverrides = (row.reviewer_overrides ?? {}) as ReviewerOverridesShape;
+  return row.cleanup_delete_candidate === true
+    || reviewerOverrides.cleanup_delete_candidate === true
+    || Boolean(reviewerOverrides.source_deleted_at);
 }
 
 function readGitLabEndpoint(importProposal: ImportProposalShape | null): GitLabEndpointInfo | undefined {
@@ -174,85 +185,45 @@ function readGitLabEndpoint(importProposal: ImportProposalShape | null): GitLabE
 }
 
 export async function insertAutomatisering(item: Automatisering): Promise<void> {
-  try {
-    const { error } = await supabase.from("automatiseringen").insert({
-      id: item.id,
-      naam: item.naam,
-      categorie: item.categorie,
-      doel: item.doel,
-      trigger_beschrijving: item.trigger,
-      systemen: item.systemen,
-      stappen: item.stappen,
-      afhankelijkheden: item.afhankelijkheden,
-      owner: item.owner,
-      status: item.status,
-      verbeterideeen: readVerbeterideeen(item),
-      mermaid_diagram: item.mermaidDiagram,
-      fasen: item.fasen,
-    });
-    if (error) throw toFriendlyDbError(error);
+  const { error } = await supabase.from("automatiseringen").insert({
+    id: item.id,
+    naam: item.naam,
+    categorie: item.categorie,
+    doel: item.doel,
+    trigger_beschrijving: item.trigger,
+    systemen: item.systemen,
+    stappen: item.stappen,
+    afhankelijkheden: item.afhankelijkheden,
+    owner: item.owner,
+    status: item.status,
+    verbeterideeen: readVerbeterideeen(item),
+    mermaid_diagram: item.mermaidDiagram,
+    fasen: item.fasen,
+  });
+  if (error) throw toFriendlyDbError(error);
 
-    if (item.koppelingen.length > 0) {
-      const { error: kopError } = await supabase.from("koppelingen").insert(
-        item.koppelingen.map((k) => ({
-          bron_id: item.id,
-          doel_id: k.doelId,
-          label: k.label,
-        }))
-      );
-      if (kopError) throw kopError;
-    }
-  } catch (error) {
-    captureAutomationException(error, item, "create", {
-      koppelingen: item.koppelingen.length,
-      fasen: item.fasen.length,
-    });
-    throw error;
+  if (item.koppelingen.length > 0) {
+    const { error: kopError } = await supabase.from("koppelingen").insert(
+      item.koppelingen.map((k) => ({
+        bron_id: item.id,
+        doel_id: k.doelId,
+        label: k.label,
+      }))
+    );
+    if (kopError) throw kopError;
   }
 }
 
 export async function updateAutomatisering(item: Automatisering): Promise<void> {
-  try {
-    const { data: beforeRow, error: beforeError } = await supabase
-      .from("automatiseringen")
-      .select("naam,categorie,doel,trigger_beschrijving,systemen,stappen,afhankelijkheden,owner,status,verbeterideeen,mermaid_diagram,fasen")
-      .eq("id", item.id)
-      .maybeSingle();
-    if (beforeError) throw beforeError;
+  const { data: beforeRow, error: beforeError } = await supabase
+    .from("automatiseringen")
+    .select("naam,categorie,doel,trigger_beschrijving,systemen,stappen,afhankelijkheden,owner,status,verbeterideeen,mermaid_diagram,fasen")
+    .eq("id", item.id)
+    .maybeSingle();
+  if (beforeError) throw beforeError;
 
-    const [{ error }, { error: delError }] = await Promise.all([
-      supabase.from("automatiseringen").update({
-        naam: item.naam,
-        categorie: item.categorie,
-        doel: item.doel,
-        trigger_beschrijving: item.trigger,
-        systemen: item.systemen,
-        stappen: item.stappen,
-        afhankelijkheden: item.afhankelijkheden,
-        owner: item.owner,
-        status: item.status,
-        verbeterideeen: readVerbeterideeen(item),
-        mermaid_diagram: item.mermaidDiagram,
-        fasen: item.fasen,
-      }).eq("id", item.id),
-      supabase.from("koppelingen").delete().eq("bron_id", item.id),
-    ]);
-
-    if (error) throw toFriendlyDbError(error);
-    if (delError) throw delError;
-
-    if (item.koppelingen.length > 0) {
-      const { error: kopError } = await supabase.from("koppelingen").insert(
-        item.koppelingen.map((k) => ({
-          bron_id: item.id,
-          doel_id: k.doelId,
-          label: k.label,
-        }))
-      );
-      if (kopError) throw kopError;
-    }
-
-    await logAutomationAuditEvents(item.id, beforeRow, {
+  const [{ error }, { error: delError }] = await Promise.all([
+    supabase.from("automatiseringen").update({
       naam: item.naam,
       categorie: item.categorie,
       doel: item.doel,
@@ -265,14 +236,38 @@ export async function updateAutomatisering(item: Automatisering): Promise<void> 
       verbeterideeen: readVerbeterideeen(item),
       mermaid_diagram: item.mermaidDiagram,
       fasen: item.fasen,
-    });
-  } catch (error) {
-    captureAutomationException(error, item, "update", {
-      koppelingen: item.koppelingen.length,
-      fasen: item.fasen.length,
-    });
-    throw error;
+    }).eq("id", item.id),
+    supabase.from("koppelingen").delete().eq("bron_id", item.id),
+  ]);
+
+  if (error) throw toFriendlyDbError(error);
+  if (delError) throw delError;
+
+  if (item.koppelingen.length > 0) {
+    const { error: kopError } = await supabase.from("koppelingen").insert(
+      item.koppelingen.map((k) => ({
+        bron_id: item.id,
+        doel_id: k.doelId,
+        label: k.label,
+      }))
+    );
+    if (kopError) throw kopError;
   }
+
+  await logAutomationAuditEvents(item.id, beforeRow, {
+    naam: item.naam,
+    categorie: item.categorie,
+    doel: item.doel,
+    trigger_beschrijving: item.trigger,
+    systemen: item.systemen,
+    stappen: item.stappen,
+    afhankelijkheden: item.afhankelijkheden,
+    owner: item.owner,
+    status: item.status,
+    verbeterideeen: readVerbeterideeen(item),
+    mermaid_diagram: item.mermaidDiagram,
+    fasen: item.fasen,
+  });
 }
 
 export async function setCleanupDeleteCandidate(id: string, marked: boolean): Promise<void> {
@@ -299,54 +294,44 @@ export async function setCleanupDeleteCandidate(id: string, marked: boolean): Pr
 }
 
 export async function deleteAutomatisering(id: string): Promise<void> {
-  try {
-    const { data: row, error: fetchError } = await supabase
-      .from("automatiseringen")
-      .select("reviewer_overrides")
-      .eq("id", id)
-      .single();
-    if (fetchError) throw fetchError;
+  const { data: row, error: fetchError } = await supabase
+    .from("automatiseringen")
+    .select("reviewer_overrides")
+    .eq("id", id)
+    .single();
+  if (fetchError) throw fetchError;
 
-    const now = new Date().toISOString();
-    const reviewerOverrides = {
-      ...((row?.reviewer_overrides as Record<string, unknown> | null) ?? {}),
-      archived_at: now,
-      archived_reason: "Handmatig gearchiveerd via portaal",
-    };
+  const now = new Date().toISOString();
+  const reviewerOverrides = {
+    ...((row?.reviewer_overrides as Record<string, unknown> | null) ?? {}),
+    archived_at: now,
+    archived_reason: "Handmatig gearchiveerd via portaal",
+  };
 
-    const { error } = await supabase
-      .from("automatiseringen")
-      .update({ reviewer_overrides: reviewerOverrides, status: "Uitgeschakeld" })
-      .eq("id", id);
-    if (error) throw error;
+  const { error } = await supabase
+    .from("automatiseringen")
+    .update({ reviewer_overrides: reviewerOverrides, status: "Uitgeschakeld" })
+    .eq("id", id);
+  if (error) throw error;
 
-    await insertAuditEvent({
-      action: "archive",
-      objectType: "automation",
-      objectId: id,
-      fieldName: "reviewer_overrides.archived_at",
-      oldValue: null,
-      newValue: now,
-    });
-  } catch (error) {
-    captureAutomationException(error, { id, naam: id }, "archive");
-    throw error;
-  }
+  await insertAuditEvent({
+    action: "archive",
+    objectType: "automation",
+    objectId: id,
+    fieldName: "reviewer_overrides.archived_at",
+    oldValue: null,
+    newValue: now,
+  });
 }
 
 export async function verifieerAutomatisering(id: string, door: string, status?: string): Promise<void> {
-  try {
-    const update: { laatst_geverifieerd: string; geverifieerd_door: string; status?: string } = {
-      laatst_geverifieerd: new Date().toISOString(),
-      geverifieerd_door: door,
-    };
-    if (status) update.status = status;
-    const { error } = await supabase.from("automatiseringen").update(update).eq("id", id);
-    if (error) throw error;
-  } catch (error) {
-    captureAutomationException(error, { id, naam: id, status }, "verify", { verifier: door });
-    throw error;
-  }
+  const update: { laatst_geverifieerd: string; geverifieerd_door: string; status?: string } = {
+    laatst_geverifieerd: new Date().toISOString(),
+    geverifieerd_door: door,
+  };
+  if (status) update.status = status;
+  const { error } = await supabase.from("automatiseringen").update(update).eq("id", id);
+  if (error) throw error;
 }
 
 export async function generateNextId(): Promise<string> {

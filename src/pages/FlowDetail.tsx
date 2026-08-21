@@ -41,30 +41,6 @@ import {
 import type { FlowSuggestie } from "@/lib/storage/automationLinks";
 import type { Automatisering, Flow, Systeem } from "@/lib/types";
 import { getNavigationReturnHref } from "@/lib/navigationMemory";
-import { Sentry } from "@/lib/sentry";
-
-function captureFlowAutomationException(
-  error: unknown,
-  flow: Pick<Flow, "id" | "naam" | "automationIds"> | undefined,
-  action: string,
-  extra?: Record<string, unknown>,
-): void {
-  const tags: Record<string, string> = {
-    area: "automation",
-    automation_action: action,
-  };
-  if (flow?.id) tags.flow_id = flow.id;
-
-  Sentry.captureException(error, {
-    tags,
-    extra: {
-      flowId: flow?.id,
-      flowName: flow?.naam,
-      automationIds: flow?.automationIds,
-      ...extra,
-    },
-  });
-}
 
 export default function FlowDetail(): React.ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -129,7 +105,6 @@ export default function FlowDetail(): React.ReactNode {
       await updateFlow.mutateAsync({ id: flow!.id, naam });
       toast.success("Opgeslagen");
     } catch (error) {
-      captureFlowAutomationException(error, flow, "flow_save", { nextName: naam });
       toast.error(error instanceof Error ? error.message : "Opslaan mislukt");
     }
   }
@@ -155,10 +130,6 @@ export default function FlowDetail(): React.ReactNode {
       await updateFlow.mutateAsync({ id: flow!.id, automationIds: newIds, systemen });
       toast.success("Automation verwijderd uit procesreis");
     } catch (error) {
-      captureFlowAutomationException(error, flow, "process_link", {
-        removedAutomationId: autoId,
-        nextAutomationIds: newIds,
-      });
       toast.error(error instanceof Error ? error.message : "Verwijderen mislukt");
     }
   }
@@ -1163,16 +1134,6 @@ function OpenSuggestiesCard({
       await bevestig.mutateAsync({ fromId: suggestion.fromId, toId: suggestion.toId });
       toast.success("Koppeling bevestigd");
     } catch (error) {
-      captureFlowAutomationException(
-        error,
-        { id: flowId, naam: flowName, automationIds },
-        "process_link",
-        {
-          fromAutomationId: suggestion.fromId,
-          toAutomationId: suggestion.toId,
-          suggestionConfidence: suggestion.zekerheid,
-        },
-      );
       toast.error(error instanceof Error ? error.message : "Bevestigen mislukt");
     }
   }

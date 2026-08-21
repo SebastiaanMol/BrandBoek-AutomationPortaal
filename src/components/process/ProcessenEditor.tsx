@@ -28,6 +28,7 @@ import { BpmnToolbar } from "@/components/procesviewer/BpmnToolbar";
 import { UnassignedPanel } from "@/components/process/UnassignedPanel";
 import { AutomationDetailPanel } from "@/components/process/AutomationDetailPanel";
 import { FlowDetailPanel } from "@/components/process/FlowDetailPanel";
+import { AutomaticSyncDetailPanel } from "@/components/process/AutomaticSyncDetailPanel";
 import { StepDialog } from "@/components/process/StepDialog";
 import type {
   ProcessStep,
@@ -42,14 +43,17 @@ import type {
   ProcessAttachmentTarget,
   ProcessAttachmentType,
   ProcessArtifact,
+  ProcessPlacementLink,
+  ProcessAction,
+  ProcessActionType,
 } from "@/data/processData";
 import {
   buildLaneKeys,
   CUSTOM_LANE_PALETTE,
-  filterValidActiveLanes,
   getLaneConfig,
   initialState,
   isPresetLaneKey,
+  resolveActiveLanes,
   stagesToProcessState,
   TEAM_CONFIG,
   TEAM_ORDER,
@@ -67,12 +71,12 @@ import { exportProcessCanvasPdf, exportProcessCanvasPng } from "@/lib/processExp
 import { exportProcessBackup, importProcessBackup } from "@/lib/processBackup";
 import { buildProcessStateFromSaved, buildSavedProcessState, restoreSavedProcessState } from "@/lib/processStateMapping";
 import { removeAttachmentsForTarget } from "@/lib/processAttachments";
-import { Sentry } from "@/lib/sentry";
 import {
   translateWaypointsForLaneOrderChange,
   translateWaypointsForLaneVisibilityChange,
 } from "@/lib/processLaneWaypoints";
 import {
+  createAutomaticSyncBlock,
   createManualExceptionBlock,
   deleteProcessArtifact,
   moveStepIntoManualArtifact,
@@ -80,7 +84,7 @@ import {
   reorderManualArtifactStep,
   updateProcessArtifact,
 } from "@/lib/processArtifacts";
-import { removeFlowLinksForConnection, removeFlowLinksForStep } from "@/lib/processFlowLinks";
+import { normalizePlacementLink, removeFlowLinksForConnection, removeFlowLinksForStep } from "@/lib/processFlowLinks";
 
 const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
   Marketing:   "marketing",
@@ -91,14 +95,41 @@ const FASE_TO_TEAM: Record<KlantFase, TeamKey> = {
 };
 
 function toCanvasAutomation(a: Automatisering, existing?: Automation): Automation {
+  const rawExisting = existing as (Automation & {
+    kind?: "step" | "connection";
+    stepId?: string;
+    order?: number;
+    position?: number;
+  }) | undefined;
+  const existingPlacement = rawExisting?.placement
+    ?? (rawExisting?.kind
+      ? normalizePlacementLink({
+        kind: rawExisting.kind,
+        stepId: rawExisting.stepId,
+        fromStepId: rawExisting.fromStepId,
+        toStepId: rawExisting.toStepId,
+        order: rawExisting.order,
+        position: rawExisting.position,
+      } as ProcessPlacementLink)
+      : rawExisting?.fromStepId && rawExisting.toStepId
+        ? normalizePlacementLink({
+          fromStepId: rawExisting.fromStepId,
+          toStepId: rawExisting.toStepId,
+          order: rawExisting.order,
+          position: rawExisting.position,
+        })
+        : undefined);
+  const connectionPlacement = existingPlacement?.kind === "connection" ? existingPlacement : undefined;
   return {
     id:         a.id,
     name:       a.naam,
     team:       FASE_TO_TEAM[a.fasen?.[0]] ?? "management",
     tool:       a.systemen?.[0] ?? "Anders",
     goal:       a.doel ?? "",
-    fromStepId: existing?.fromStepId,
-    toStepId:   existing?.toStepId,
+    status:     a.status,
+    fromStepId: existing?.fromStepId ?? connectionPlacement?.fromStepId,
+    toStepId:   existing?.toStepId ?? connectionPlacement?.toStepId,
+    placement:  existingPlacement,
   };
 }
 
@@ -110,6 +141,18 @@ function defaultAttachmentLabel(type: ProcessAttachmentType): string {
 
 function createAttachmentId(): string {
   return `attachment-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
+}
+
+const PROCESS_ACTION_LABELS: Record<ProcessActionType, string> = {
+  wait: "Wachtstap",
+  email: "E-mail sturen",
+  task: "Taak uitvoeren",
+  message: "Bericht sturen",
+  webhook: "Webhook/API",
+};
+
+function createProcessActionId(): string {
+  return `process-action-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
 }
 
 interface ProcessenEditorProps {
@@ -131,7 +174,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [loading, setLoading] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const savedLinksRef        = useRef<Record<string, { fromStepId: string; toStepId: string }>>({});
+  const savedLinksRef        = useRef<Record<string, ProcessPlacementLink>>({});
   const savedParkedStepsRef  = useRef<ProcessStep[]>([]);
   const fileInputRef         = useRef<HTMLInputElement>(null);
 
@@ -140,7 +183,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const [dismissedRenames, setDismissedRenames] = useState<Set<string>>(new Set());
   const [activeLanes, setActiveLanes]           = useState<string[]>([...TEAM_ORDER]);
   const [customLanes, setCustomLanes]           = useState<CustomLane[]>([]);
-  const [flowLinks, setFlowLinks]               = useState<Record<string, { fromStepId: string; toStepId: string }>>({});
+  const [flowLinks, setFlowLinks]               = useState<Record<string, ProcessPlacementLink>>({});
   const [newLaneDialogOpen, setNewLaneDialogOpen] = useState(false);
   const [newLaneName, setNewLaneName]             = useState("");
   const [renameLaneKey, setRenameLaneKey]         = useState<string | null>(null);
@@ -217,6 +260,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       connections: restoredState.connections,
       attachments: restoredState.attachments,
       artifacts:   restoredState.artifacts,
+      processActions: restoredState.processActions,
       flowLinks:   restoredState.flowLinks,
     }));
     setSaved(s => ({
@@ -225,6 +269,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       connections: restoredState.connections,
       attachments: restoredState.attachments,
       artifacts:   restoredState.artifacts,
+      processActions: restoredState.processActions,
       flowLinks:   restoredState.flowLinks,
     }));
     const restoredParked = savedState.parkedSteps as ProcessStep[];
@@ -232,11 +277,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     savedParkedStepsRef.current = restoredParked;
     const restoredCustom = (savedState.customLanes ?? []) as CustomLane[];
     setCustomLanes(restoredCustom);
-    if (savedState.activeLanes) {
-      setActiveLanes(filterValidActiveLanes(savedState.activeLanes, restoredCustom));
-    } else {
-      setActiveLanes(buildLaneKeys(restoredCustom));
-    }
+    setActiveLanes(resolveActiveLanes(savedState.activeLanes, restoredCustom));
     setFlowLinks(restoredState.flowLinks ?? {});
     setIsDirty(false);
   }, [savedState, stateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -259,6 +300,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   // UI state
   const [selectedAuto, setSelectedAuto] = useState<Automation | null>(null);
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
+  const [selectedProcessAction, setSelectedProcessAction] = useState<ProcessAction | null>(null);
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [editingStep, setEditingStep]   = useState<ProcessStep | null>(null);
   const [stepDialogOpen, setStepDialogOpen] = useState(false);
   const [stepDefaults, setStepDefaults] = useState<{ team?: string; column?: number; row?: number; type?: ProcessStep["type"] }>({});
@@ -378,18 +421,6 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       queryClient.setQueryData(["processState", pipelineId], persistedSnapshot);
       queryClient.invalidateQueries({ queryKey: ["processState", pipelineId] });
     } catch (err) {
-      Sentry.captureException(err, {
-        tags: {
-          area: "process_editor",
-          action: "save_process_state",
-        },
-        extra: {
-          pipelineId,
-          steps: state.steps.length,
-          connections: state.connections.length,
-          activeLanes,
-        },
-      });
       console.error(err);
       toast.error("Opslaan mislukt — controleer de database");
     }
@@ -408,17 +439,6 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       await exportProcessCanvasPng();
       toast.success("PNG gedownload");
     } catch (err) {
-      Sentry.captureException(err, {
-        tags: {
-          area: "process_editor",
-          action: "export_process_canvas_png",
-        },
-        extra: {
-          pipelineId,
-          steps: state.steps.length,
-          connections: state.connections.length,
-        },
-      });
       toast.error(err instanceof Error ? err.message : "Export mislukt");
       if (!(err instanceof Error) || err.message !== "Canvas niet gevonden") console.error(err);
     }
@@ -429,17 +449,6 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       await exportProcessCanvasPdf();
       toast.success("PDF gedownload");
     } catch (err) {
-      Sentry.captureException(err, {
-        tags: {
-          area: "process_editor",
-          action: "export_process_canvas_pdf",
-        },
-        extra: {
-          pipelineId,
-          steps: state.steps.length,
-          connections: state.connections.length,
-        },
-      });
       toast.error(err instanceof Error ? err.message : "Export mislukt");
       if (!(err instanceof Error) || err.message !== "Canvas niet gevonden") console.error(err);
     }
@@ -447,10 +456,12 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
   function handleExportBackup() {
     const pipeline = pipelines.find(p => p.pipelineId === pipelineId);
-    const autoLinks: Record<string, { fromStepId: string; toStepId: string }> = {};
-    state.automations.forEach(a => {
-      if (a.fromStepId && a.toStepId) {
-        autoLinks[a.id] = { fromStepId: a.fromStepId, toStepId: a.toStepId };
+    const autoLinks: Record<string, ProcessPlacementLink> = {};
+    state.automations.forEach((a, index) => {
+      if (a.placement) {
+        autoLinks[a.id] = { ...a.placement, order: a.placement.order ?? index };
+      } else if (a.fromStepId && a.toStepId) {
+        autoLinks[a.id] = { kind: "connection", fromStepId: a.fromStepId, toStepId: a.toStepId, order: index };
       }
     });
     exportProcessBackup(pipeline?.naam ?? pipelineId, {
@@ -485,29 +496,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         connections: savedState.connections as ProcessState["connections"],
         attachments: savedState.attachments as ProcessState["attachments"] ?? prev.attachments ?? [],
         artifacts:   savedState.artifacts   as ProcessState["artifacts"] ?? prev.artifacts ?? [],
+        processActions: buildProcessStateFromSaved(savedState, []).processActions ?? [],
         automations: restoredAutos,
       }));
       const restoredCustomLanes = savedState.customLanes as CustomLane[] | undefined;
       if (restoredCustomLanes) setCustomLanes(restoredCustomLanes);
-      if (savedState.activeLanes) {
-        setActiveLanes(filterValidActiveLanes(savedState.activeLanes, restoredCustomLanes ?? []));
-      }
+      setActiveLanes(resolveActiveLanes(savedState.activeLanes, restoredCustomLanes ?? []));
       setParkedSteps(savedState.parkedSteps as ProcessStep[]);
       setFlowLinks(savedState.flowLinks ?? {});
       setIsDirty(true);
       toast.success("Backup geladen — controleer en klik Opslaan om op te slaan");
     } catch (err) {
-      Sentry.captureException(err, {
-        tags: {
-          area: "process_editor",
-          action: "import_process_backup",
-        },
-        extra: {
-          pipelineId,
-          fileName: file.name,
-          fileSize: file.size,
-        },
-      });
       toast.error(err instanceof Error ? err.message : "Importeren mislukt");
     }
   }
@@ -544,11 +543,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         ...s,
         steps: s.steps.filter(x => x.id !== id),
         connections: s.connections.filter(c => c.fromStepId !== id && c.toStepId !== id),
-        automations: s.automations.map(a =>
-          a.fromStepId === id || a.toStepId === id
-            ? { ...a, fromStepId: undefined, toStepId: undefined }
-            : a,
-        ),
+        automations: s.automations.map(a => clearAutomationPlacementForStep(a, id)),
+        processActions: (s.processActions ?? []).map(action => clearProcessActionPlacementForStep(action, id)),
         attachments,
       };
     });
@@ -564,6 +560,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
           label:  type === "start" ? "Start" : "Einde",
           team,
           column,
+          row,
           type,
         }],
       }));
@@ -605,6 +602,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         label: "Einde",
         team:  "management" as TeamKey,
         column: col,
+        row: 0,
         type:  "end" as const,
       }],
     }));
@@ -674,8 +672,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
       // If it's a step-to-step connection, detach any automations that sit on it
       const updatedAutos = conn?.fromStepId
         ? s.automations.map(a =>
-            a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId
-              ? { ...a, fromStepId: undefined, toStepId: undefined }
+            normalizePlacementLink(a.placement ?? { fromStepId: a.fromStepId ?? "", toStepId: a.toStepId ?? "" }).kind === "connection"
+              && normalizePlacementLink(a.placement ?? { fromStepId: a.fromStepId ?? "", toStepId: a.toStepId ?? "" }).fromStepId === conn.fromStepId
+              && normalizePlacementLink(a.placement ?? { fromStepId: a.fromStepId ?? "", toStepId: a.toStepId ?? "" }).toStepId === conn.toStepId
+              ? { ...a, fromStepId: undefined, toStepId: undefined, placement: undefined }
               : a,
           )
         : s.automations;
@@ -683,6 +683,14 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         ...s,
         connections: s.connections.filter(c => c.id !== id),
         automations: updatedAutos,
+        processActions: (s.processActions ?? []).map(action =>
+          conn?.fromStepId
+            && action.placement?.kind === "connection"
+            && action.placement.fromStepId === conn.fromStepId
+            && action.placement.toStepId === conn.toStepId
+            ? { ...action, placement: undefined }
+            : action,
+        ),
         attachments: removeAttachmentsForTarget(s.attachments, { kind: "connection", id }),
       };
     });
@@ -744,6 +752,16 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     }));
   }
 
+  function handleAddAutomaticSyncArtifact() {
+    update(s => ({
+      ...s,
+      artifacts: [
+        ...(s.artifacts ?? []),
+        createAutomaticSyncBlock({ x: 360, y: 220 }),
+      ],
+    }));
+  }
+
   function handleMoveArtifact(artifactId: string, position: { x: number; y: number }) {
     update(s => ({
       ...s,
@@ -753,11 +771,26 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
 
   function handleUpdateArtifact(
     artifactId: string,
-    patch: Partial<Pick<ProcessArtifact, "title" | "description" | "position" | "size" | "association">>,
+    patch: Partial<Pick<ProcessArtifact, "title" | "description" | "position" | "size" | "association" | "automationIds">>,
   ) {
     update(s => ({
       ...s,
       artifacts: updateProcessArtifact(s.artifacts, artifactId, patch),
+    }));
+  }
+
+  function handleAttachAutomationToArtifact(autoId: string, artifactId: string) {
+    update(s => ({
+      ...s,
+      artifacts: (s.artifacts ?? []).map((artifact) => {
+        if (artifact.id !== artifactId || artifact.type !== "automaticSyncBlock") return artifact;
+        const automationIds = artifact.automationIds ?? [];
+        if (automationIds.includes(autoId)) return artifact;
+        return {
+          ...artifact,
+          automationIds: [...automationIds, autoId],
+        };
+      }),
     }));
   }
 
@@ -787,11 +820,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     return {
       ...current,
       connections: current.connections.filter(connection => !removedConnectionIds.has(connection.id)),
-      automations: current.automations.map(automation =>
-        automation.fromStepId === stepId || automation.toStepId === stepId
-          ? { ...automation, fromStepId: undefined, toStepId: undefined }
-          : automation,
-      ),
+      automations: current.automations.map(automation => clearAutomationPlacementForStep(automation, stepId)),
+      processActions: (current.processActions ?? []).map(action => clearProcessActionPlacementForStep(action, stepId)),
       attachments: (current.attachments ?? []).filter(attachment =>
         attachment.attachedTo.kind !== "connection" || !removedConnectionIds.has(attachment.attachedTo.id),
       ),
@@ -838,32 +868,174 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
   const handleAutoClick = useCallback((a: Automation) => {
     setSelectedAuto(a);
     setSelectedFlowId(null);
+    setSelectedProcessAction(null);
+    setSelectedArtifactId(null);
   }, []);
 
-  function handleAttach(autoId: string, fromStepId: string, toStepId: string) {
+  const handleProcessActionClick = useCallback((action: ProcessAction) => {
+    setSelectedProcessAction(action);
+    setSelectedAuto(null);
+    setSelectedFlowId(null);
+    setSelectedArtifactId(null);
+  }, []);
+
+  const handleArtifactClick = useCallback((artifact: ProcessArtifact) => {
+    setSelectedArtifactId(artifact.id);
+    setSelectedAuto(null);
+    setSelectedFlowId(null);
+    setSelectedProcessAction(null);
+  }, []);
+
+  function isAutomationOnConnection(automation: Automation, fromStepId: string, toStepId: string): boolean {
+    const placement = automation.placement
+      ?? (automation.fromStepId && automation.toStepId
+        ? normalizePlacementLink({ fromStepId: automation.fromStepId, toStepId: automation.toStepId })
+        : undefined);
+    return placement?.kind === "connection"
+      && placement.fromStepId === fromStepId
+      && placement.toStepId === toStepId;
+  }
+
+  function handleAttach(autoId: string, fromStepId: string, toStepId: string, order = 0, position = 0.5) {
+    update(s => ({
+      ...s,
+      automations: (() => {
+        const existingOnConnection = s.automations
+          .filter(a => a.id !== autoId && isAutomationOnConnection(a, fromStepId, toStepId))
+          .sort((a, b) => {
+            const aOrder = a.placement?.kind === "connection" ? a.placement.order ?? 0 : 0;
+            const bOrder = b.placement?.kind === "connection" ? b.placement.order ?? 0 : 0;
+            return aOrder - bOrder;
+          })
+          .map(a => a.id);
+        const targetIndex = Math.max(0, Math.min(order, existingOnConnection.length));
+        const orderedIds = [...existingOnConnection];
+        orderedIds.splice(targetIndex, 0, autoId);
+        const orderById = new Map(orderedIds.map((id, index) => [id, index]));
+
+        return s.automations.map(a => orderById.has(a.id)
+          ? {
+              ...a,
+              fromStepId,
+              toStepId,
+              placement: {
+                kind: "connection",
+                fromStepId,
+                toStepId,
+                order: orderById.get(a.id) ?? 0,
+                position: a.id === autoId
+                  ? position
+                  : a.placement?.kind === "connection"
+                    ? a.placement.position
+                    : undefined,
+              },
+            }
+          : a,
+        );
+      })(),
+    }));
+    toast.success("Automation gekoppeld");
+  }
+
+  function handleAttachAutomationToStep(autoId: string, stepId: string, order: number) {
     update(s => ({
       ...s,
       automations: s.automations.map(a =>
-        a.id === autoId ? { ...a, fromStepId, toStepId } : a,
+        a.id === autoId
+          ? { ...a, fromStepId: undefined, toStepId: undefined, placement: { kind: "step", stepId, order } }
+          : a,
       ),
     }));
-    toast.success("Automation gekoppeld");
+    toast.success("Automation aan stap gekoppeld");
+  }
+
+  function handlePlaceAutomationPipelineWide(autoId: string) {
+    let placedAutomation: Automation | undefined;
+    update(s => ({
+      ...s,
+      automations: s.automations.map((a, index) => {
+        if (a.id !== autoId) return a;
+        placedAutomation = {
+          ...a,
+          fromStepId: undefined,
+          toStepId: undefined,
+          placement: {
+            kind: "pipeline_wide",
+            order: index,
+            syncTiming: a.syncTiming ?? "Timing vastleggen",
+            checksSummary: a.checksSummary ?? a.goal ?? "Controleert pipeline en brondata",
+            actionSummary: a.actionSummary ?? "Zet deals op de juiste plek",
+            affectedStageIds: a.affectedStageIds ?? [],
+          },
+        };
+        return placedAutomation;
+      }),
+    }));
+    if (placedAutomation) setSelectedAuto(placedAutomation);
+    toast.success("Automation als pipeline-brede sync geplaatst");
   }
 
   function handleDetach(autoId: string) {
     update(s => ({
       ...s,
       automations: s.automations.map(a =>
-        a.id === autoId ? { ...a, fromStepId: undefined, toStepId: undefined } : a,
+        a.id === autoId ? { ...a, fromStepId: undefined, toStepId: undefined, placement: undefined } : a,
       ),
     }));
     toast.success("Automation losgekoppeld");
   }
 
-  function handleAttachFlow(flowId: string, fromStepId: string, toStepId: string) {
-    setFlowLinks(prev => ({ ...prev, [flowId]: { fromStepId, toStepId } }));
+  function handleAttachFlow(flowId: string, fromStepId: string, toStepId: string, order = 0, position = 0.5) {
+    setFlowLinks(prev => {
+      const existingOnConnection = Object.entries(prev)
+        .filter(([id, link]) => {
+          const placement = normalizePlacementLink(link, 0);
+          return id !== flowId
+            && placement.kind === "connection"
+            && placement.fromStepId === fromStepId
+            && placement.toStepId === toStepId;
+        })
+        .sort(([, a], [, b]) =>
+          (normalizePlacementLink(a, 0).order ?? 0) - (normalizePlacementLink(b, 0).order ?? 0),
+        )
+        .map(([id]) => id);
+      const targetIndex = Math.max(0, Math.min(order, existingOnConnection.length));
+      const orderedIds = [...existingOnConnection];
+      orderedIds.splice(targetIndex, 0, flowId);
+      const next = { ...prev };
+      orderedIds.forEach((id, index) => {
+        const existing = normalizePlacementLink(prev[id] ?? { fromStepId, toStepId }, index);
+        next[id] = {
+          kind: "connection",
+          fromStepId,
+          toStepId,
+          order: index,
+          position: id === flowId ? position : existing.kind === "connection" ? existing.position : undefined,
+        };
+      });
+      return next;
+    });
     setIsDirty(true);
     toast.success("Procesreis gekoppeld");
+  }
+
+  function handleAttachFlowToStep(flowId: string, stepId: string, order: number) {
+    setFlowLinks(prev => ({ ...prev, [flowId]: { kind: "step", stepId, order } }));
+    setIsDirty(true);
+    toast.success("Procesreis aan stap gekoppeld");
+  }
+
+  function handleAttachFlowToPipelineWide(flowId: string) {
+    setFlowLinks(prev => {
+      const existing = prev[flowId];
+      if (existing && normalizePlacementLink(existing).kind === "pipeline_wide") return prev;
+      return {
+        ...prev,
+        [flowId]: { kind: "pipeline_wide" },
+      };
+    });
+    setIsDirty(true);
+    toast.success("Procesreis aan Automatic sync gekoppeld");
   }
 
   function handleDetachFlow(flowId: string) {
@@ -874,6 +1046,91 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     });
     setIsDirty(true);
     toast.success("Procesreis losgekoppeld");
+  }
+
+  function handleCreateProcessAction(type: ProcessActionType): ProcessAction {
+    const action: ProcessAction = {
+      id: createProcessActionId(),
+      type,
+      label: PROCESS_ACTION_LABELS[type],
+    };
+    setState(prev => ({
+      ...prev,
+      processActions: [...(prev.processActions ?? []), action],
+    }));
+    setIsDirty(true);
+    return action;
+  }
+
+  function handleAttachProcessAction(actionId: string, fromStepId: string, toStepId: string, order = 0, position = 0.5) {
+    update(s => ({
+      ...s,
+      processActions: (s.processActions ?? []).map(action =>
+        action.id === actionId
+          ? { ...action, placement: { kind: "connection", fromStepId, toStepId, order, position } }
+          : action,
+      ),
+    }));
+    toast.success("Procesactie gekoppeld");
+  }
+
+  function handleAttachProcessActionToStep(actionId: string, stepId: string, order: number) {
+    update(s => ({
+      ...s,
+      processActions: (s.processActions ?? []).map(action =>
+        action.id === actionId
+          ? { ...action, placement: { kind: "step", stepId, order } }
+          : action,
+      ),
+    }));
+    toast.success("Procesactie aan stap gekoppeld");
+  }
+
+  function handleDetachProcessAction(actionId: string) {
+    update(s => ({
+      ...s,
+      processActions: (s.processActions ?? []).map(action =>
+        action.id === actionId ? { ...action, placement: undefined } : action,
+      ),
+    }));
+    setSelectedProcessAction(null);
+    toast.success("Procesactie losgekoppeld");
+  }
+
+  function handleUpdateProcessAction(actionId: string, patch: Partial<Pick<ProcessAction, "detail" | "label">>) {
+    update(s => ({
+      ...s,
+      processActions: (s.processActions ?? []).map(action =>
+        action.id === actionId ? { ...action, ...patch } : action,
+      ),
+    }));
+    setSelectedProcessAction(current =>
+      current?.id === actionId ? { ...current, ...patch } : current,
+    );
+  }
+
+  function clearProcessActionPlacementForStep(action: ProcessAction, stepId: string): ProcessAction {
+    const placement = action.placement;
+    if (!placement) return action;
+    const referencesStep = placement.kind === "step"
+      ? placement.stepId === stepId
+      : placement.fromStepId === stepId || placement.toStepId === stepId;
+    return referencesStep ? { ...action, placement: undefined } : action;
+  }
+
+  function clearAutomationPlacementForStep(automation: Automation, stepId: string): Automation {
+    const placement = automation.placement;
+    const referencesStep = placement
+      ? placement.kind === "step"
+        ? placement.stepId === stepId
+        : placement.kind === "connection"
+          ? placement.fromStepId === stepId || placement.toStepId === stepId
+          : false
+      : automation.fromStepId === stepId || automation.toStepId === stepId;
+
+    return referencesStep
+      ? { ...automation, fromStepId: undefined, toStepId: undefined, placement: undefined }
+      : automation;
   }
 
   // ── Staging area handlers ─────────────────────────────────────────────────
@@ -895,11 +1152,8 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         ...s,
         steps: s.steps.filter(x => x.id !== stepId),
         connections: s.connections.filter(c => c.fromStepId !== stepId && c.toStepId !== stepId),
-        automations: s.automations.map(a =>
-          a.fromStepId === stepId || a.toStepId === stepId
-            ? { ...a, fromStepId: undefined, toStepId: undefined }
-            : a,
-        ),
+        automations: s.automations.map(a => clearAutomationPlacementForStep(a, stepId)),
+        processActions: (s.processActions ?? []).map(action => clearProcessActionPlacementForStep(action, stepId)),
         attachments,
       };
     });
@@ -961,11 +1215,16 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
             previousLaneOrder: activeLanes,
             nextLaneOrder: nextActiveLanes,
           }),
-          automations: s.automations.map(a =>
-            stepIds.has(a.fromStepId ?? "") || stepIds.has(a.toStepId ?? "")
-              ? { ...a, fromStepId: undefined, toStepId: undefined }
-              : a,
-          ),
+          automations: s.automations.map(a => {
+            let next = a;
+            stepIds.forEach(stepId => { next = clearAutomationPlacementForStep(next, stepId); });
+            return next;
+          }),
+          processActions: (s.processActions ?? []).map(action => {
+            let next = action;
+            stepIds.forEach(stepId => { next = clearProcessActionPlacementForStep(next, stepId); });
+            return next;
+          }),
           attachments: s.connections
             .filter(c => stepIds.has(c.fromStepId ?? "") || stepIds.has(c.toStepId))
             .reduce(
@@ -1114,11 +1373,16 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         connections: s.connections.filter(c =>
           !stepsInLane.some(sl => sl.id === c.fromStepId || sl.id === c.toStepId)
         ),
-        automations: s.automations.map(a =>
-          stepsInLane.some(sl => sl.id === a.fromStepId || sl.id === a.toStepId)
-            ? { ...a, fromStepId: undefined, toStepId: undefined }
-            : a,
-        ),
+        automations: s.automations.map(a => {
+          let next = a;
+          stepsInLane.forEach(step => { next = clearAutomationPlacementForStep(next, step.id); });
+          return next;
+        }),
+        processActions: (s.processActions ?? []).map(action => {
+          let next = action;
+          stepsInLane.forEach(step => { next = clearProcessActionPlacementForStep(next, step.id); });
+          return next;
+        }),
       }));
       setParkedSteps(prev => [...prev, ...stepsInLane]);
     }
@@ -1164,13 +1428,13 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
     [pipelines, pipelineId],
   );
 
-  const { driftNew, driftRenamed } = useMemo(
+  const { driftNew, driftRenamed, driftDeleted } = useMemo(
     () => {
-      if (!currentPipeline || loading) return { driftNew: [], driftRenamed: [] };
-      const { driftNew, driftRenamed: all } = detectDrift(state.steps, currentPipeline);
-      return { driftNew, driftRenamed: all.filter(r => !dismissedRenames.has(r.stepId)) };
+      if (!currentPipeline || loading) return { driftNew: [], driftRenamed: [], driftDeleted: [] };
+      const { driftNew, driftRenamed: all, driftDeleted } = detectDrift(state.steps, currentPipeline, parkedSteps);
+      return { driftNew, driftRenamed: all.filter(r => !dismissedRenames.has(r.stepId)), driftDeleted };
     },
-    [state.steps, currentPipeline, loading, dismissedRenames],
+    [state.steps, currentPipeline, parkedSteps, loading, dismissedRenames],
   );
 
   return (
@@ -1369,6 +1633,17 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                     <span className="inline-flex h-4 w-5 rounded border border-dashed border-amber-500 bg-amber-50" />
                     Manual exception
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaletteOpen(false);
+                      handleAddAutomaticSyncArtifact();
+                    }}
+                    className="mt-1.5 flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors"
+                  >
+                    <span className="inline-flex h-4 w-5 rounded border border-dashed border-blue-500 bg-blue-50" />
+                    Automatic sync
+                  </button>
                 </div>
               </div>
             </PopoverContent>
@@ -1504,6 +1779,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                   steps={state.steps}
                   connections={state.connections}
                   automations={state.automations}
+                  processActions={state.processActions ?? []}
                   activeLanes={activeLanes}
                   customLanes={customLanes}
                   selectedRouteType={selectedRouteType}
@@ -1513,8 +1789,12 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                   artifacts={state.artifacts ?? []}
                   viewportScale={editorZoom}
                   disableInternalPan
+                  sourceMissingStepIds={driftDeleted.map(item => item.stepId)}
                   onAttachFlow={handleAttachFlow}
-                  onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
+                  onAttachFlowToStep={handleAttachFlowToStep}
+                  onAttachFlowToPipelineWide={handleAttachFlowToPipelineWide}
+                  onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); setSelectedProcessAction(null); setSelectedArtifactId(null); }}
+                  onProcessActionClick={handleProcessActionClick}
                   displayStyle={displayStyle}
                   onRenameLane={displayStyle === "viewer" ? handleOpenRenameLane : undefined}
                   onInsertRowAfter={displayStyle === "viewer" ? handleInsertRowAfter : undefined}
@@ -1526,6 +1806,10 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                   onDeleteConnection={handleDeleteConnection}
                   onMoveStep={handleMoveStep}
                   onAttachAutomation={handleAttach}
+                  onAttachAutomationToStep={handleAttachAutomationToStep}
+                  onAttachAutomationToArtifact={handleAttachAutomationToArtifact}
+                  onAttachProcessAction={handleAttachProcessAction}
+                  onAttachProcessActionToStep={handleAttachProcessActionToStep}
                   onAddStep={handleAddStep}
                   onAddBranch={handleAddBranch}
                   onUpdateConnectionLabel={handleUpdateConnectionLabel}
@@ -1534,6 +1818,7 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
                   onMoveAttachment={handleMoveAttachment}
                   onUpdateAttachment={handleUpdateAttachment}
                   onDeleteAttachment={handleDeleteAttachment}
+                  onArtifactClick={handleArtifactClick}
                   onMoveArtifact={handleMoveArtifact}
                   onUpdateArtifact={handleUpdateArtifact}
                   onDeleteArtifact={handleDeleteArtifact}
@@ -1571,19 +1856,59 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
         </div>
 
         {/* Right panels */}
-        {selectedFlowId ? (
+        {selectedArtifactId ? (
+          (() => {
+            const artifact = state.artifacts?.find(item => item.id === selectedArtifactId);
+            if (!artifact || artifact.type !== "automaticSyncBlock") return null;
+            const linkedAutomations = (artifact.automationIds ?? [])
+              .map(automationId => state.automations.find(automation => automation.id === automationId))
+              .filter(Boolean) as Automation[];
+            const linkedFlows = Object.entries(flowLinks)
+              .filter(([, link]) => normalizePlacementLink(link).kind === "pipeline_wide")
+              .map(([flowId]) => flows.find(flow => flow.id === flowId))
+              .filter(Boolean);
+            return (
+              <AutomaticSyncDetailPanel
+                artifact={artifact}
+                linkedAutomations={linkedAutomations}
+                linkedFlows={linkedFlows}
+                onClose={() => setSelectedArtifactId(null)}
+                onUpdateArtifact={handleUpdateArtifact}
+                onOpenFlow={(flowId) => {
+                  setSelectedFlowId(flowId);
+                  setSelectedArtifactId(null);
+                }}
+                onOpenAutomation={(automation) => {
+                  setSelectedAuto(automation);
+                  setSelectedArtifactId(null);
+                }}
+              />
+            );
+          })()
+        ) : selectedFlowId ? (
           (() => {
             const flow = flows.find(f => f.id === selectedFlowId);
             if (!flow) return null;
             const link = flowLinks[flow.id];
-            const fromStep = link ? state.steps.find(s => s.id === link.fromStepId) : undefined;
-            const toStep   = link ? state.steps.find(s => s.id === link.toStepId)   : undefined;
+            const placement = link ? normalizePlacementLink(link) : null;
+            const fromStep = placement?.kind === "connection" ? state.steps.find(s => s.id === placement.fromStepId) : undefined;
+            const toStep   = placement?.kind === "connection" ? state.steps.find(s => s.id === placement.toStepId)   : undefined;
+            const pipelineName = currentPipeline?.naam ?? "Huidige pipeline";
+            const step = placement?.kind === "step" ? state.steps.find(s => s.id === placement.stepId) : undefined;
+            const placementLabel = placement?.kind === "pipeline_wide"
+              ? `${pipelineName} - Automatic sync`
+              : placement?.kind === "step" && step
+                ? `${pipelineName} - Stap: ${step.label}`
+                : fromStep && toStep
+                  ? `${pipelineName} - Pijl: ${fromStep.label} -> ${toStep.label}`
+                  : undefined;
             return (
               <FlowDetailPanel
                 flow={flow}
                 fromStep={fromStep}
                 toStep={toStep}
                 isAttached={!!link}
+                placementLabel={placementLabel}
                 onClose={() => setSelectedFlowId(null)}
                 onDetach={handleDetachFlow}
               />
@@ -1602,7 +1927,59 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
             ]}
             onClose={() => setSelectedAuto(null)}
             onDetach={handleDetach}
+            onPlacePipelineWide={handlePlaceAutomationPipelineWide}
           />
+        ) : selectedProcessAction ? (
+          (() => {
+            const placement = selectedProcessAction.placement;
+            const step = placement?.kind === "step"
+              ? state.steps.find(item => item.id === placement.stepId)
+              : undefined;
+            const fromStep = placement?.kind === "connection"
+              ? state.steps.find(item => item.id === placement.fromStepId)
+              : undefined;
+            const toStep = placement?.kind === "connection"
+              ? state.steps.find(item => item.id === placement.toStepId)
+              : undefined;
+            const placementText = step
+              ? `Op stap: ${step.label}`
+              : fromStep && toStep
+              ? `Op lijn: ${fromStep.label} naar ${toStep.label}`
+              : "Nog niet geplaatst";
+            return (
+              <aside className="w-72 shrink-0 border-l border-border bg-card p-4 flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Procesactie</p>
+                    <h3 className="text-sm font-semibold text-slate-900">{selectedProcessAction.label}</h3>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedProcessAction(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="rounded-md border border-border bg-slate-50 p-3 text-xs text-slate-600">
+                  <p className="font-semibold text-slate-800">{placementText}</p>
+                  <p className="mt-1 capitalize">{selectedProcessAction.type}</p>
+                </div>
+                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                  Beschrijving
+                  <textarea
+                    aria-label="Procesactie beschrijving"
+                    value={selectedProcessAction.detail ?? ""}
+                    onChange={event => handleUpdateProcessAction(selectedProcessAction.id, { detail: event.target.value })}
+                    placeholder={selectedProcessAction.type === "wait" ? "Bijv. Wacht 7 dagen voordat de volgende stap start" : "Beschrijf wat deze taak doet"}
+                    rows={4}
+                    className="min-h-24 resize-none rounded-md border border-border bg-background px-2 py-2 text-xs font-medium text-slate-800 outline-none transition-colors focus:border-primary"
+                  />
+                </label>
+                {selectedProcessAction.placement && (
+                  <Button variant="outline" size="sm" onClick={() => handleDetachProcessAction(selectedProcessAction.id)}>
+                    Loskoppelen
+                  </Button>
+                )}
+              </aside>
+            );
+          })()
         ) : (
           <div className="w-72 shrink-0 border-l border-border bg-card flex flex-col h-full">
             {/* Tab header */}
@@ -1642,11 +2019,16 @@ export function ProcessenEditor({ pipelineId, onSwitchPipeline, onDirtyChange, d
               <UnassignedPanel
                 automations={state.automations}
                 flows={flows}
+                processActions={state.processActions ?? []}
                 flowLinks={flowLinks}
                 steps={state.steps}
                 onAutomationClick={handleAutoClick}
-                onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); }}
+                onFlowClick={(flowId) => { setSelectedFlowId(flowId); setSelectedAuto(null); setSelectedProcessAction(null); setSelectedArtifactId(null); }}
+                onProcessActionClick={handleProcessActionClick}
+                onCreateProcessAction={handleCreateProcessAction}
                 onDetachFlow={handleDetachFlow}
+                onDetachAutomation={handleDetach}
+                onDetachProcessAction={handleDetachProcessAction}
               />
             ) : (
               <StepStagingPanel

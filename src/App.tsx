@@ -1,11 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RouterProvider, Route, Routes, Navigate, Outlet } from "react-router-dom";
+import { RouterProvider, Route, Routes, Navigate, Outlet, createBrowserRouter } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
-import { Sentry, createInstrumentedBrowserRouter } from "@/lib/sentry";
 import Dashboard from "./pages/Dashboard";
 import AutomationsPage from "./pages/AutomationsPage";
 import AutomationDetailPage from "./pages/AutomationDetailPage";
@@ -28,6 +27,7 @@ import Procesviewer from "./pages/Procesviewer";
 import Pipelines from "./pages/Pipelines";
 import PipelineDetail from "./pages/PipelineDetail";
 import RuntimeExplorer from "./pages/RuntimeExplorer";
+import WorkflowMatrix from "./pages/WorkflowMatrix";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -69,6 +69,7 @@ function ProtectedRoutes() {
         <Route path="/flows/:id" element={<FlowDetail />} />
         <Route path="/pipelines" element={<Pipelines />} />
         <Route path="/pipelines/:id" element={<PipelineDetail />} />
+        <Route path="/automation-navigator" element={<WorkflowMatrix />} />
         <Route path="/runtime" element={<RuntimeExplorer />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
@@ -83,7 +84,7 @@ function AuthRoute() {
   return <AuthPage />;
 }
 
-const router = createInstrumentedBrowserRouter([
+const router = createBrowserRouter([
   {
     element: (
       <AuthProvider>
@@ -98,26 +99,13 @@ const router = createInstrumentedBrowserRouter([
 ]);
 
 const App = () => (
-  <Sentry.ErrorBoundary
-    fallback={
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="max-w-md rounded-md border border-border bg-card p-4 text-sm">
-          <h1 className="mb-2 font-semibold text-foreground">Er ging iets mis</h1>
-          <p className="text-muted-foreground">
-            Herlaad de pagina. De fout is automatisch vastgelegd voor analyse.
-          </p>
-        </div>
-      </div>
-    }
-  >
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <RouterProvider router={router} />
-      </TooltipProvider>
-    </QueryClientProvider>
-  </Sentry.ErrorBoundary>
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <RouterProvider router={router} />
+    </TooltipProvider>
+  </QueryClientProvider>
 );
 
 export default App;

@@ -23,6 +23,12 @@ import {
 } from "recharts";
 import { AlertTriangle, Activity, Layers, TrendingUp, ChevronDown, ChevronUp, Loader2, Filter, Info, BarChart3, Archive, Clock, ShieldCheck, Trash2, RotateCcw, CheckCircle2, GitBranch, Network, ServerCog } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  PageCommandBar,
+  PageHeaderMetric,
+  PageHeaderMetrics,
+  PageHeaderShell,
+} from "@/components/layout/PageHeader";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -265,18 +271,13 @@ export default function Analyse() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <p className="label-uppercase">Automation analytics</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            Procesgezondheid
-          </h1>
-          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-            Developer-cockpit voor bronkwaliteit, webhook-bewijs en procesreis-dekking. V1 gebruikt harde brondata:
-            automations, endpoints, webhooks, procesreizen en sync/verificatie.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <PageHeaderShell
+        icon={BarChart3}
+        eyebrow="Automation analytics"
+        title="Procesgezondheid"
+        description="Developer-cockpit voor bronkwaliteit, webhook-bewijs en procesreis-dekking. V1 gebruikt harde brondata: automations, endpoints, webhooks, procesreizen en sync/verificatie."
+        actions={(
+          <>
           <Button asChild variant="outline">
             <a href="/flows">
               <GitBranch className="h-4 w-4" />
@@ -295,8 +296,9 @@ export default function Analyse() {
               Open bronkwaliteit
             </a>
           </Button>
-        </div>
-      </header>
+          </>
+        )}
+      />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Procesgezondheid metrics">
         {presentation.metrics.map((metric) => (
@@ -458,31 +460,24 @@ function LegacyAnalyseContent() {
       <h1 className="sr-only">Analysis</h1>
 
       <Tabs defaultValue="timeline" className="w-full">
-        {/* Hero + tab nav as one connected card */}
-        <div className="mx-6 mt-6 rounded-2xl border border-border overflow-hidden shadow-sm">
-          <header className="relative bg-primary-soft px-8 py-8">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary">
-                <BarChart3 className="w-4 h-4" />
-              </span>
-              <span className="text-[11px] uppercase tracking-[0.14em] font-semibold text-primary">
-                Automation Portal
-              </span>
-            </div>
-            <h2 className="text-3xl font-semibold tracking-tight text-foreground">Analyse</h2>
-            <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-              Inzicht in impact, complexiteit en afhankelijkheden van alle automations.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <StatBadge label="Automations" value={data.length} />
-              <StatBadge label="Actief" value={activeCount} />
-              <StatBadge label="Hoog risico" value={highRiskCount} />
-              <StatBadge label="Opruimadvies" value={cleanupAdvice.length} />
-              <StatBadge label="Verwijderlijst" value={removalListCount} />
-            </div>
-          </header>
-          <div className="border-t border-border bg-card px-6">
-            <TabsList className="h-auto bg-transparent p-0 gap-0 rounded-none">
+        <div className="mx-6 mt-6">
+          <PageHeaderShell
+            icon={BarChart3}
+            eyebrow="Automation Portal"
+            title="Analyse"
+            description="Inzicht in impact, complexiteit en afhankelijkheden van alle automations."
+            metrics={(
+              <PageHeaderMetrics>
+                <PageHeaderMetric label="automations" value={data.length} />
+                <PageHeaderMetric label="actief" value={activeCount} />
+                <PageHeaderMetric label="hoog risico" value={highRiskCount} />
+                <PageHeaderMetric label="opruimadvies" value={cleanupAdvice.length} />
+                <PageHeaderMetric label="verwijderlijst" value={removalListCount} />
+              </PageHeaderMetrics>
+            )}
+          >
+            <PageCommandBar>
+            <TabsList className="h-auto flex-wrap justify-start bg-transparent p-0 gap-0 rounded-none">
               <TabsTrigger value="timeline" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium">
                 Timeline
               </TabsTrigger>
@@ -502,7 +497,8 @@ function LegacyAnalyseContent() {
                 Opruimadvies
               </TabsTrigger>
             </TabsList>
-          </div>
+            </PageCommandBar>
+          </PageHeaderShell>
         </div>
 
         {/* ═══════════════ KLANTPROCES TIJDLIJN ═══════════════ */}

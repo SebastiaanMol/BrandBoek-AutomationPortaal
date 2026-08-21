@@ -80,6 +80,20 @@ vi.mock("@/lib/hooks", () => ({
   useAutomatiseringenIncludingLegacyGitlab: () => ({ data: automations }),
   useFlows: () => ({ data: [] }),
   useAllConfirmedAutomationLinks: () => ({ data: [] }),
+  useAutomationSentryIssueOverview: () => ({
+    data: {
+      issues: [],
+      limited: false,
+      fetchedAt: "2026-06-18T10:00:00.000Z",
+      matches: {
+        byAutomationId: {},
+        summariesByAutomationId: {},
+        unmatched: [],
+      },
+    },
+    isLoading: false,
+    error: null,
+  }),
   usePortalSettings: () => ({
     data: {
       standaardStatusFilter: "alle",
@@ -353,6 +367,26 @@ describe("Automations overview UI", () => {
     screen.getByRole("row", { name: /HubSpot workflow/i });
     expect(screen.queryByRole("row", { name: /GitLab backend/i })).not.toBeInTheDocument();
     screen.getByRole("button", { name: "Verberg proceslijn voor HubSpot workflow" });
+  });
+
+  it("does not restore stale internal automation id searches from navigation memory", () => {
+    sessionStorage.setItem("automationNavigator.navigation.automations", JSON.stringify({
+      pathname: "/alle",
+      search: "",
+      hash: "",
+      scrollY: 0,
+      updatedAt: Date.now(),
+      data: {
+        query: "AUTO-GL-4403ac77",
+        sortOrder: "naam",
+      },
+    }));
+
+    renderOverview();
+
+    expect(screen.getByPlaceholderText("Zoek op naam, bron, trigger of beschrijving...")).toHaveValue("");
+    screen.getByRole("row", { name: /HubSpot workflow/i });
+    screen.getByRole("row", { name: /GitLab backend/i });
   });
 
   it("remembers automation catalog state before opening a detail page", () => {

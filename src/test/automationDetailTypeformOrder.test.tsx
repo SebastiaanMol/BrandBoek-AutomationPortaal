@@ -53,6 +53,7 @@ const typeformAutomation: Automatisering = {
 vi.mock("@/lib/hooks", () => ({
   useAutomatiseringen: () => ({ data: [typeformAutomation], isLoading: false }),
   useAutomatiseringenIncludingLegacyGitlab: () => ({ data: [typeformAutomation] }),
+  useAutomationSentryIssues: () => ({ isLoading: false, error: null, data: { limited: false, matches: { byAutomationId: {}, summariesByAutomationId: {}, unmatched: [] } } }),
   useFlows: () => ({ data: [] }),
   useAllConfirmedAutomationLinks: () => ({ data: [] }),
   useFlowSuggesties: () => ({ data: [] }),

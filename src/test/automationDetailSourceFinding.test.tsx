@@ -41,6 +41,7 @@ const automation = {
 vi.mock("@/lib/hooks", () => ({
   useAutomatiseringen: () => ({ data: [automation], isLoading: false }),
   useAutomatiseringenIncludingLegacyGitlab: () => ({ data: [automation] }),
+  useAutomationSentryIssues: () => ({ isLoading: false, error: null, data: { limited: false, matches: { byAutomationId: {}, summariesByAutomationId: {}, unmatched: [] } } }),
   useFlows: () => ({ data: [] }),
   useAllConfirmedAutomationLinks: () => ({ data: [] }),
   useFlowSuggesties: () => ({ data: [] }),

@@ -69,4 +69,18 @@ describe("sortAutomationsForList", () => {
       "disabled-newest",
     ]);
   });
+
+  it("always places disabled automations after every other status, regardless of sort order", () => {
+    const automations = [
+      makeAutomation("disabled", "Uitgeschakeld", "2026-05-25T00:00:00.000Z", "A disabled"),
+      makeAutomation("outdated", "Verouderd", "2026-05-24T00:00:00.000Z", "B outdated"),
+      makeAutomation("review", "In review", "2026-05-23T00:00:00.000Z", "C review"),
+      makeAutomation("active", "Actief", "2026-05-22T00:00:00.000Z", "D active"),
+    ];
+
+    for (const sortOrder of ["created_at", "naam", "status"] as const) {
+      const result = sortAutomationsForList(automations, sortOrder);
+      expect(result.map((a) => a.id)).toEqual(["active", "review", "outdated", "disabled"]);
+    }
+  });
 });

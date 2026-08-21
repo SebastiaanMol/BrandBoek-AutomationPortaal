@@ -5,6 +5,7 @@ export const SOURCE_SYNC_CHANGE_ITEMS_TABLE = "source_sync_change_items";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
+  rpc?: (fn: string) => Promise<{ data: unknown; error: unknown }>;
 };
 
 export type PortalOwnedSyncSource = "hubspot" | "gitlab" | "zapier" | "typeform";
@@ -41,6 +42,8 @@ type ExistingAutomation = {
   webhook_paths?: string[] | null;
   import_proposal?: Record<string, unknown> | null;
   gitlab_file_path?: string | null;
+  pipeline_id?: string | null;
+  stage_id?: string | null;
   cleanup_delete_candidate?: boolean | null;
   cleanup_delete_candidate_at?: string | null;
 };
@@ -72,7 +75,8 @@ export type SourceSyncChangeItem = {
   externalId: string | null;
   automationId: string | null;
   changeType: SourceSyncChangeType;
-  status: "pending" | "applied" | "skipped" | "failed";
+  status: "pending" | "applied" | "skipped" | "failed" | "superseded";
+  reviewKey: string | null;
   title: string;
   summary: string;
   impact: string;
@@ -92,10 +96,18 @@ export type PortalOwnedSyncApplyResult = PortalOwnedSyncResult & {
   applied: number;
   skipped: number;
   failed: number;
+  failedItems: Array<{
+    id: string;
+    title: string;
+    externalId: string | null;
+    changeType: SourceSyncChangeType;
+    errorMessage: string;
+  }>;
 };
 
-type SourceSyncChangeDraft = Omit<SourceSyncChangeItem, "id" | "status" | "syncRunId" | "selectedByDefault"> & {
+type SourceSyncChangeDraft = Omit<SourceSyncChangeItem, "id" | "status" | "syncRunId" | "selectedByDefault" | "reviewKey"> & {
   syncRunId: string;
+  reviewKey?: string | null;
   selectedByDefault?: boolean;
 };
 
@@ -106,7 +118,8 @@ type SourceSyncChangeRow = {
   external_id: string | null;
   automation_id: string | null;
   change_type: SourceSyncChangeType;
-  status: "pending" | "applied" | "skipped" | "failed";
+  status: "pending" | "applied" | "skipped" | "failed" | "superseded";
+  review_key?: string | null;
   title: string;
   summary: string;
   impact: string;
@@ -197,6 +210,7 @@ export async function previewPortalOwnedSync(
   },
 ): Promise<PortalOwnedSyncPreviewResult> {
   const drafts = await buildSyncChangeItems(db, input);
+  await supersedeObsoletePendingReviewItems(db, input, drafts);
   const changeItems: SourceSyncChangeItem[] = [];
   for (const draft of drafts) {
     changeItems.push(await insertSyncChangeItem(db, draft));
@@ -234,15 +248,19 @@ export async function applyPortalOwnedSyncChanges(
 ): Promise<PortalOwnedSyncApplyResult> {
   const rows = await fetchPendingReviewItems(db, input.source, input.syncRunId);
   const selected = new Set(input.selectedChangeItemIds);
+  const skipped = rows.filter((row) => row.status === "pending" && !selected.has(row.id)).length;
   await markUnselectedReviewItemsSkipped(db, rows, selected, input.now);
 
   let applied = 0;
   let failed = 0;
+  let inserted = 0;
   let proposed = 0;
   let updated = 0;
   let findings = 0;
   let missing = 0;
   let changed = 0;
+  let deactivated = 0;
+  const failedItems: PortalOwnedSyncApplyResult["failedItems"] = [];
 
   for (const row of rows) {
     if (!selected.has(row.id)) continue;
@@ -250,21 +268,31 @@ export async function applyPortalOwnedSyncChanges(
       const appliedKind = await applyReviewItem(db, row, input.now);
       await markReviewItemApplied(db, row.id, input.now);
       applied++;
+      if (appliedKind === "insert") inserted++;
       if (appliedKind === "proposal") proposed++;
       if (appliedKind === "update") updated++;
       if (appliedKind === "finding") findings++;
+      if (appliedKind === "deactivated") deactivated++;
       if (row.change_type === "source_missing") missing++;
       if (row.change_type === "metadata_changed" || row.change_type === "route_changed") changed++;
     } catch (error) {
+      const errorMessage = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
       failed++;
-      await markReviewItemFailed(db, row.id, error, input.now);
+      failedItems.push({
+        id: row.id,
+        title: row.title,
+        externalId: row.external_id,
+        changeType: row.change_type,
+        errorMessage,
+      });
+      await markReviewItemFailed(db, row.id, errorMessage, input.now);
     }
   }
 
   return {
-    inserted: 0,
+    inserted,
     updated,
-    deactivated: 0,
+    deactivated,
     total: rows.length,
     proposed,
     findings,
@@ -273,8 +301,9 @@ export async function applyPortalOwnedSyncChanges(
     syncRunId: input.syncRunId,
     mode: "apply",
     applied,
-    skipped: rows.filter((row) => !selected.has(row.id)).length,
+    skipped,
     failed,
+    failedItems,
   };
 }
 
@@ -291,7 +320,7 @@ export async function recordPortalOwnedSync(
 
   const { data: existingRows, error: existingError } = await db
     .from("automatiseringen")
-    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, cleanup_delete_candidate, cleanup_delete_candidate_at")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, pipeline_id, stage_id, cleanup_delete_candidate, cleanup_delete_candidate_at")
     .eq("source", source);
   throwIfSupabaseError("Bestaande automations ophalen", existingError);
 
@@ -574,7 +603,7 @@ async function buildSyncChangeItems(
       changeType: "source_missing",
       title: row.naam || `${sourceLabel(source)} automation`,
       summary: `Deze automation kan niet meer worden teruggevonden bij ${sourceLabel(source)}.`,
-      impact: "Wordt als kritieke bronwaarschuwing geregistreerd als je deze regel toepast.",
+      impact: "Haalt deze automation uit de actieve portalweergave als je deze regel toepast.",
       oldValue: {
         external_id: row.external_id,
         portal_name: row.naam ?? "",
@@ -651,7 +680,7 @@ async function fetchExistingAutomationsForSource(
 ): Promise<ExistingAutomation[]> {
   const { data: existingRows, error: existingError } = await db
     .from("automatiseringen")
-    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, cleanup_delete_candidate, cleanup_delete_candidate_at")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, pipeline_id, stage_id, cleanup_delete_candidate, cleanup_delete_candidate_at")
     .eq("source", source);
   throwIfSupabaseError("Bestaande automations ophalen", existingError);
 
@@ -663,12 +692,15 @@ async function insertSyncChangeItem(
   db: SupabaseClientLike,
   draft: SourceSyncChangeDraft,
 ): Promise<SourceSyncChangeItem> {
+  const reviewKey = draft.reviewKey ?? reviewKeyForDraft(draft);
+
   const data = {
     sync_run_id: draft.syncRunId,
     source: draft.source,
     external_id: draft.externalId,
     automation_id: draft.automationId,
     change_type: draft.changeType,
+    review_key: reviewKey,
     status: "pending",
     title: draft.title,
     summary: draft.summary,
@@ -688,6 +720,53 @@ async function insertSyncChangeItem(
   return mapSyncChangeRow(row as SourceSyncChangeRow);
 }
 
+async function supersedeObsoletePendingReviewItems(
+  db: SupabaseClientLike,
+  input: {
+    source: PortalOwnedSyncSource;
+    payloads: PortalOwnedAutomationPayload[];
+    now: string;
+  },
+  drafts: SourceSyncChangeDraft[],
+): Promise<void> {
+  const externalIds = new Set<string>();
+  for (const payload of input.payloads) {
+    const externalId = String(payload.external_id ?? "").trim();
+    if (externalId) externalIds.add(externalId);
+  }
+  for (const draft of drafts) {
+    const externalId = String(draft.externalId ?? "").trim();
+    if (externalId) externalIds.add(externalId);
+  }
+
+  const ids = [...externalIds];
+  if (ids.length === 0) return;
+
+  const reviewChangeTypes: SourceSyncChangeType[] = [
+    "metadata_changed",
+    "route_changed",
+    "source_missing",
+    "source_data_incomplete",
+    "new_automation",
+    "legacy_gitlab_record",
+  ];
+
+  for (const externalIdChunk of chunks(ids, 100)) {
+    const { error } = await db
+      .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
+      .update({
+        status: "superseded",
+        skipped_at: input.now,
+        updated_at: input.now,
+      })
+      .eq("source", input.source)
+      .eq("status", "pending")
+      .in("external_id", externalIdChunk)
+      .in("change_type", reviewChangeTypes);
+    throwIfSupabaseError("Verouderde sync-reviewregels superseden", error);
+  }
+}
+
 async function fetchPendingReviewItems(
   db: SupabaseClientLike,
   source: PortalOwnedSyncSource,
@@ -698,7 +777,7 @@ async function fetchPendingReviewItems(
     .select("*")
     .eq("sync_run_id", syncRunId)
     .eq("source", source)
-    .eq("status", "pending");
+    .in("status", ["pending", "failed"]);
   throwIfSupabaseError("Sync-reviewregels ophalen", error);
   return (data ?? []) as SourceSyncChangeRow[];
 }
@@ -709,7 +788,7 @@ async function markUnselectedReviewItemsSkipped(
   selectedChangeItemIds: Set<string>,
   now: string,
 ): Promise<void> {
-  const unselected = rows.filter((row) => !selectedChangeItemIds.has(row.id));
+  const unselected = rows.filter((row) => row.status === "pending" && !selectedChangeItemIds.has(row.id));
   for (const row of unselected) {
     const { error } = await db
       .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
@@ -727,10 +806,9 @@ async function applyReviewItem(
   db: SupabaseClientLike,
   row: SourceSyncChangeRow,
   now: string,
-): Promise<"proposal" | "update" | "finding"> {
+): Promise<"insert" | "proposal" | "update" | "finding" | "deactivated"> {
   if (row.change_type === "new_automation") {
-    await upsertImportProposal(db, row.source, row.payload_sanitized as PortalOwnedAutomationPayload, now);
-    return "proposal";
+    return applyNewAutomation(db, row, now);
   }
 
   if (row.change_type === "metadata_changed" || row.change_type === "route_changed") {
@@ -752,10 +830,93 @@ async function applyReviewItem(
 
   if (row.change_type === "source_missing") {
     await applySourceMissingFinding(db, row, now);
-    return "finding";
+    return "deactivated";
   }
 
   return "finding";
+}
+
+async function applyNewAutomation(
+  db: SupabaseClientLike,
+  row: SourceSyncChangeRow,
+  now: string,
+): Promise<"insert" | "update"> {
+  const payload = row.payload_sanitized as PortalOwnedAutomationPayload;
+  const source = row.source;
+  const externalId = String(payload.external_id ?? row.external_id ?? "").trim();
+
+  const { data: existing, error: existingError } = await db
+    .from("automatiseringen")
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, pipeline_id, stage_id, cleanup_delete_candidate, cleanup_delete_candidate_at")
+    .eq("source", source)
+    .eq("external_id", externalId)
+    .maybeSingle();
+  throwIfSupabaseError("Bestaande automation voor sync-review ophalen", existingError);
+
+  if (existing?.id) {
+    await applyExistingSourcePayload(db, existing as ExistingAutomation, payload, source, row.sync_run_id, now);
+    return "update";
+  }
+
+  const { error } = await db.from("automatiseringen").insert({
+    id: await generateAutomationId(db, source, externalId),
+    naam: await resolveNewAutomationName(db, {
+      source,
+      payload,
+      externalId,
+      fallbackName: row.title || `${sourceLabel(source)} automation`,
+    }),
+    status: String(payload.status ?? "Actief"),
+    doel: String(payload.doel ?? ""),
+    trigger_beschrijving: String(payload.trigger_beschrijving ?? ""),
+    systemen: arrayOrEmpty(payload.systemen),
+    stappen: arrayOrEmpty(payload.stappen),
+    branches: Array.isArray(payload.branches) ? payload.branches : null,
+    categorie: String(payload.categorie ?? "Anders"),
+    afhankelijkheden: String(payload.afhankelijkheden ?? ""),
+    owner: String(payload.owner ?? ""),
+    verbeterideeen: String(payload.verbeterideeen ?? ""),
+    mermaid_diagram: String(payload.mermaid_diagram ?? ""),
+    fasen: arrayOrEmpty(payload.fasen),
+    webhook_paths: arrayOrEmpty(payload.webhook_paths),
+    endpoints: arrayOrEmpty(payload.endpoints),
+    external_id: externalId || null,
+    source,
+    import_source: source,
+    import_status: "approved",
+    import_proposal: isRecord(payload.import_proposal) ? payload.import_proposal : {},
+    gitlab_file_path: typeof payload.gitlab_file_path === "string" ? payload.gitlab_file_path : null,
+    gitlab_last_commit: payload.gitlab_last_commit ?? null,
+    pipeline_id: payload.pipeline_id ?? null,
+    stage_id: payload.stage_id ?? null,
+    hubspot_last_run_at: payload.hubspot_last_run_at ?? null,
+    hubspot_run_count_365d: payload.hubspot_run_count_365d ?? null,
+    last_synced_at: payload.last_synced_at ?? now,
+    approved_by: "sync-review",
+    approved_at: now,
+  });
+  throwIfSupabaseError("Nieuwe automation uit sync-review aanmaken", error);
+
+  return "insert";
+}
+
+async function generateAutomationId(
+  db: SupabaseClientLike,
+  source: PortalOwnedSyncSource,
+  externalId: string,
+): Promise<string> {
+  if (source === "hubspot" && externalId) return `AUTO-HS-${externalId}`;
+
+  if (typeof db.rpc === "function") {
+    try {
+      const { data, error } = await db.rpc("generate_auto_id");
+      if (!error && typeof data === "string" && data.trim()) return data;
+    } catch {
+      // Fall through to UUID fallback.
+    }
+  }
+
+  return `AUTO-${crypto.randomUUID()}`;
 }
 
 async function fetchExistingAutomationForReviewItem(
@@ -765,7 +926,7 @@ async function fetchExistingAutomationForReviewItem(
 ): Promise<ExistingAutomation> {
   let query = db
     .from("automatiseringen")
-    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, cleanup_delete_candidate, cleanup_delete_candidate_at");
+    .select("id, external_id, naam, source, doel, trigger_beschrijving, systemen, stappen, categorie, status, endpoints, webhook_paths, import_proposal, gitlab_file_path, pipeline_id, stage_id, cleanup_delete_candidate, cleanup_delete_candidate_at");
 
   if (row.automation_id) {
     query = query.eq("id", row.automation_id);
@@ -930,6 +1091,126 @@ async function applySourceMissingFinding(
     syncRunId: row.sync_run_id,
     now,
   });
+
+  await markAutomationDeletedFromSource(db, {
+    automationId: row.automation_id ?? automation.id,
+    source: row.source,
+    now,
+  });
+}
+
+async function resolveNewAutomationName(
+  db: SupabaseClientLike,
+  input: {
+    source: PortalOwnedSyncSource;
+    payload: PortalOwnedAutomationPayload;
+    externalId: string;
+    fallbackName: string;
+  },
+): Promise<string> {
+  const baseName = String(input.payload.naam ?? "").trim() || input.fallbackName;
+
+  const { data, error } = await db
+    .from("automatiseringen")
+    .select("naam");
+  throwIfSupabaseError("Bestaande automationnamen ophalen", error);
+
+  const existingNames = new Set(
+    ((data ?? []) as Array<{ naam?: string | null }>)
+      .map((row) => normalizeComparableName(row.naam))
+      .filter(Boolean),
+  );
+
+  if (!existingNames.has(normalizeComparableName(baseName))) return baseName;
+
+  const routeLabel = input.source === "gitlab"
+    ? gitLabRouteLabel(input.payload, input.externalId)
+    : nonGitLabIdentityLabel(input.payload, input.externalId);
+  const routeCandidate = routeLabel ? `${baseName} - ${routeLabel}` : "";
+  if (routeCandidate && !existingNames.has(normalizeComparableName(routeCandidate))) {
+    return routeCandidate;
+  }
+
+  const suffix = shortStableSuffix(input.externalId || baseName);
+  const fallbackCandidate = routeCandidate
+    ? `${routeCandidate} - ${suffix}`
+    : `${baseName} - ${suffix}`;
+  return fallbackCandidate;
+}
+
+function nonGitLabIdentityLabel(payload: PortalOwnedAutomationPayload, externalId: string): string {
+  const webhookPath = normalizeStringArray(payload.webhook_paths)[0] ?? "";
+  if (webhookPath) return webhookPath;
+
+  const endpoint = normalizeStringArray(payload.endpoints)[0] ?? "";
+  if (endpoint) return endpoint;
+
+  return externalId.trim();
+}
+
+function gitLabRouteLabel(payload: PortalOwnedAutomationPayload, externalId: string): string {
+  const proposal = isRecord(payload.import_proposal) ? payload.import_proposal : {};
+  const endpointInfo = isRecord(proposal.gitlab_endpoint)
+    ? proposal.gitlab_endpoint
+    : isRecord(proposal.gitlab) && isRecord(proposal.gitlab.endpoint)
+      ? proposal.gitlab.endpoint
+      : null;
+  const method = String(endpointInfo?.method ?? "").trim().toUpperCase();
+  const endpoint = String(endpointInfo?.endpoint ?? endpointInfo?.path ?? "").trim();
+  if (method || endpoint) return [method, endpoint].filter(Boolean).join(" ");
+
+  const externalRoute = externalId.includes("::") ? externalId.split("::").at(-1) ?? "" : "";
+  if (externalRoute.trim()) return externalRoute.trim();
+
+  const firstEndpoint = normalizeStringArray(payload.endpoints)[0] ?? "";
+  return firstEndpoint;
+}
+
+function normalizeComparableName(value: unknown): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function shortStableSuffix(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index++) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36).slice(0, 6).padStart(4, "0");
+}
+
+async function markAutomationDeletedFromSource(
+  db: SupabaseClientLike,
+  input: {
+    automationId: string;
+    source: PortalOwnedSyncSource;
+    now: string;
+  },
+): Promise<void> {
+  const { data: existing, error: fetchError } = await db
+    .from("automatiseringen")
+    .select("reviewer_overrides")
+    .eq("id", input.automationId)
+    .maybeSingle();
+  throwIfSupabaseError("Automation reviewer-overrides ophalen voor bronverwijdering", fetchError);
+
+  const reviewerOverrides = {
+    ...((isRecord(existing?.reviewer_overrides) ? existing.reviewer_overrides : {}) as Record<string, unknown>),
+    cleanup_delete_candidate: true,
+    cleanup_delete_candidate_at: input.now,
+    source_deleted_at: input.now,
+    source_deleted_reason: `Niet meer gevonden bij ${sourceLabel(input.source)}`,
+  };
+
+  const { error } = await db
+    .from("automatiseringen")
+    .update({
+      cleanup_delete_candidate: true,
+      cleanup_delete_candidate_at: input.now,
+      reviewer_overrides: reviewerOverrides,
+      status: "Uitgeschakeld",
+    })
+    .eq("id", input.automationId);
+  throwIfSupabaseError("Automation uit actieve portalweergave halen", error);
 }
 
 async function applyLegacyGitLabCleanup(
@@ -974,11 +1255,14 @@ async function markReviewItemFailed(
   error: unknown,
   now: string,
 ): Promise<void> {
+  const errorMessage = typeof error === "string"
+    ? error
+    : sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
   const { error: updateError } = await db
     .from(SOURCE_SYNC_CHANGE_ITEMS_TABLE)
     .update({
       status: "failed",
-      error_message_sanitized: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
+      error_message_sanitized: errorMessage,
       updated_at: now,
     })
     .eq("id", id);
@@ -994,6 +1278,7 @@ function mapSyncChangeRow(row: SourceSyncChangeRow): SourceSyncChangeItem {
     automationId: row.automation_id,
     changeType: row.change_type,
     status: row.status,
+    reviewKey: row.review_key ?? null,
     title: row.title,
     summary: row.summary,
     impact: row.impact,
@@ -1002,6 +1287,23 @@ function mapSyncChangeRow(row: SourceSyncChangeRow): SourceSyncChangeItem {
     payload: row.payload_sanitized,
     selectedByDefault: row.selected_by_default,
   };
+}
+
+function reviewKeyForDraft(draft: SourceSyncChangeDraft): string {
+  if (draft.changeType === "source_data_incomplete") {
+    const newValue = isRecord(draft.newValue) ? draft.newValue : null;
+    const payload = isRecord(draft.payload) ? draft.payload : null;
+    const missingEvidence = isRecord(payload?.missingEvidence) ? payload.missingEvidence : null;
+    const evidenceKey = stringValue(newValue?.missing_evidence_key) || stringValue(missingEvidence?.key);
+    if (evidenceKey) return evidenceKey;
+  }
+
+  if (draft.changeType === "legacy_gitlab_record") return "legacy_gitlab_record";
+  if (draft.changeType === "source_missing") return "source_missing";
+  if (draft.changeType === "route_changed") return "route_changed";
+  if (draft.changeType === "metadata_changed") return "metadata_changed";
+  if (draft.changeType === "new_automation") return "new_automation";
+  return draft.changeType;
 }
 
 async function updateExistingSourceSnapshot(
@@ -1014,6 +1316,9 @@ async function updateExistingSourceSnapshot(
   for (const field of SOURCE_MANAGED_AUTOMATION_FIELDS) {
     if (field === "last_synced_at") {
       patch[field] = now;
+      continue;
+    }
+    if ((field === "pipeline_id" || field === "stage_id") && !hasTextSourceValue(payload[field])) {
       continue;
     }
     if (field in payload) {
@@ -1393,16 +1698,19 @@ function getRecord(value: unknown): Record<string, unknown> | null {
 
 function diffMetadata(existing: ExistingAutomation, payload: PortalOwnedAutomationPayload) {
   const checks: Array<{ field: string; portal: unknown; source: unknown }> = [
-    { field: "naam", portal: existing.naam ?? "", source: payload.naam ?? "" },
-    { field: "doel", portal: existing.doel ?? "", source: payload.doel ?? "" },
-    { field: "trigger_beschrijving", portal: existing.trigger_beschrijving ?? "", source: payload.trigger_beschrijving ?? "" },
-    { field: "categorie", portal: existing.categorie ?? "", source: payload.categorie ?? "" },
-    { field: "status", portal: existing.status ?? "", source: payload.status ?? "" },
-    { field: "systemen", portal: normalizeStringArray(existing.systemen), source: normalizeStringArray(payload.systemen) },
-    { field: "stappen", portal: normalizeStringArray(existing.stappen), source: normalizeStringArray(payload.stappen) },
+    ...(hasTextSourceValue(payload.naam)
+      ? [{ field: "naam", portal: existing.naam ?? "", source: String(payload.naam).trim() }]
+      : []),
+    ...(hasTextSourceValue(payload.status)
+      ? [{ field: "status", portal: existing.status ?? "", source: String(payload.status).trim() }]
+      : []),
   ];
 
   return checks.filter((check) => stableStringify(check.portal) !== stableStringify(check.source));
+}
+
+function hasTextSourceValue(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function diffArrayField(portalValue: unknown, sourceValue: unknown): { changed: boolean } {
@@ -1435,6 +1743,8 @@ function buildComparableSnapshot(payload: PortalOwnedAutomationPayload): Record<
     status: payload.status,
     systemen: normalizeStringArray(payload.systemen),
     stappen: normalizeStringArray(payload.stappen),
+    pipeline_id: payload.pipeline_id ?? null,
+    stage_id: payload.stage_id ?? null,
     endpoints: normalizeStringArray(payload.endpoints),
     webhook_paths: normalizeStringArray(payload.webhook_paths),
   };
@@ -1497,6 +1807,18 @@ function sanitizeErrorMessage(message: unknown): string | null {
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean))].sort();
+}
+
+function arrayOrEmpty(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function chunks<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
 }
 
 function stableStringify(value: unknown): string {

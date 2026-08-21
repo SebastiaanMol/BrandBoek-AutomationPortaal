@@ -155,6 +155,66 @@ describe("automations storage", () => {
     expect(automation.branches).toBeUndefined();
   });
 
+  it("hides automations that were removed from their source from normal portal queries", async () => {
+    mocks.automationRows = [
+      {
+        id: "auto-visible",
+        naam: "Visible automation",
+        categorie: "Data",
+        doel: "Doel",
+        trigger_beschrijving: "Trigger",
+        systemen: ["HubSpot"],
+        stappen: ["Stap"],
+        afhankelijkheden: "",
+        owner: "Team",
+        status: "Actief",
+        verbeterideeen: "",
+        mermaid_diagram: "",
+        fasen: [],
+        created_at: "2026-06-03T00:00:00.000Z",
+        laatst_geverifieerd: null,
+        geverifieerd_door: "",
+        source: "hubspot",
+        external_id: "visible",
+        import_proposal: null,
+        reviewer_overrides: null,
+        cleanup_delete_candidate: false,
+      },
+      {
+        id: "auto-source-deleted",
+        naam: "Deleted at source",
+        categorie: "Data",
+        doel: "Doel",
+        trigger_beschrijving: "Trigger",
+        systemen: ["HubSpot"],
+        stappen: ["Stap"],
+        afhankelijkheden: "",
+        owner: "Team",
+        status: "Uitgeschakeld",
+        verbeterideeen: "",
+        mermaid_diagram: "",
+        fasen: [],
+        created_at: "2026-06-03T00:00:00.000Z",
+        laatst_geverifieerd: null,
+        geverifieerd_door: "",
+        source: "hubspot",
+        external_id: "deleted",
+        import_proposal: null,
+        reviewer_overrides: {
+          cleanup_delete_candidate: true,
+          source_deleted_at: "2026-07-08T12:00:00.000Z",
+        },
+        cleanup_delete_candidate: true,
+      },
+    ];
+
+    const { fetchAutomatiseringen } = await import("@/lib/storage/automations");
+
+    const automations = await fetchAutomatiseringen();
+
+    expect(automations.map((automation) => automation.id)).toEqual(["auto-visible"]);
+  });
+
   it("writes the verbeterideeën domain field back to the verbeterideeen database column", async () => {
     const { insertAutomatisering } = await import("@/lib/storage/automations");
 

@@ -47,6 +47,7 @@ const useJourneyAutomationsMock = vi.fn();
 vi.mock("@/lib/hooks", () => ({
   useAutomatiseringen: () => useAutomationsMock(),
   useAutomatiseringenIncludingLegacyGitlab: () => useJourneyAutomationsMock(),
+  useAutomationSentryIssues: () => ({ isLoading: false, error: null, data: { limited: false, matches: { byAutomationId: {}, summariesByAutomationId: {}, unmatched: [] } } }),
   useFlows: () => ({ data: [] }),
   useAllConfirmedAutomationLinks: () => ({ data: confirmedLinks }),
   useFlowSuggesties: () => ({ data: flowSuggesties }),

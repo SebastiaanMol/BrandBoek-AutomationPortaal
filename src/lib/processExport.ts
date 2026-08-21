@@ -1,4 +1,6 @@
 import { jsPDF } from "jspdf";
+import JSZip from "jszip";
+import type { SavedProcessStateWithUpdatedAt } from "@/lib/storage/processState";
 
 function getSvgElement(selector: string): SVGSVGElement | null {
   return document.querySelector(selector);
@@ -57,26 +59,138 @@ function svgToCanvas(svg: SVGSVGElement): Promise<HTMLCanvasElement> {
   });
 }
 
-export async function exportProcessCanvasPng(selector = ".process-canvas-wrap svg"): Promise<void> {
-  const svg = getSvgElement(selector);
-  if (!svg) throw new Error("Canvas niet gevonden");
-
+async function svgToPngBlob(svg: SVGSVGElement): Promise<Blob> {
   const canvas = await svgToCanvas(svg);
-  const a = document.createElement("a");
-  a.download = "proceskaart.png";
-  a.href = canvas.toDataURL("image/png");
-  a.click();
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("PNG kon niet worden gemaakt"));
+        return;
+      }
+      resolve(blob);
+    }, "image/png");
+  });
 }
 
-export async function exportProcessCanvasPdf(selector = ".process-canvas-wrap svg"): Promise<void> {
-  const svg = getSvgElement(selector);
-  if (!svg) throw new Error("Canvas niet gevonden");
-
+async function svgToPdfBlob(svg: SVGSVGElement): Promise<Blob> {
   const canvas = await svgToCanvas(svg);
   const imgData = canvas.toDataURL("image/png");
   const w = canvas.width / 2;
   const h = canvas.height / 2;
   const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [w, h] });
   pdf.addImage(imgData, "PNG", 0, 0, w, h);
-  pdf.save("proceskaart.pdf");
+  return pdf.output("blob");
+}
+
+export async function exportProcessCanvasPng(selector = ".process-canvas-wrap svg"): Promise<void> {
+  const svg = getSvgElement(selector);
+  if (!svg) throw new Error("Canvas niet gevonden");
+
+  const a = document.createElement("a");
+  a.download = "proceskaart.png";
+  a.href = URL.createObjectURL(await svgToPngBlob(svg));
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 100);
+}
+
+export async function exportProcessCanvasPdf(selector = ".process-canvas-wrap svg"): Promise<void> {
+  const svg = getSvgElement(selector);
+  if (!svg) throw new Error("Canvas niet gevonden");
+
+  const a = document.createElement("a");
+  a.download = "proceskaart.pdf";
+  a.href = URL.createObjectURL(await svgToPdfBlob(svg));
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 100);
+}
+
+export interface ProcessViewZipExportItem {
+  pipelineId: string;
+  pipelineName: string;
+  state: SavedProcessStateWithUpdatedAt;
+  svg?: SVGSVGElement | null;
+}
+
+export interface ProcessViewZipFormats {
+  json: boolean;
+  png: boolean;
+  pdf: boolean;
+}
+
+export async function exportProcessViewsZip({
+  items,
+  formats,
+  date = new Date(),
+}: {
+  items: ProcessViewZipExportItem[];
+  formats: ProcessViewZipFormats;
+  date?: Date;
+}): Promise<Blob> {
+  if (items.length === 0) {
+    throw new Error("Geen pipelines geselecteerd voor export");
+  }
+  if (!formats.json && !formats.png && !formats.pdf) {
+    throw new Error("Kies minstens een exportformaat");
+  }
+
+  const zip = new JSZip();
+  for (const item of items) {
+    const folder = zip.folder(safeFilePart(item.pipelineName) || item.pipelineId);
+    if (!folder) continue;
+
+    if (formats.json) {
+      folder.file("proces-backup.json", JSON.stringify(buildProcessBackup(item.pipelineName, item.state, date), null, 2));
+    }
+    if (formats.png && item.svg) {
+      folder.file("procesview.png", await svgToPngBlob(item.svg));
+    }
+    if (formats.pdf && item.svg) {
+      folder.file("procesview.pdf", await svgToPdfBlob(item.svg));
+    }
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  const a = document.createElement("a");
+  a.download = `procesviews-${toDateStamp(date)}.zip`;
+  a.href = URL.createObjectURL(blob);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 100);
+  return blob;
+}
+
+function buildProcessBackup(
+  pipelineName: string,
+  state: SavedProcessStateWithUpdatedAt,
+  date: Date,
+) {
+  return {
+    version: 1,
+    pipelineName,
+    exportedAt: date.toISOString(),
+    state: {
+      steps: state.steps,
+      connections: state.connections,
+      autoLinks: state.autoLinks,
+      parkedSteps: state.parkedSteps,
+      activeLanes: state.activeLanes,
+      customLanes: state.customLanes,
+      flowLinks: state.flowLinks,
+      attachments: state.attachments ?? [],
+      artifacts: state.artifacts ?? [],
+    },
+  };
+}
+
+function safeFilePart(value: string): string {
+  return value
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+function toDateStamp(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import Procesviewer from "@/pages/Procesviewer";
@@ -39,7 +39,9 @@ const fixtures = vi.hoisted(() => ({
     parkedSteps: [],
     activeLanes: ["sales"],
     customLanes: [],
-    flowLinks: {},
+    flowLinks: {
+      "flow-1": { kind: "step", stepId: "s1", order: 0 },
+    },
     attachments: [
       {
         id: "att-1",
@@ -72,15 +74,25 @@ const fixtures = vi.hoisted(() => ({
   },
 }));
 
+const savedStates = vi.hoisted(() => ({
+  "pipe-debiteuren": {
+    ...fixtures.savedState,
+    updatedAt: "2026-06-09T00:00:00.000Z",
+  },
+  "pipe-btw": {
+    ...fixtures.emptySavedState,
+    updatedAt: "2026-06-09T00:00:00.000Z",
+  },
+}));
+
 vi.mock("@/lib/hooks", () => ({
   usePipelines: () => ({ data: [fixtures.pipeline, fixtures.btwPipeline] }),
   useAutomatiseringen: () => ({ data: [] }),
+  useFlows: () => ({ data: [{ id: "flow-1", naam: "Debiteuren procesreis", automationIds: [] }] }),
+  useAllProcessStates: () => ({ data: savedStates, isLoading: false }),
+  useAutomationSentryIssueOverview: () => ({ data: undefined, isLoading: false, error: null }),
   useProcessState: (pipelineId: string | null) => ({
-    data: pipelineId === "pipe-btw"
-      ? fixtures.emptySavedState
-      : pipelineId
-        ? fixtures.savedState
-        : null,
+    data: pipelineId ? savedStates[pipelineId as keyof typeof savedStates] ?? null : null,
   }),
 }));
 
@@ -95,16 +107,23 @@ vi.mock("@/components/procesviewer/ProcessviewerCanvas", () => ({
 vi.mock("@/components/process/ProcessCanvas", () => ({
   ProcessCanvas: ({
     steps = [],
+    flows = [],
+    flowLinks = {},
     attachments = [],
     artifacts = [],
   }: {
     steps?: Array<{ id: string; label: string }>;
+    flows?: Array<{ id: string; naam: string }>;
+    flowLinks?: Record<string, unknown>;
     attachments?: Array<{ id: string; label: string }>;
     artifacts?: Array<{ id: string; title: string; stepIds?: string[] }>;
   }) => (
     <div data-testid="shared-process-canvas" style={{ width: 800, height: 400 }}>
       {steps.map((step) => (
         <span key={step.id}>{step.label}</span>
+      ))}
+      {flows.map((flow) => (
+        <span key={flow.id}>{`${flow.naam}:${flowLinks[flow.id] ? "linked" : "unlinked"}`}</span>
       ))}
       {attachments.map((attachment) => (
         <span key={attachment.id}>{attachment.label}</span>
@@ -116,6 +135,11 @@ vi.mock("@/components/process/ProcessCanvas", () => ({
   ),
 }));
 
+async function openViewerForPipeline(name: RegExp) {
+  const row = await screen.findByRole("row", { name });
+  fireEvent.click(within(row).getByRole("button", { name: /open viewer/i }));
+}
+
 describe("Procesviewer canvas renderer", () => {
   it("uses the shared ProcessCanvas in view mode so view and edit render the same layout", async () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -126,8 +150,7 @@ describe("Procesviewer canvas renderer", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
+    await openViewerForPipeline(/Debiteurenbeheer/i);
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
     expect(screen.queryByTestId("legacy-processviewer-canvas")).not.toBeInTheDocument();
@@ -142,8 +165,7 @@ describe("Procesviewer canvas renderer", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
+    await openViewerForPipeline(/Debiteurenbeheer/i);
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
@@ -174,8 +196,7 @@ describe("Procesviewer canvas renderer", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
+    await openViewerForPipeline(/Debiteurenbeheer/i);
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
     expect(screen.getByText("Viewer uitleg")).toBeInTheDocument();
@@ -190,11 +211,25 @@ describe("Procesviewer canvas renderer", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
+    await openViewerForPipeline(/Debiteurenbeheer/i);
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
     expect(screen.getByText("Betalingsregeling:s2")).toBeInTheDocument();
+  });
+
+  it("passes saved process journey placements into the shared viewer canvas", async () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <Procesviewer />
+      </MemoryRouter>,
+    );
+
+    await openViewerForPipeline(/Debiteurenbeheer/i);
+
+    expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
+    expect(screen.getByText("Debiteuren procesreis:linked")).toBeInTheDocument();
   });
 
   it("falls back to pipeline stages when a saved process state is empty", async () => {
@@ -206,8 +241,7 @@ describe("Procesviewer canvas renderer", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /BTW Pipeline/i }));
+    await openViewerForPipeline(/BTW Pipeline/i);
 
     expect(await screen.findByTestId("shared-process-canvas")).toBeInTheDocument();
     expect(screen.getByText("Open")).toBeInTheDocument();
@@ -223,8 +257,7 @@ describe("Procesviewer canvas renderer", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: /Debiteurenbeheer/i }));
+    await openViewerForPipeline(/Debiteurenbeheer/i);
 
     const viewport = await screen.findByTestId("procesviewer-shared-viewport-inner");
     const before = viewport.style.transform;

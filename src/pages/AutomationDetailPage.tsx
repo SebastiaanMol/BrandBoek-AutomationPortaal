@@ -7,6 +7,7 @@ import { ZapierAutomationDetailTemplate } from "@/components/ZapierAutomationDet
 import { GitLabAutomationDetailTemplate } from "@/components/GitLabAutomationDetailTemplate";
 import { TypeformAutomationDetailTemplate } from "@/components/TypeformAutomationDetailTemplate";
 import { AutomationChainReactionCard } from "@/components/AutomationChainReactionCard";
+import { SentryIssuesCard } from "@/components/SentryIssuesCard";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   useAllConfirmedAutomationLinks,
+  useAutomationSentryIssues,
+  useAutomatiseringen,
   useAutomatiseringenIncludingLegacyGitlab,
   useFlowSuggesties,
   usePipelines,
@@ -43,11 +46,13 @@ import { getNavigationReturnHref } from "@/lib/navigationMemory";
 export default function AutomationDetailPage(): React.ReactNode {
   const { id } = useParams<{ id: string }>();
   const { data: automations = [], isLoading } = useAutomatiseringenIncludingLegacyGitlab();
+  const { data: sentryMatchAutomations = [] } = useAutomatiseringen();
   const { data: pipelines = [] } = usePipelines();
   const { data: confirmedLinks = [] } = useAllConfirmedAutomationLinks();
   const { data: flowSuggesties = [] } = useFlowSuggesties();
   const cleanupMarker = useSetCleanupDeleteCandidate();
   const automation = automations.find((item) => item.id === id);
+  const sentryIssuesQuery = useAutomationSentryIssues(automation ?? null, sentryMatchAutomations);
 
   useLayoutEffect(() => {
     const scrollingElement = document.scrollingElement ?? document.documentElement;
@@ -78,6 +83,7 @@ export default function AutomationDetailPage(): React.ReactNode {
   const isTypeformAutomation = isTypeformAutomationRecord(automation);
   const sourceUrl = getHubSpotWorkflowSourceUrl(automation);
   const sourceQuality = getAutomationSourceQualityPresentation(automation);
+  const sentryIssueMatches = sentryIssuesQuery.data?.matches.byAutomationId[automation.id] ?? [];
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 overflow-x-hidden px-6 py-8 lg:px-10">
@@ -138,6 +144,13 @@ export default function AutomationDetailPage(): React.ReactNode {
       )}
 
       <SourceQualityCard presentation={sourceQuality} />
+
+      <SentryIssuesCard
+        isLoading={sentryIssuesQuery.isLoading}
+        error={sentryIssuesQuery.error instanceof Error ? sentryIssuesQuery.error : null}
+        matches={sentryIssueMatches}
+        limited={Boolean(sentryIssuesQuery.data?.limited)}
+      />
 
       {isHubSpotAutomation ? (
         <HubSpotAutomationDetailTemplate automation={automation} />

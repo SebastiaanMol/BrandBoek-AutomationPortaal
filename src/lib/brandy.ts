@@ -3,6 +3,13 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Automatisering } from "@/lib/types";
 import { berekenComplexiteit } from "@/lib/types";
 import type { Signaal } from "@/lib/signalen";
+import { buildHubSpotDiagnosisBrandyResponse, parseHubSpotDiagnosisQuestion } from "@/lib/brandyHubspotDiagnosis";
+import { buildHubSpotOwnerBrandyResponse, parseHubSpotOwnerLookupQuestion } from "@/lib/brandyHubspotTools";
+import { buildStageTransitionBrandyResponse, parseStageTransitionQuestion } from "@/lib/brandyStageTransitions";
+import { buildSentryErrorBrandyResponse, parseSentryErrorQuestion, resolveSentryAutomation } from "@/lib/brandySentryTools";
+import { fetchHubSpotDiagnosis } from "@/lib/storage/hubspotDiagnosis";
+import { fetchHubSpotOwner } from "@/lib/storage/hubspotOwnerLookup";
+import { fetchSentryIssues } from "@/lib/storage/sentryIssues";
 
 // ── Brandy chat types ────────────────────────────────────────────────────────
 
@@ -56,6 +63,39 @@ export async function askBrandy(
   automations: Automatisering[],
   context?: BrandyContext
 ): Promise<BrandyResponse> {
+  const stageTransition = parseStageTransitionQuestion(vraag);
+  const stageTransitionResponse = buildStageTransitionBrandyResponse(stageTransition);
+  if (stageTransitionResponse) return stageTransitionResponse;
+
+  const hubSpotDiagnosisRequest = parseHubSpotDiagnosisQuestion(vraag);
+  if (hubSpotDiagnosisRequest) {
+    const diagnosisResult = await fetchHubSpotDiagnosis(hubSpotDiagnosisRequest);
+    return buildHubSpotDiagnosisBrandyResponse(diagnosisResult);
+  }
+
+  const hubSpotOwnerId = parseHubSpotOwnerLookupQuestion(vraag);
+  if (hubSpotOwnerId) {
+    const ownerResult = await fetchHubSpotOwner(hubSpotOwnerId);
+    return buildHubSpotOwnerBrandyResponse(ownerResult);
+  }
+
+  const sentryErrorQuestion = parseSentryErrorQuestion(vraag);
+  if (sentryErrorQuestion) {
+    const automation = resolveSentryAutomation(vraag, automations, context);
+    if (!automation) {
+      return {
+        antwoord: "Ik kan de laatste Sentry fout pas ophalen als ik weet om welke automation het gaat. Open Brandy vanuit de automation of noem de automationnaam.",
+        bronnen: ["Automation catalog"],
+        entiteiten: [],
+        zekerheid: "laag",
+        diagnose_modus: true,
+      };
+    }
+
+    const sentryResult = await fetchSentryIssues({ mode: "detail", automationId: automation.id });
+    return buildSentryErrorBrandyResponse(automation, sentryResult, automations);
+  }
+
   const { data, error } = await supabase.functions.invoke("brandy-ask", {
     body: { vraag, context, automations },
   });

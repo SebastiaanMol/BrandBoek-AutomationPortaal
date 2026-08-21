@@ -12,16 +12,19 @@ import type {
   ProcessAttachment,
   ProcessAttachmentTarget,
   ProcessAttachmentType,
+  ProcessPlacementLink,
+  ProcessAction,
+  ProcessActionType,
 } from "@/data/processData";
+import type { Flow } from "@/lib/types";
 import {
-  buildLaneKeys,
-  filterValidActiveLanes,
   getLaneConfig,
   isPipelineStep,
+  resolveActiveLanes,
   TEAM_ORDER,
 } from "@/data/processData";
+import { isConnectionPlacement, normalizePlacementLink } from "@/lib/processFlowLinks";
 
-const LINK_ICON_PATH = "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -29,11 +32,16 @@ const ROW_H        = 88;    // height of one row within a swimlane  (110 × 0.80
 const LANE_HDR_W   = 106;   // (132 × 0.80)
 const STEP_W       = 122;   // (152 × 0.80)
 const STEP_H       = 42;    // (52 × 0.80)
+const STEP_LABEL_MAX_LINES = 3;
+const STEP_LABEL_LINE_H = 9;
 const DECISION_H   = 29;    // half-diagonal of decision diamond
 const BASE_COL_W   = 198;   // (248 × 0.80)
 const EVT_COL_W    = BASE_COL_W; // same width as task cols — prevents narrow snap zone causing drift to wrong column
 const DOT_R        = 11;    // (14 × 0.80)
 const DOT_SPACING  = 29;    // (36 × 0.80)
+const STEP_DOT_R   = 13;
+const STEP_DOT_SPACING = 28;
+const STEP_DOT_VISIBLE_MAX = 3;
 const EDGE_PAD     = 19;    // (24 × 0.80)
 const ARROW_MARGIN = 13;    // (16 × 0.80)
 const EVT_R        = 18;    // (22 × 0.80)
@@ -41,9 +49,30 @@ const ROUTE_MAIN   = "#1d4ed8";
 const ROUTE_HOVER  = "#2563eb";
 const ROUTE_OPTIONAL = "#ea580c";
 const ROUTE_END    = "#dc2626";
+const ROUTE_VIEWER_SELECTED = "#0891b2";
+const ROUTE_VIEWER_HALO = "#67e8f9";
 const PHASE_BAR_BG = "#0759d6";
+const PLACEMENT_DOT_R = 13;
+const ROUTE_DROP_TOLERANCE = 7;
+const AUTOMATION_DOT_FILL = "#fed7aa";
+const AUTOMATION_DOT_STROKE = "#fb923c";
+const AUTOMATION_DOT_ICON = "#9a3412";
+const FLOW_DOT_FILL = "#2563eb";
+const FLOW_DOT_STROKE = "#1d4ed8";
+const FLOW_DOT_ICON = "#ffffff";
+const PLACEMENT_ALERT_FILL = "#fecaca";
+const PLACEMENT_ALERT_STROKE = "#dc2626";
+const PLACEMENT_ALERT_ICON = "#7f1d1d";
+const PROCESS_ACTION_DOT_FILL = "#e5e7eb";
+const PROCESS_ACTION_DOT_STROKE = "#94a3b8";
+const PROCESS_ACTION_DOT_ICON = "#334155";
 const GRID_SIZE    = 28;
 const CANVAS_LEGEND_H = 44;
+const PIPELINE_HUB_W = 332;
+const PIPELINE_HUB_H = 82;
+const PIPELINE_HUB_GAP = 14;
+const PIPELINE_HUB_TOP_PAD = 14;
+const PIPELINE_HUB_BOTTOM_PAD = 16;
 const PORT_DROP_RADIUS = GRID_SIZE / 2;
 const MICRO_BEND_TOLERANCE = GRID_SIZE / 2;
 const ATTACHMENT_W = 86;
@@ -80,12 +109,17 @@ const VIEWER_LANE_COLORS: Record<string, string> = {
 // ── Helper types ──────────────────────────────────────────────────────────────
 
 interface Pt { x: number; y: number }
-interface ArrowData { path: string; preDotPath: string; postDotPath: string; postDotMid: Pt; postDotMidVertical: boolean; dotCenter: Pt; isVertical: boolean }
+interface ArrowData { path: string; points: Pt[]; preDotPath: string; postDotPath: string; postDotMid: Pt; postDotMidVertical: boolean; dotCenter: Pt; isVertical: boolean; length: number }
 interface BendInsertionTarget { point: Pt; insertIndex: number }
 
 function isEvent(step: ProcessStep) {
   return step.type === "start" || step.type === "end"
     || step.type === "timer" || step.type === "terminate" || step.type === "send" || step.type === "receive";
+}
+
+function isEventType(type?: ProcessStep["type"] | "") {
+  return type === "start" || type === "end"
+    || type === "timer" || type === "terminate" || type === "send" || type === "receive";
 }
 
 function isDecision(step: ProcessStep) {
@@ -190,6 +224,63 @@ function sideLabel(side: ConnectionSide): string {
 function portAriaLabel(label: string, side: ConnectionSide): string {
   const suffix = sideLabel(side);
   return suffix ? `Verbindingspoort ${label} ${suffix}` : `Verbindingspoort ${label}`;
+}
+
+function wrapStepLabel(label: string): { lines: string[]; fontSize: number } {
+  const normalized = label.replace(/\s+/g, " ").trim();
+  if (!normalized) return { lines: [""], fontSize: 9 };
+  if (normalized.length <= 18) return { lines: [normalized], fontSize: 9 };
+
+  const charsPerLine = normalized.length > 54 ? 24 : 21;
+  const lines: string[] = [];
+  const words = normalized.split(" ");
+  let current = "";
+
+  for (const word of words) {
+    if (word.length > charsPerLine) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      let rest = word;
+      while (rest.length > charsPerLine && lines.length < STEP_LABEL_MAX_LINES) {
+        lines.push(rest.slice(0, charsPerLine));
+        rest = rest.slice(charsPerLine);
+      }
+      current = rest;
+      continue;
+    }
+
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= charsPerLine) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+
+    if (lines.length >= STEP_LABEL_MAX_LINES) break;
+  }
+
+  if (current && lines.length < STEP_LABEL_MAX_LINES) {
+    lines.push(current);
+  }
+
+  const fullText = lines.join(" ");
+  if (fullText.length < normalized.length && lines.length > 0) {
+    const lastIndex = lines.length - 1;
+    lines[lastIndex] = ellipsize(lines[lastIndex], charsPerLine);
+  }
+
+  return {
+    lines: lines.length ? lines : [ellipsize(normalized, charsPerLine)],
+    fontSize: normalized.length > 54 ? 7.5 : 8,
+  };
+}
+
+function ellipsize(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(1, maxLength - 3)).trimEnd()}...`;
 }
 
 function connectionPoint(
@@ -477,6 +568,80 @@ function routeLength(points: Pt[]): number {
   }, 0);
 }
 
+function distanceToRoute(points: Pt[], point: Pt): number {
+  if (points.length === 0) return Number.POSITIVE_INFINITY;
+  if (points.length === 1) return Math.hypot(point.x - points[0].x, point.y - points[0].y);
+
+  return points.slice(1).reduce((best, segmentEnd, index) => {
+    const segmentStart = points[index];
+    const dx = segmentEnd.x - segmentStart.x;
+    const dy = segmentEnd.y - segmentStart.y;
+    const lengthSq = dx * dx + dy * dy;
+    if (lengthSq <= 0) return best;
+
+    const t = Math.max(0, Math.min(1, ((point.x - segmentStart.x) * dx + (point.y - segmentStart.y) * dy) / lengthSq));
+    const projected = {
+      x: segmentStart.x + t * dx,
+      y: segmentStart.y + t * dy,
+    };
+    return Math.min(best, Math.hypot(point.x - projected.x, point.y - projected.y));
+  }, Number.POSITIVE_INFINITY);
+}
+
+function routeDistanceAtPoint(points: Pt[], point: Pt): number {
+  if (points.length === 0) return Number.POSITIVE_INFINITY;
+  if (points.length === 1) return 0;
+
+  let cursor = 0;
+  let best = { distanceToSegment: Number.POSITIVE_INFINITY, routeDistance: 0 };
+  for (let index = 1; index < points.length; index++) {
+    const segmentStart = points[index - 1];
+    const segmentEnd = points[index];
+    const dx = segmentEnd.x - segmentStart.x;
+    const dy = segmentEnd.y - segmentStart.y;
+    const length = Math.abs(dx) + Math.abs(dy);
+    const lengthSq = dx * dx + dy * dy;
+    if (lengthSq <= 0) continue;
+
+    const t = Math.max(0, Math.min(1, ((point.x - segmentStart.x) * dx + (point.y - segmentStart.y) * dy) / lengthSq));
+    const projected = {
+      x: segmentStart.x + t * dx,
+      y: segmentStart.y + t * dy,
+    };
+    const distanceToSegment = Math.hypot(point.x - projected.x, point.y - projected.y);
+    if (distanceToSegment < best.distanceToSegment) {
+      best = {
+        distanceToSegment,
+        routeDistance: cursor + length * t,
+      };
+    }
+    cursor += length;
+  }
+  return best.routeDistance;
+}
+
+function insertionOrderFromRouteDrop(points: Pt[], point: Pt, existingCount: number): number {
+  if (existingCount <= 0) return 0;
+  const total = routeLength(points);
+  if (total <= 0) return existingCount;
+  const distance = routeDistanceAtPoint(points, point);
+  if (!Number.isFinite(distance)) return existingCount;
+  return Math.max(0, Math.min(existingCount, Math.round((distance / total) * existingCount)));
+}
+
+function routePositionFromDrop(points: Pt[], point: Pt): number {
+  const total = routeLength(points);
+  if (total <= 0) return 0.5;
+  const distance = routeDistanceAtPoint(points, point);
+  if (!Number.isFinite(distance)) return 0.5;
+  return Math.max(0, Math.min(1, distance / total));
+}
+
+function pointForConnectionPlacement(arrow: ArrowData, placement: CanvasPlacement | undefined): Pt | null {
+  if (placement?.kind !== "connection" || typeof placement.position !== "number") return null;
+  return pointAtRouteDistance(arrow.points, arrow.length * Math.max(0, Math.min(1, placement.position)));
+}
+
 function pointAtRouteDistance(points: Pt[], distance: number): Pt {
   if (points.length === 0) return { x: 0, y: 0 };
   if (points.length === 1) return points[0];
@@ -540,12 +705,14 @@ function arrowDataFromPoints(points: Pt[]): ArrowData {
   const postDotPath = buildPathFromPoints(postDotPoints);
   return {
     path,
+    points,
     preDotPath,
     postDotPath,
     postDotMid: midpointOnPoints(postDotPoints),
     postDotMidVertical: false,
     dotCenter: mid,
     isVertical: points.every(point => point.x === points[0]?.x),
+    length: total,
   };
 }
 
@@ -811,6 +978,61 @@ function manualExceptionBlockHeight(artifact: ProcessArtifact, containedSteps: P
   return Math.max(configuredHeight, layout.contentHeight);
 }
 
+function automaticSyncTextLayout(
+  artifact: ProcessArtifact,
+  linkedAutomations: Automation[] = [],
+  linkedFlows: Flow[] = [],
+) {
+  const width = artifact.size?.width ?? 280;
+  const textWidth = width - MANUAL_EXCEPTION_TEXT_PAD_X * 2;
+  const description = artifact.description ?? "Beschrijf wat deze automatische sync controleert en uitvoert.";
+  const titleHeight = estimatedWrappedLineCount(artifact.title, textWidth, 6.1) * MANUAL_EXCEPTION_TITLE_LINE_H;
+  const descriptionHeight = estimatedWrappedLineCount(description, textWidth, 5.7) * MANUAL_EXCEPTION_DESCRIPTION_LINE_H;
+  const chipRows = Math.min(Math.max(linkedAutomations.length + linkedFlows.length, 1), 4);
+  const chipsTop = MANUAL_EXCEPTION_TITLE_TOP + titleHeight + MANUAL_EXCEPTION_DESCRIPTION_GAP + descriptionHeight + 12;
+  const contentHeight = chipsTop + chipRows * 24 + 14;
+
+  return {
+    width,
+    textWidth,
+    description,
+    titleHeight,
+    descriptionHeight,
+    descriptionTop: MANUAL_EXCEPTION_TITLE_TOP + titleHeight + MANUAL_EXCEPTION_DESCRIPTION_GAP,
+    chipsTop,
+    contentHeight,
+  };
+}
+
+function automaticSyncBlockHeight(
+  artifact: ProcessArtifact,
+  linkedAutomations: Automation[] = [],
+  linkedFlows: Flow[] = [],
+): number {
+  const configuredHeight = artifact.size?.height ?? 132;
+  const layout = automaticSyncTextLayout(artifact, linkedAutomations, linkedFlows);
+  return Math.max(configuredHeight, layout.contentHeight);
+}
+
+function artifactCanvasHeight(
+  artifact: ProcessArtifact,
+  stepsById: Map<string, ProcessStep>,
+  automationById: Map<string, Automation>,
+  linkedFlows: Flow[] = [],
+): number {
+  if (artifact.type === "manualExceptionBlock") {
+    const containedSteps = (artifact.stepIds ?? [])
+      .map(stepId => stepsById.get(stepId))
+      .filter(Boolean) as ProcessStep[];
+    return manualExceptionBlockHeight(artifact, containedSteps);
+  }
+
+  const linkedAutomations = (artifact.automationIds ?? [])
+    .map(automationId => automationById.get(automationId))
+    .filter(Boolean) as Automation[];
+  return automaticSyncBlockHeight(artifact, linkedAutomations, linkedFlows);
+}
+
 function attachmentDefaultOffset(attachment: ProcessAttachment): Pt {
   return attachment.attachedTo.kind === "step"
     ? STEP_ATTACHMENT_DEFAULT_OFFSET
@@ -888,6 +1110,80 @@ function dotPositions(center: Pt, n: number): Pt[] {
   }));
 }
 
+function stepDotPositions(cx: number, bottomY: number, n: number): Pt[] {
+  const safeOffsets = [-48, -24, 24, 48];
+  if (n <= safeOffsets.length) {
+    const start = Math.max(0, Math.floor((safeOffsets.length - n) / 2));
+    return safeOffsets.slice(start, start + n).map(offset => ({
+      x: cx + offset,
+      y: bottomY,
+    }));
+  }
+  return Array.from({ length: n }, (_, i) => ({
+    x: cx - ((n - 1) * STEP_DOT_SPACING) / 2 + i * STEP_DOT_SPACING,
+    y: bottomY,
+  })).filter(point => Math.abs(point.x - cx) > STEP_DOT_R + 4);
+}
+
+function isAutomationActive(auto: Pick<Automation, "status"> | undefined): boolean {
+  const status = auto?.status?.trim().toLowerCase();
+  return status === "actief" || status === "active" || status === "enabled";
+}
+
+function flowHasInactiveAutomation(
+  flow: import("@/lib/types").Flow | undefined,
+  automations: Automation[],
+): boolean {
+  if (!flow?.automationIds?.length) return false;
+  const byId = new Map(automations.map(automation => [automation.id, automation]));
+  return flow.automationIds.some(id => {
+    const automation = byId.get(id);
+    return automation ? !isAutomationActive(automation) : false;
+  });
+}
+
+function automationPlacement(auto: Automation, fallbackOrder = 0) {
+  if (auto.placement) return { ...auto.placement, order: auto.placement.order ?? fallbackOrder };
+  if (auto.fromStepId && auto.toStepId) {
+    return {
+      kind: "connection" as const,
+      fromStepId: auto.fromStepId,
+      toStepId: auto.toStepId,
+      order: fallbackOrder,
+    };
+  }
+  return null;
+}
+
+function processActionPlacement(action: ProcessAction, fallbackOrder = 0) {
+  if (!action.placement) return null;
+  return { ...action.placement, order: action.placement.order ?? fallbackOrder };
+}
+
+function pipelineWidePlacement(auto: Automation, fallbackOrder = 0) {
+  const placement = automationPlacement(auto, fallbackOrder);
+  return placement?.kind === "pipeline_wide" ? placement : null;
+}
+
+function placementOrder(value: { order?: number } | null | undefined, fallback: number): number {
+  return typeof value?.order === "number" ? value.order : fallback;
+}
+
+function compactHubText(value: string | undefined, fallback: string, max = 58): string {
+  const text = value?.replace(/\s+/g, " ").trim() || fallback;
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function pipelineWideAutomationSummary(auto: Automation, fallbackOrder = 0) {
+  const placement = pipelineWidePlacement(auto, fallbackOrder);
+  return {
+    timing: compactHubText(placement?.syncTiming ?? auto.syncTiming, "Timing onbekend", 34),
+    checks: compactHubText(placement?.checksSummary ?? auto.checksSummary ?? auto.goal, "Controleert pipeline en brondata"),
+    action: compactHubText(placement?.actionSummary ?? auto.actionSummary, "Werkt stages en uitzonderingen bij"),
+    affectedStageCount: (placement?.affectedStageIds ?? auto.affectedStageIds ?? []).length,
+  };
+}
+
 function bendTarget(point: Pt, insertIndex: number): BendInsertionTarget {
   return { point: snapPointToRoutingGrid(point), insertIndex };
 }
@@ -926,9 +1222,8 @@ function buildBendInsertionTargets(waypoints: ConnectionWaypoint[], fallback: Pt
 function orderedStepConnectionsForRender(
   connections: Connection[],
   selectedConnectionId: string | null,
-  readOnly: boolean,
 ): Connection[] {
-  if (readOnly || !selectedConnectionId) return connections;
+  if (!selectedConnectionId) return connections;
   const selected = connections.find(connection => connection.id === selectedConnectionId);
   if (!selected) return connections;
   return [
@@ -943,6 +1238,21 @@ function routeVisibleStrokeWidth(selected: boolean): number {
 
 function routeFocusOutlineStrokeWidth(selected: boolean): number {
   return selected ? 7 : 0;
+}
+
+function routeFlowDotDuration(length: number): string {
+  const seconds = Math.min(6, Math.max(1.6, length / 260));
+  return `${Number(seconds.toFixed(1))}s`;
+}
+
+function RouteFlowDot({ path, length }: { path: string; length: number }) {
+  return (
+    <g data-route-flow-dot="true" style={{ pointerEvents: "none" }}>
+      <circle r="4.5" fill="#ecfeff" stroke={ROUTE_VIEWER_SELECTED} strokeWidth="1.5">
+        <animateMotion dur={routeFlowDotDuration(length)} repeatCount="indefinite" path={path} />
+      </circle>
+    </g>
+  );
 }
 
 function waypointOuterRadius(selected: boolean): number {
@@ -989,27 +1299,106 @@ function ConnectionPortHandles({
 
 // ── AutomationDot ─────────────────────────────────────────────────────────────
 
-function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
+function DragOverlay({ cx, cy, radius, onClick, onDragStart }: {
+  cx: number;
+  cy: number;
+  radius: number;
+  onClick: (e: React.MouseEvent) => void;
+  onDragStart: (e: React.DragEvent) => void;
+}) {
+  return (
+    <foreignObject x={cx - radius} y={cy - radius} width={radius * 2} height={radius * 2}>
+      <div
+        draggable
+        onClick={onClick}
+        onDragStart={onDragStart}
+        style={{
+          borderRadius: "9999px",
+          cursor: "grab",
+          height: "100%",
+          opacity: 0,
+          width: "100%",
+        }}
+      />
+    </foreignObject>
+  );
+}
+
+function ProcessActionIcon({ type, size = 9, color = "currentColor" }: {
+  type: ProcessActionType;
+  size?: number;
+  color?: string;
+}) {
+  if (type === "email" || type === "message") {
+    return (
+      <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 7l9 6 9-6" />
+      </svg>
+    );
+  }
+  if (type === "task") {
+    return (
+      <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 11l2 2 4-5" />
+        <rect x="4" y="4" width="16" height="16" rx="3" />
+      </svg>
+    );
+  }
+  if (type === "webhook") {
+    return (
+      <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8 7h8" />
+        <path d="M8 17h8" />
+        <path d="M7 7a3 3 0 100 6h10a3 3 0 100-6" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function AutomationDot({ auto, cx, cy, ariaLabel, alert = false, onClick, onPortMouseDown }: {
   auto: Automation; cx: number; cy: number;
+  ariaLabel?: string;
+  alert?: boolean;
   onClick: (e: React.MouseEvent) => void;
   onPortMouseDown?: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
   const label = auto.name;
   const estW = Math.max(64, label.length * 6 + 16);
+  const radius = PLACEMENT_DOT_R;
+  const dragEnabled = !!onPortMouseDown;
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!dragEnabled) return;
+    e.dataTransfer.setData("automationId", auto.id);
+    e.dataTransfer.effectAllowed = "move";
+  };
   return (
     <g onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      role={ariaLabel ? "button" : undefined}
+      aria-label={ariaLabel}
+      draggable={dragEnabled || undefined}
+      onDragStart={handleDragStart}
       className="cursor-pointer"
       style={{ filter: hov ? "drop-shadow(0 2px 4px rgba(0,0,0,.2))" : undefined }}>
-      <circle cx={cx} cy={cy} r={DOT_R + 2} fill="white" onClick={onClick} />
-      <circle cx={cx} cy={cy} r={DOT_R} fill="hsl(45 95% 55%)" stroke="hsl(35 80% 40%)" strokeWidth="1.5" onClick={onClick} />
+      <circle cx={cx} cy={cy} r={radius + 2} fill="white" onClick={onClick}
+        draggable={dragEnabled || undefined} onDragStart={handleDragStart} />
+      <circle cx={cx} cy={cy} r={radius} fill={alert ? PLACEMENT_ALERT_FILL : AUTOMATION_DOT_FILL} stroke={alert ? PLACEMENT_ALERT_STROKE : AUTOMATION_DOT_STROKE} strokeWidth="1.5" onClick={onClick}
+        draggable={dragEnabled || undefined} onDragStart={handleDragStart} />
       <foreignObject x={cx - 6} y={cy - 6} width={12} height={12} style={{ pointerEvents: "none" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 12, height: 12 }}>
-          <svg viewBox="0 0 24 24" width={8} height={8} fill="hsl(35 80% 30%)" stroke="none">
+          <svg viewBox="0 0 24 24" width={8} height={8} fill={alert ? PLACEMENT_ALERT_ICON : AUTOMATION_DOT_ICON} stroke="none">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
         </div>
       </foreignObject>
+      {dragEnabled && <DragOverlay cx={cx} cy={cy} radius={radius + 2} onClick={onClick} onDragStart={handleDragStart} />}
       {/* Tooltip — name of automation, always horizontal, appears on hover */}
       {hov && (
         <g style={{ pointerEvents: "none" }}>
@@ -1024,8 +1413,8 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
       )}
       {/* Port handle — appears on hover for drawing branch connections */}
       {hov && (
-        <circle cx={cx + DOT_R} cy={cy} r={5}
-          fill="hsl(35 80% 40%)" stroke="white" strokeWidth="1.5"
+        <circle cx={cx + radius} cy={cy} r={5}
+          fill={AUTOMATION_DOT_STROKE} stroke="white" strokeWidth="1.5"
           style={{ cursor: "crosshair" }}
           onMouseDown={e => { e.stopPropagation(); onPortMouseDown?.(e); }} />
       )}
@@ -1033,27 +1422,40 @@ function AutomationDot({ auto, cx, cy, onClick, onPortMouseDown }: {
   );
 }
 
-function FlowDot({ flowId, flowName, cx, cy, onClick }: {
+function FlowDot({ flowId, flowName, cx, cy, ariaLabel, alert = false, onClick }: {
   flowId: string; flowName: string; cx: number; cy: number;
+  ariaLabel?: string;
+  alert?: boolean;
   onClick: (e: React.MouseEvent) => void;
 }) {
   const [hov, setHov] = useState(false);
   const label = flowName;
   const estW = Math.max(72, label.length * 6 + 16);
-  const FLOW_R = 13;
+  const FLOW_R = PLACEMENT_DOT_R;
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData("flowId", flowId);
+    e.dataTransfer.effectAllowed = "move";
+  };
   return (
     <g onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+       role={ariaLabel ? "button" : undefined}
+       aria-label={ariaLabel}
+       draggable
+       onDragStart={handleDragStart}
        className="cursor-pointer"
-       style={{ filter: hov ? "drop-shadow(0 2px 4px rgba(99,102,241,.4))" : undefined }}>
-      <circle cx={cx} cy={cy} r={FLOW_R + 2} fill="white" onClick={onClick} />
-      <circle cx={cx} cy={cy} r={FLOW_R} fill="#6366F1" stroke="#4338CA" strokeWidth="1.5" onClick={onClick} />
+       style={{ filter: hov ? "drop-shadow(0 2px 4px rgba(0,0,0,.2))" : undefined }}>
+      <circle cx={cx} cy={cy} r={FLOW_R + 2} fill="white" onClick={onClick}
+        draggable onDragStart={handleDragStart} />
+      <circle cx={cx} cy={cy} r={FLOW_R} fill={alert ? PLACEMENT_ALERT_FILL : FLOW_DOT_FILL} stroke={alert ? PLACEMENT_ALERT_STROKE : FLOW_DOT_STROKE} strokeWidth="1.5" onClick={onClick}
+        draggable onDragStart={handleDragStart} />
       <foreignObject x={cx - 6} y={cy - 6} width={12} height={12} style={{ pointerEvents: "none" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
-          <svg viewBox="0 0 24 24" width={9} height={9} fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
-            <path d={LINK_ICON_PATH} />
+          <svg viewBox="0 0 24 24" width={8} height={8} fill={alert ? PLACEMENT_ALERT_ICON : FLOW_DOT_ICON} stroke="none">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
         </div>
       </foreignObject>
+      <DragOverlay cx={cx} cy={cy} radius={FLOW_R + 2} onClick={onClick} onDragStart={handleDragStart} />
       {hov && (
         <g style={{ pointerEvents: "none" }}>
           <rect x={cx - estW / 2} y={cy - FLOW_R - 20} width={estW} height={14}
@@ -1068,6 +1470,212 @@ function FlowDot({ flowId, flowName, cx, cy, onClick }: {
 }
 
 // ── EventCircle ───────────────────────────────────────────────────────────────
+
+function ProcessActionDot({ action, cx, cy, ariaLabel, onClick }: {
+  action: ProcessAction; cx: number; cy: number;
+  ariaLabel?: string;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const label = action.label;
+  const estW = Math.max(72, label.length * 6 + 16);
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData("processActionId", action.id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  return (
+    <g onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+       role={ariaLabel ? "button" : undefined}
+       aria-label={ariaLabel}
+       draggable
+       onDragStart={handleDragStart}
+       className="cursor-pointer"
+       style={{ filter: hov ? "drop-shadow(0 2px 4px rgba(0,0,0,.2))" : undefined }}>
+      <circle cx={cx} cy={cy} r={PLACEMENT_DOT_R + 2} fill="white" onClick={onClick}
+        draggable onDragStart={handleDragStart} />
+      <circle cx={cx} cy={cy} r={PLACEMENT_DOT_R} fill={PROCESS_ACTION_DOT_FILL} stroke={PROCESS_ACTION_DOT_STROKE} strokeWidth="1.5" onClick={onClick}
+        draggable onDragStart={handleDragStart} />
+      <foreignObject x={cx - 8} y={cy - 8} width={16} height={16} style={{ pointerEvents: "none" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16 }}>
+          <ProcessActionIcon type={action.type} size={12} color={PROCESS_ACTION_DOT_ICON} />
+        </div>
+      </foreignObject>
+      <DragOverlay cx={cx} cy={cy} radius={PLACEMENT_DOT_R + 2} onClick={onClick} onDragStart={handleDragStart} />
+      {hov && (
+        <g style={{ pointerEvents: "none" }}>
+          <rect x={cx - estW / 2} y={cy - PLACEMENT_DOT_R - 20} width={estW} height={14}
+            rx="4" fill="#1e293b" fillOpacity={0.88} />
+          <text x={cx} y={cy - PLACEMENT_DOT_R - 13} textAnchor="middle" dominantBaseline="middle"
+            fontSize="8" fontWeight="500" fill="white"
+            style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+            {label.length > 24 ? `${label.slice(0, 23)}...` : label}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+function StepPlacementDot({ id, label, ariaLabel, cx, cy, kind, actionType, alert = false, onClick }: {
+  id: string;
+  label: string;
+  ariaLabel: string;
+  cx: number;
+  cy: number;
+  kind: "automation" | "flow" | "action";
+  actionType?: ProcessActionType;
+  alert?: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const [hov, setHov] = useState(false);
+  const colors = alert
+    ? { fill: PLACEMENT_ALERT_FILL, stroke: PLACEMENT_ALERT_STROKE, icon: PLACEMENT_ALERT_ICON }
+    : kind === "automation"
+    ? { fill: AUTOMATION_DOT_FILL, stroke: AUTOMATION_DOT_STROKE, icon: AUTOMATION_DOT_ICON }
+    : kind === "flow"
+    ? { fill: FLOW_DOT_FILL, stroke: FLOW_DOT_STROKE, icon: FLOW_DOT_ICON }
+    : { fill: PROCESS_ACTION_DOT_FILL, stroke: PROCESS_ACTION_DOT_STROKE, icon: PROCESS_ACTION_DOT_ICON };
+  const estW = Math.max(64, label.length * 6 + 16);
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData(kind === "automation" ? "automationId" : kind === "flow" ? "flowId" : "processActionId", id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  return (
+    <g
+      role="button"
+      aria-label={ariaLabel}
+      draggable
+      onDragStart={handleDragStart}
+      className="cursor-pointer"
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{ filter: hov ? "drop-shadow(0 2px 4px rgba(0,0,0,.2))" : undefined }}
+    >
+      <circle cx={cx} cy={cy} r={STEP_DOT_R + 2} fill="white" onClick={onClick}
+        draggable onDragStart={handleDragStart} />
+      <circle cx={cx} cy={cy} r={STEP_DOT_R} fill={colors.fill} stroke={colors.stroke} strokeWidth="1.5" onClick={onClick}
+        draggable onDragStart={handleDragStart} />
+      <foreignObject x={cx - 8} y={cy - 8} width={16} height={16} style={{ pointerEvents: "none" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16 }}>
+          {kind === "action" && actionType
+            ? <ProcessActionIcon type={actionType} size={12} color={colors.icon} />
+            : (
+              <svg viewBox="0 0 24 24" width={8} height={8} fill={colors.icon} stroke="none">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+          )}
+        </div>
+      </foreignObject>
+      <DragOverlay cx={cx} cy={cy} radius={STEP_DOT_R + 2} onClick={onClick} onDragStart={handleDragStart} />
+      {hov && (
+        <g style={{ pointerEvents: "none" }}>
+          <rect x={cx - estW / 2} y={cy - STEP_DOT_R - 20} width={estW} height={14}
+            rx="4" fill="#1e293b" fillOpacity={0.88} />
+          <text x={cx} y={cy - STEP_DOT_R - 13} textAnchor="middle" dominantBaseline="middle"
+            fontSize="8" fontWeight="500" fill="white"
+            style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+function PipelineWideAutomationHub({ auto, x, y, index, onClick }: {
+  auto: Automation;
+  x: number;
+  y: number;
+  index: number;
+  onClick?: (event: React.MouseEvent) => void;
+}) {
+  const summary = pipelineWideAutomationSummary(auto, index);
+  const label = compactHubText(auto.name, "Pipeline sync", 36);
+  return (
+    <g
+      role="button"
+      tabIndex={0}
+      aria-label={`Pipeline-brede automation ${auto.name} openen`}
+      onClick={onClick}
+      onKeyDown={event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onClick?.(event as unknown as React.MouseEvent);
+      }}
+      style={{ cursor: "pointer" }}
+    >
+      <line
+        x1={x + PIPELINE_HUB_W / 2}
+        y1={y + PIPELINE_HUB_H}
+        x2={x + PIPELINE_HUB_W / 2}
+        y2={y + PIPELINE_HUB_H + 18}
+        stroke="#94a3b8"
+        strokeWidth={1.2}
+        strokeDasharray="4 5"
+        style={{ pointerEvents: "none" }}
+      />
+      <rect
+        x={x}
+        y={y}
+        width={PIPELINE_HUB_W}
+        height={PIPELINE_HUB_H}
+        rx={8}
+        fill="#f8fafc"
+        stroke="#94a3b8"
+        strokeWidth={1.2}
+        strokeDasharray="6 4"
+      />
+      <circle cx={x + 24} cy={y + 23} r={12} fill="#e0f2fe" stroke="#0284c7" strokeWidth={1.5} />
+      <path
+        d={`M ${x + 19} ${y + 23} h 10 m -4 -4 l 4 4 -4 4`}
+        fill="none"
+        stroke="#0369a1"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ pointerEvents: "none" }}
+      />
+      <text
+        x={x + 44}
+        y={y + 17}
+        fontSize={8.5}
+        fontWeight={800}
+        fill="#0369a1"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none", textTransform: "uppercase" }}
+      >
+        Pipeline-breed
+      </text>
+      <text
+        x={x + 44}
+        y={y + 32}
+        fontSize={12}
+        fontWeight={800}
+        fill="#0f172a"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}
+      >
+        {label}
+      </text>
+      <text x={x + PIPELINE_HUB_W - 14} y={y + 18} textAnchor="end" fontSize={10} fontWeight={800} fill="#475569"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
+        {summary.timing}
+      </text>
+      <text x={x + 14} y={y + 52} fontSize={10} fontWeight={700} fill="#334155"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
+        {summary.checks}
+      </text>
+      <text x={x + 14} y={y + 68} fontSize={10} fontWeight={700} fill="#475569"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
+        {summary.action}
+      </text>
+      {summary.affectedStageCount > 0 && (
+        <text x={x + PIPELINE_HUB_W - 14} y={y + 68} textAnchor="end" fontSize={10} fontWeight={800} fill="#0369a1"
+          style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
+          +{summary.affectedStageCount} geraakte stages
+        </text>
+      )}
+    </g>
+  );
+}
 
 function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMouseDown, onContextMenu }: {
   step: ProcessStep; cx: number; cy: number;
@@ -1118,50 +1726,65 @@ function EventCircle({ step, cx, cy, isDragging, isTarget, onMouseDown, onPortMo
 
 // ── StepBox ───────────────────────────────────────────────────────────────────
 
-function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, customLanes, viewerMode }: {
+function StepBox({ step, cx, cy, isDragging, isTarget, sourceMissing, onClick, onPortMouseDown, onStepMouseDown, onContextMenu, onPlacementDragOver, onPlacementDrop, customLanes, viewerMode }: {
   step: ProcessStep; cx: number; cy: number;
   isDragging?: boolean; isTarget?: boolean;
+  sourceMissing?: boolean;
   onClick?: () => void;
   onPortMouseDown?: (e: React.MouseEvent, side: ConnectionSide) => void;
   onStepMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  onPlacementDragOver?: (e: React.DragEvent<SVGGElement>) => void;
+  onPlacementDrop?: (e: React.DragEvent<SVGGElement>) => void;
   customLanes?: CustomLane[];
   viewerMode?: boolean;
 }) {
   const [hov, setHov] = useState(false);
   const cfg = getLaneConfig(step.team, customLanes);
   const x = cx - STEP_W / 2, y = cy - STEP_H / 2;
-  const label = step.label.length > 18 ? step.label.slice(0, 17) + "…" : step.label;
+  const labelLayout = wrapStepLabel(step.label);
+  const labelX = viewerMode ? cx : cx + 4;
 
   const isOptional = step.type === "optional";
-  const fill    = viewerMode ? (isOptional ? "#FFF7ED" : "#EFF6FF") : "white";
-  const stroke  = viewerMode ? (isOptional ? "#F97316" : "#3B82F6") : (hov ? cfg.stroke : "#cbd5e1");
+  const isPipeline = isPipelineStep(step);
+  const fill    = sourceMissing ? "#fef2f2" : isPipeline ? "#FFF1EE" : (viewerMode ? (isOptional ? "#FFF7ED" : "#EFF6FF") : "white");
+  const stroke  = sourceMissing ? "#dc2626" : isPipeline ? "#FF7A59" : (viewerMode ? (isOptional ? "#F97316" : "#3B82F6") : (hov ? cfg.stroke : "#cbd5e1"));
   const sw      = viewerMode ? 1.5 : (hov ? 2 : 1.5);
-  const dashArr = isOptional ? "6 3" : undefined;
-  const txtFill = viewerMode ? (isOptional ? "#C2410C" : "#1D4ED8") : "#1e293b";
+  const dashArr = sourceMissing ? "5 3" : isOptional ? "6 3" : undefined;
+  const txtFill = sourceMissing ? "#991b1b" : isPipeline ? "#C45200" : (viewerMode ? (isOptional ? "#C2410C" : "#1D4ED8") : "#1e293b");
 
   return (
     <g data-step-id={step.id}
       style={{ opacity: isDragging ? 0.3 : 1 }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onDragOver={onPlacementDragOver}
+      onDrop={onPlacementDrop}
       onContextMenu={onContextMenu}>
       {isTarget && (
         <rect x={x - 3} y={y - 3} width={STEP_W + 6} height={STEP_H + 6}
           rx="10" fill="none" stroke={viewerMode ? "#3B82F6" : cfg.stroke} strokeWidth="2" strokeDasharray="5 3" opacity="0.7" />
       )}
-      <rect x={x} y={y} width={STEP_W} height={STEP_H} rx="8" fill={fill}
+      <rect data-step-body="true" x={x} y={y} width={STEP_W} height={STEP_H} rx="8" fill={fill}
         stroke={stroke} strokeWidth={sw} strokeDasharray={dashArr}
         style={{ cursor: "pointer", filter: hov ? "drop-shadow(0 2px 6px rgba(0,0,0,.1))" : undefined }}
         onMouseDown={onStepMouseDown} onClick={onClick} />
-      {!viewerMode && <rect x={x} y={y} width={4} height={STEP_H} rx="2" fill={cfg.stroke} style={{ pointerEvents: "none" }} />}
-      <text x={viewerMode ? cx : cx + 4} y={cy} textAnchor="middle" dominantBaseline="middle"
-        fontSize="9" fontWeight="500" fill={txtFill}
+      {!viewerMode && <rect x={x} y={y} width={4} height={STEP_H} rx="2" fill={sourceMissing ? "#dc2626" : isPipeline ? "#FF7A59" : cfg.stroke} style={{ pointerEvents: "none" }} />}
+      <text x={labelX} y={cy} textAnchor="middle" dominantBaseline="middle"
+        fontSize={labelLayout.fontSize} fontWeight="500" fill={txtFill}
         style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
-        {label}
+        {labelLayout.lines.map((line, index) => (
+          <tspan
+            key={`${line}-${index}`}
+            x={labelX}
+            dy={index === 0 ? -((labelLayout.lines.length - 1) * STEP_LABEL_LINE_H) / 2 : STEP_LABEL_LINE_H}
+          >
+            {line}
+          </tspan>
+        ))}
       </text>
       <ConnectionPortHandles
         label={step.label}
-        fill={viewerMode ? "#3B82F6" : cfg.stroke}
+        fill={isPipeline ? "#FF7A59" : (viewerMode ? "#3B82F6" : cfg.stroke)}
         ports={{
           top: { x: cx, y },
           right: { x: x + STEP_W, y: cy },
@@ -1170,7 +1793,32 @@ function StepBox({ step, cx, cy, isDragging, isTarget, onClick, onPortMouseDown,
         }}
         onPortMouseDown={onPortMouseDown}
       />
-      {isPipelineStep(step) && (
+      {sourceMissing ? (
+        <g style={{ pointerEvents: "none" }}>
+          <rect
+            x={cx + STEP_W / 2 - 3 - 42}
+            y={cy - STEP_H / 2 + 3}
+            width={42}
+            height={9}
+            rx="2.5"
+            fill="#fee2e2"
+            stroke="#dc2626"
+            strokeWidth="0.5"
+          />
+          <text
+            x={cx + STEP_W / 2 - 3 - 21}
+            y={cy - STEP_H / 2 + 3 + 4.5}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize="6"
+            fontWeight="700"
+            fill="#991b1b"
+            style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}
+          >
+            Niet in bron
+          </text>
+        </g>
+      ) : isPipelineStep(step) && (
         <g style={{ pointerEvents: "none" }}>
           <rect
             x={cx + STEP_W / 2 - 3 - 30}
@@ -1628,6 +2276,7 @@ interface ProcessCanvasProps {
   steps: ProcessStep[];
   connections: Connection[];
   automations: Automation[];
+  processActions?: ProcessAction[];
   attachments?: ProcessAttachment[];
   artifacts?: ProcessArtifact[];
   activeLanes?: string[];    // visible lane keys; undefined = all (TEAM_ORDER)
@@ -1637,11 +2286,13 @@ interface ProcessCanvasProps {
   showLegend?: boolean;
   viewportScale?: number;
   disableInternalPan?: boolean;
+  sourceMissingStepIds?: string[];
   selectedRouteType?: ConnectionRouteType;
   onRenameLane?: (laneKey: string) => void;
   onStepClick?: (s: ProcessStep) => void;
   onAutomationClick?: (a: Automation) => void;
   onAttachmentClick?: (attachment: ProcessAttachment) => void;
+  onArtifactClick?: (artifact: ProcessArtifact) => void;
   onMoveAttachment?: (attachmentId: string, offset: { x: number; y: number }) => void;
   onUpdateAttachment?: (attachmentId: string, patch: Partial<Pick<ProcessAttachment, "label" | "description">>) => void;
   onDeleteAttachment?: (attachmentId: string) => void;
@@ -1669,7 +2320,12 @@ interface ProcessCanvasProps {
     target: { team: string; column: number; row: number },
   ) => void;
   onReorderManualArtifactStep?: (artifactId: string, stepId: string, targetIndex: number) => void;
-  onAttachAutomation?: (autoId: string, fromStepId: string, toStepId: string) => void;
+  onAttachAutomation?: (autoId: string, fromStepId: string, toStepId: string, order?: number, position?: number) => void;
+  onAttachAutomationToStep?: (autoId: string, stepId: string, order: number) => void;
+  onAttachAutomationToArtifact?: (autoId: string, artifactId: string) => void;
+  onAttachProcessAction?: (actionId: string, fromStepId: string, toStepId: string, order?: number, position?: number) => void;
+  onAttachProcessActionToStep?: (actionId: string, stepId: string, order: number) => void;
+  onProcessActionClick?: (action: ProcessAction) => void;
   onAddStep?: (team: string, column: number, row: number, type?: ProcessStep["type"]) => void;
   onAddBranch?: (automationId: string, toStepId: string) => void;
   onUpdateConnectionLabel?: (connId: string, label: string) => void;
@@ -1681,8 +2337,10 @@ interface ProcessCanvasProps {
   onInsertMoveStep?: (stepId: string, team: string, column: number, afterRow: number) => void;
   onInsertAddStep?: (team: string, afterRow: number, column: number, type?: ProcessStep["type"]) => void;
   flows?: import("@/lib/types").Flow[];
-  flowLinks?: Record<string, { fromStepId: string; toStepId: string }>;
-  onAttachFlow?: (flowId: string, fromStepId: string, toStepId: string) => void;
+  flowLinks?: Record<string, ProcessPlacementLink>;
+  onAttachFlow?: (flowId: string, fromStepId: string, toStepId: string, order?: number, position?: number) => void;
+  onAttachFlowToStep?: (flowId: string, stepId: string, order: number) => void;
+  onAttachFlowToPipelineWide?: (flowId: string) => void;
   onFlowClick?: (flowId: string) => void;
 }
 
@@ -1954,8 +2612,289 @@ function renderManualExceptionBlock(
   );
 }
 
+function renderAutomaticSyncBlock(
+  artifact: ProcessArtifact,
+  linkedAutomations: Automation[],
+  linkedFlows: Flow[],
+  readOnly: boolean,
+  editingField?: "title" | "description",
+  onStartEditing?: (field: "title" | "description") => void,
+  onStopEditing?: () => void,
+  onUpdateArtifact?: ProcessCanvasProps["onUpdateArtifact"],
+) {
+  const layout = automaticSyncTextLayout(artifact, linkedAutomations, linkedFlows);
+  const width = layout.width;
+  const height = automaticSyncBlockHeight(artifact, linkedAutomations, linkedFlows);
+  const x = artifact.position.x;
+  const y = artifact.position.y;
+  const visibleAutomations = linkedAutomations.slice(0, 3);
+  const remainingRows = Math.max(0, 4 - visibleAutomations.length);
+  const visibleFlows = linkedFlows.slice(0, remainingRows);
+  const hiddenCount = Math.max(0, linkedAutomations.length - visibleAutomations.length)
+    + Math.max(0, linkedFlows.length - visibleFlows.length);
+
+  return (
+    <>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={8}
+        fill="#eff6ff"
+        stroke="#2563eb"
+        strokeWidth={1.5}
+        strokeDasharray="7 4"
+      />
+      <circle cx={x + 20} cy={y + 22} r={9} fill="#dbeafe" stroke="#2563eb" strokeWidth={1.5} />
+      <path
+        d={`M ${x + 16} ${y + 22} H ${x + 24} M ${x + 21} ${y + 18} L ${x + 25} ${y + 22} L ${x + 21} ${y + 26}`}
+        fill="none"
+        stroke="#1d4ed8"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <text x={x + 38} y={y + 24} fontSize={11} fontWeight={800} fill="#1d4ed8"
+        style={{ fontFamily: "IBM Plex Sans, system-ui, sans-serif", pointerEvents: "none" }}>
+        Automatic sync
+      </text>
+      {editingField === "title" && onUpdateArtifact ? (
+        <foreignObject
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + MANUAL_EXCEPTION_TITLE_TOP - 3}
+          width={layout.textWidth}
+          height={Math.max(layout.titleHeight + 8, 28)}
+          style={{ overflow: "visible" }}
+        >
+          <input
+            aria-label="Automatic sync titel"
+            autoFocus
+            value={artifact.title}
+            onMouseDown={event => event.stopPropagation()}
+            onClick={event => event.stopPropagation()}
+            onDoubleClick={event => event.stopPropagation()}
+            onChange={event => onUpdateArtifact(artifact.id, { title: event.target.value })}
+            onBlur={() => onStopEditing?.()}
+            onKeyDown={event => {
+              if (event.key !== "Enter" && event.key !== "Escape") return;
+              event.preventDefault();
+              event.stopPropagation();
+              onStopEditing?.();
+            }}
+            style={{
+              background: "rgba(255,255,255,0.96)",
+              border: "1px solid #60a5fa",
+              borderRadius: 5,
+              color: "#111827",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 12,
+              fontWeight: 800,
+              height: "100%",
+              lineHeight: `${MANUAL_EXCEPTION_TITLE_LINE_H}px`,
+              outline: "none",
+              padding: "2px 6px",
+              width: "100%",
+            }}
+          />
+        </foreignObject>
+      ) : (
+        <foreignObject
+          aria-label="Automatic sync titel tekst"
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + MANUAL_EXCEPTION_TITLE_TOP}
+          width={layout.textWidth}
+          height={layout.titleHeight}
+          onMouseDown={!readOnly && onStartEditing ? event => event.stopPropagation() : undefined}
+          onDoubleClick={!readOnly && onStartEditing ? event => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStartEditing("title");
+          } : undefined}
+          style={{
+            cursor: !readOnly && onStartEditing ? "text" : undefined,
+            overflow: "visible",
+            pointerEvents: !readOnly && onStartEditing ? "auto" : "none",
+          }}
+        >
+          <div
+            style={{
+              color: "#0f172a",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 12,
+              fontWeight: 800,
+              lineHeight: `${MANUAL_EXCEPTION_TITLE_LINE_H}px`,
+              overflow: "visible",
+              overflowWrap: "anywhere",
+              wordBreak: "break-word",
+            }}
+          >
+            {artifact.title}
+          </div>
+        </foreignObject>
+      )}
+      {editingField === "description" && onUpdateArtifact ? (
+        <foreignObject
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + layout.descriptionTop - 3}
+          width={layout.textWidth}
+          height={Math.max(layout.descriptionHeight + 10, 42)}
+          style={{ overflow: "visible" }}
+        >
+          <textarea
+            aria-label="Automatic sync beschrijving"
+            autoFocus
+            value={artifact.description ?? ""}
+            onMouseDown={event => event.stopPropagation()}
+            onClick={event => event.stopPropagation()}
+            onDoubleClick={event => event.stopPropagation()}
+            onChange={event => onUpdateArtifact(artifact.id, { description: event.target.value })}
+            onBlur={() => onStopEditing?.()}
+            onKeyDown={event => {
+              if (event.key === "Escape" || (event.key === "Enter" && event.ctrlKey)) {
+                event.preventDefault();
+                event.stopPropagation();
+                onStopEditing?.();
+              }
+            }}
+            style={{
+              background: "rgba(255,255,255,0.96)",
+              border: "1px solid #60a5fa",
+              borderRadius: 5,
+              color: "#475569",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 11,
+              height: "100%",
+              lineHeight: `${MANUAL_EXCEPTION_DESCRIPTION_LINE_H}px`,
+              outline: "none",
+              padding: "4px 6px",
+              resize: "none",
+              width: "100%",
+            }}
+          />
+        </foreignObject>
+      ) : (
+        <foreignObject
+          aria-label="Automatic sync beschrijving tekst"
+          x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+          y={y + layout.descriptionTop}
+          width={layout.textWidth}
+          height={layout.descriptionHeight}
+          onMouseDown={!readOnly && onStartEditing ? event => event.stopPropagation() : undefined}
+          onDoubleClick={!readOnly && onStartEditing ? event => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStartEditing("description");
+          } : undefined}
+          style={{
+            cursor: !readOnly && onStartEditing ? "text" : undefined,
+            overflow: "visible",
+            pointerEvents: !readOnly && onStartEditing ? "auto" : "none",
+          }}
+        >
+          <div
+            style={{
+              color: "#475569",
+              fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+              fontSize: 11,
+              lineHeight: `${MANUAL_EXCEPTION_DESCRIPTION_LINE_H}px`,
+              overflow: "visible",
+              overflowWrap: "anywhere",
+              wordBreak: "break-word",
+            }}
+          >
+            {layout.description}
+          </div>
+        </foreignObject>
+      )}
+      <foreignObject
+        x={x + MANUAL_EXCEPTION_TEXT_PAD_X}
+        y={y + layout.chipsTop}
+        width={layout.textWidth}
+        height={Math.max(24, height - layout.chipsTop - 10)}
+        style={{ pointerEvents: "none", overflow: "visible" }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 5,
+            fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+          }}
+        >
+          {visibleAutomations.length > 0 || visibleFlows.length > 0 ? (
+            <>
+              {visibleAutomations.map(automation => (
+            <div
+              key={automation.id}
+              style={{
+                background: "rgba(255,255,255,0.86)",
+                border: "1px solid #bfdbfe",
+                borderRadius: 5,
+                color: "#1e3a8a",
+                fontSize: 10,
+                fontWeight: 700,
+                lineHeight: "18px",
+                overflow: "hidden",
+                padding: "0 7px",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {automation.name}
+            </div>
+              ))}
+              {visibleFlows.map(flow => (
+                <div
+                  key={flow.id}
+                  aria-label={`Procesreis ${flow.naam} op Automatic sync`}
+                  style={{
+                    background: "rgba(255,255,255,0.9)",
+                    border: "1px solid #93c5fd",
+                    borderRadius: 5,
+                    color: "#1d4ed8",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    lineHeight: "18px",
+                    overflow: "hidden",
+                    padding: "0 7px",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Procesreis: {flow.naam}
+                </div>
+              ))}
+            </>
+          ) : (
+            <div
+              style={{
+                border: "1px dashed #93c5fd",
+                borderRadius: 5,
+                color: "#2563eb",
+                fontSize: 10,
+                fontWeight: 700,
+                lineHeight: "20px",
+                padding: "0 7px",
+              }}
+            >
+              Geen automation of procesreis gekoppeld
+            </div>
+          )}
+          {hiddenCount > 0 && (
+            <div style={{ color: "#2563eb", fontSize: 10, fontWeight: 800 }}>
+              +{hiddenCount} gekoppelde items
+            </div>
+          )}
+        </div>
+      </foreignObject>
+    </>
+  );
+}
+
 export function ProcessCanvas({
   steps, connections, automations,
+  processActions = [],
   attachments = [],
   artifacts = [],
   activeLanes, customLanes,
@@ -1964,9 +2903,11 @@ export function ProcessCanvas({
   showLegend = true,
   viewportScale = 1,
   disableInternalPan = false,
+  sourceMissingStepIds = [],
   selectedRouteType = "main",
   onRenameLane,
   onStepClick, onAutomationClick, onAttachmentClick,
+  onArtifactClick,
   onMoveAttachment,
   onUpdateAttachment,
   onDeleteAttachment,
@@ -1979,29 +2920,56 @@ export function ProcessCanvas({
   onMoveStepToArtifact,
   onMoveManualStepToCanvas,
   onReorderManualArtifactStep,
-  onAttachAutomation, onAddStep, onAddBranch, onUpdateConnectionLabel,
+  onAttachAutomation, onAttachAutomationToStep, onAttachAutomationToArtifact,
+  onAttachProcessAction, onAttachProcessActionToStep, onProcessActionClick,
+  onAddStep, onAddBranch, onUpdateConnectionLabel,
   onUpdateConnectionWaypoints,
   onParkStep, onDeleteStep, onPlaceStagedStep, onInsertRowAfter,
   onInsertMoveStep, onInsertAddStep,
   flows = [] as import("@/lib/types").Flow[],
-  flowLinks = {} as Record<string, { fromStepId: string; toStepId: string }>,
+  flowLinks = {} as Record<string, ProcessPlacementLink>,
   onAttachFlow,
+  onAttachFlowToStep,
+  onAttachFlowToPipelineWide,
   onFlowClick,
 }: ProcessCanvasProps) {
   const viewerMode = displayStyle === "viewer";
   const svgRef = useRef<SVGSVGElement>(null);
+  const [openStepPlacementOverflow, setOpenStepPlacementOverflow] = useState<string | null>(null);
 
   // Visible lanes — preset order + any custom lanes appended
-  const allLaneKeys = useMemo(() => buildLaneKeys(customLanes), [customLanes]);
   const visibleTeams = useMemo(
-    () => activeLanes ? filterValidActiveLanes(activeLanes, customLanes) : allLaneKeys,
-    [activeLanes, allLaneKeys, customLanes],
+    () => resolveActiveLanes(activeLanes, customLanes),
+    [activeLanes, customLanes],
   );
 
   const stepsById = useMemo(
     () => new Map(steps.map(step => [step.id, step])),
     [steps],
   );
+  const automationById = useMemo(
+    () => new Map(automations.map(automation => [automation.id, automation])),
+    [automations],
+  );
+  const sourceMissingStepIdSet = useMemo(
+    () => new Set(sourceMissingStepIds),
+    [sourceMissingStepIds],
+  );
+
+  const pipelineWideAutomations = useMemo(
+    () => automations
+      .map((automation, index) => ({ automation, placement: pipelineWidePlacement(automation, index), index }))
+      .filter((item): item is { automation: Automation; placement: NonNullable<ReturnType<typeof pipelineWidePlacement>>; index: number } =>
+        item.placement !== null,
+      )
+      .sort((a, b) => placementOrder(a.placement, a.index) - placementOrder(b.placement, b.index)),
+    [automations],
+  );
+  const pipelineHubReserve = pipelineWideAutomations.length
+    ? PIPELINE_HUB_TOP_PAD + PIPELINE_HUB_BOTTOM_PAD
+      + pipelineWideAutomations.length * PIPELINE_HUB_H
+      + Math.max(0, pipelineWideAutomations.length - 1) * PIPELINE_HUB_GAP
+    : 0;
 
   const manualStepIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2042,29 +3010,59 @@ export function ProcessCanvas({
     [canvasSteps, stepConnections, automations],
   );
 
+  const artifactTopPadding = useMemo(() => {
+    return artifacts.reduce((padding, artifact) => {
+      return Math.max(padding, -Math.min(artifact.position.y, 0));
+    }, 0);
+  }, [artifacts]);
+
+  const artifactPoolBottom = useMemo(() => {
+    return artifacts.reduce((bottom, artifact) => {
+      return Math.max(bottom, artifact.position.y + artifactCanvasHeight(artifact, stepsById, automationById));
+    }, 0);
+  }, [artifacts, automationById, stepsById]);
+
+  const laneHeights = useMemo(() => {
+    const heights = Object.fromEntries(
+      visibleTeams.map(team => [team, laneHeightFn(team, canvasSteps)]),
+    ) as Record<string, number>;
+    const lastTeam = visibleTeams.at(-1);
+    if (!lastTeam) return heights;
+
+    const currentPoolBottom = pipelineHubReserve + visibleTeams.reduce((sum, team) => sum + heights[team], 0);
+    if (artifactPoolBottom > currentPoolBottom) {
+      heights[lastTeam] += artifactPoolBottom - currentPoolBottom;
+    }
+    return heights;
+  }, [artifactPoolBottom, canvasSteps, pipelineHubReserve, visibleTeams]);
+
   // Dynamic lane heights and starts (only for visible lanes)
-  const laneStarts = useMemo(() => buildLaneStarts(canvasSteps, visibleTeams), [canvasSteps, visibleTeams]);
+  const laneStarts = useMemo(() => {
+    const starts: Record<string, number> = {};
+    let y = pipelineHubReserve;
+    for (const team of visibleTeams) {
+      starts[team] = y;
+      y += laneHeights[team] ?? laneHeightFn(team, canvasSteps);
+    }
+    return starts;
+  }, [canvasSteps, laneHeights, pipelineHubReserve, visibleTeams]);
   const svgHeight  = useMemo(
-    () => visibleTeams.reduce((sum, t) => sum + laneHeightFn(t, canvasSteps), 0),
-    [canvasSteps, visibleTeams],
+    () => pipelineHubReserve + visibleTeams.reduce((sum, t) => sum + (laneHeights[t] ?? laneHeightFn(t, canvasSteps)), 0),
+    [canvasSteps, laneHeights, pipelineHubReserve, visibleTeams],
   );
   const artifactBounds = useMemo(() => {
     return artifacts.reduce(
       (bounds, artifact) => {
-        if (artifact.type !== "manualExceptionBlock") return bounds;
-        const width = artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W;
-        const containedSteps = (artifact.stepIds ?? [])
-          .map(stepId => stepsById.get(stepId))
-          .filter(Boolean) as ProcessStep[];
-        const height = manualExceptionBlockHeight(artifact, containedSteps);
+        const width = artifact.size?.width ?? (artifact.type === "automaticSyncBlock" ? 280 : MANUAL_EXCEPTION_DEFAULT_W);
+        const height = artifactCanvasHeight(artifact, stepsById, automationById);
         return {
           width: Math.max(bounds.width, artifact.position.x + width + 260),
-          height: Math.max(bounds.height, artifact.position.y + height + CANVAS_LEGEND_H),
+          height: Math.max(bounds.height, artifact.position.y + height),
         };
       },
       { width: 0, height: 0 },
     );
-  }, [artifacts, stepsById]);
+  }, [artifacts, automationById, stepsById]);
 
   const lastCol = colX.length - 1;
   const lastColHasTask = canvasSteps.some(s => s.column === lastCol && !isEvent(s));
@@ -2172,6 +3170,61 @@ export function ProcessCanvas({
     return map;
   }, [canvasSteps, stepConnections, automations, colX, laneStarts, connOffsets]);
 
+  const stepAutomationPlacements = useMemo(() => {
+    const byStep = new Map<string, Automation[]>();
+    automations.forEach((automation, index) => {
+      const placement = automationPlacement(automation, index);
+      if (placement?.kind !== "step") return;
+      const items = byStep.get(placement.stepId) ?? [];
+      items.push(automation);
+      byStep.set(placement.stepId, items);
+    });
+    for (const [stepId, items] of byStep) {
+      byStep.set(stepId, [...items].sort((a, b) =>
+        placementOrder(automationPlacement(a), 0) - placementOrder(automationPlacement(b), 0),
+      ));
+    }
+    return byStep;
+  }, [automations]);
+
+  const stepFlowPlacements = useMemo(() => {
+    const byStep = new Map<string, import("@/lib/types").Flow[]>();
+    Object.entries(flowLinks).forEach(([flowId, link], index) => {
+      const placement = normalizePlacementLink(link, index);
+      if (placement.kind !== "step") return;
+      const flow = flows.find(item => item.id === flowId);
+      if (!flow) return;
+      const items = byStep.get(placement.stepId) ?? [];
+      items.push(flow);
+      byStep.set(placement.stepId, items);
+    });
+    for (const [stepId, items] of byStep) {
+      byStep.set(stepId, [...items].sort((a, b) => {
+        const aPlacement = normalizePlacementLink(flowLinks[a.id], 0);
+        const bPlacement = normalizePlacementLink(flowLinks[b.id], 0);
+        return placementOrder(aPlacement, 0) - placementOrder(bPlacement, 0);
+      }));
+    }
+    return byStep;
+  }, [flowLinks, flows]);
+
+  const stepProcessActionPlacements = useMemo(() => {
+    const byStep = new Map<string, ProcessAction[]>();
+    processActions.forEach((action, index) => {
+      const placement = processActionPlacement(action, index);
+      if (placement?.kind !== "step") return;
+      const items = byStep.get(placement.stepId) ?? [];
+      items.push(action);
+      byStep.set(placement.stepId, items);
+    });
+    for (const [stepId, items] of byStep) {
+      byStep.set(stepId, [...items].sort((a, b) =>
+        placementOrder(processActionPlacement(a), 0) - placementOrder(processActionPlacement(b), 0),
+      ));
+    }
+    return byStep;
+  }, [processActions]);
+
   const attachmentPlacements = useMemo(() => {
     return attachments.flatMap((attachment) => {
       let anchor: Pt | null = null;
@@ -2203,17 +3256,130 @@ export function ProcessCanvas({
 
   const clientToSvg = useCallback((clientX: number, clientY: number): Pt => {
     const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
+    if (!svg) return { x: clientX, y: clientY };
     const r = svg.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return { x: clientX, y: clientY };
     return {
       x: (clientX - r.left) * (canvasWidth / r.width),
-      y:  (clientY - r.top) / viewportScale,
+      y:  (clientY - r.top) / viewportScale - artifactTopPadding,
     };
-  }, [canvasWidth, viewportScale]);
+  }, [artifactTopPadding, canvasWidth, viewportScale]);
 
   const toSvg = useCallback((e: React.MouseEvent): Pt => {
     return clientToSvg(e.clientX, e.clientY);
   }, [clientToSvg]);
+
+  const handleStepPlacementDragOver = useCallback((e: React.DragEvent<SVGGElement>) => {
+    if (readOnly) return;
+    if (
+      !e.dataTransfer.types.includes("automationid")
+      && !e.dataTransfer.types.includes("flowid")
+      && !e.dataTransfer.types.includes("processactionid")
+    ) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, [readOnly]);
+
+  const handleStepPlacementDrop = useCallback((e: React.DragEvent<SVGGElement>, step: ProcessStep) => {
+    if (readOnly) return;
+    const autoId = e.dataTransfer.getData("automationId");
+    const flowId = e.dataTransfer.getData("flowId");
+    const processActionId = e.dataTransfer.getData("processActionId");
+    if (!autoId && !flowId && !processActionId) return;
+
+    const dropPoint = clientToSvg(e.clientX, e.clientY);
+    const nearestRoute = stepConnections.reduce<{
+      conn: Connection;
+      arrow: ArrowData;
+      distance: number;
+    } | null>((best, conn) => {
+      const from = canvasSteps.find(s => s.id === conn.fromStepId);
+      const to = canvasSteps.find(s => s.id === conn.toStepId);
+      if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return best;
+      const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
+      const distance = distanceToRoute(arrow.points, dropPoint);
+      if (!Number.isFinite(distance) || distance > ROUTE_DROP_TOLERANCE) return best;
+      if (best && best.distance <= distance) return best;
+      return { conn, arrow, distance };
+    }, null);
+
+    if (nearestRoute) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (flowId && nearestRoute.conn.fromStepId && nearestRoute.conn.toStepId) {
+        const existingFlowCount = Object.entries(flowLinks).filter(([id, link]) =>
+          id !== flowId && isConnectionPlacement(link, nearestRoute.conn.fromStepId, nearestRoute.conn.toStepId)
+        ).length;
+        const connectionOrder = insertionOrderFromRouteDrop(nearestRoute.arrow.points, dropPoint, existingFlowCount);
+        const connectionPosition = routePositionFromDrop(nearestRoute.arrow.points, dropPoint);
+        onAttachFlow?.(flowId, nearestRoute.conn.fromStepId, nearestRoute.conn.toStepId, connectionOrder, connectionPosition);
+        return;
+      }
+      if (autoId) {
+        const existingAutomationCount = automations.filter((automation, index) => {
+          const placement = automationPlacement(automation, index);
+          return automation.id !== autoId
+            && placement?.kind === "connection"
+            && placement.fromStepId === nearestRoute.conn.fromStepId
+            && placement.toStepId === nearestRoute.conn.toStepId;
+        }).length;
+        const connectionOrder = insertionOrderFromRouteDrop(nearestRoute.arrow.points, dropPoint, existingAutomationCount);
+        const connectionPosition = routePositionFromDrop(nearestRoute.arrow.points, dropPoint);
+        onAttachAutomation?.(autoId, nearestRoute.conn.fromStepId, nearestRoute.conn.toStepId, connectionOrder, connectionPosition);
+        return;
+      }
+      if (processActionId) {
+        const existingActionCount = processActions.filter((action, index) => {
+          const placement = processActionPlacement(action, index);
+          return action.id !== processActionId
+            && placement?.kind === "connection"
+            && placement.fromStepId === nearestRoute.conn.fromStepId
+            && placement.toStepId === nearestRoute.conn.toStepId;
+        }).length;
+        const connectionOrder = insertionOrderFromRouteDrop(nearestRoute.arrow.points, dropPoint, existingActionCount);
+        const connectionPosition = routePositionFromDrop(nearestRoute.arrow.points, dropPoint);
+        onAttachProcessAction?.(processActionId, nearestRoute.conn.fromStepId, nearestRoute.conn.toStepId, connectionOrder, connectionPosition);
+        return;
+      }
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    const order = (stepAutomationPlacements.get(step.id)?.length ?? 0)
+      + (stepFlowPlacements.get(step.id)?.length ?? 0)
+      + (stepProcessActionPlacements.get(step.id)?.length ?? 0);
+    if (autoId) {
+      onAttachAutomationToStep?.(autoId, step.id, order);
+      return;
+    }
+    if (flowId) {
+      onAttachFlowToStep?.(flowId, step.id, order);
+      return;
+    }
+    if (processActionId) {
+      onAttachProcessActionToStep?.(processActionId, step.id, order);
+    }
+  }, [
+    automations,
+    canvasSteps,
+    clientToSvg,
+    colX,
+    connOffsets,
+    flowLinks,
+    laneStarts,
+    onAttachAutomation,
+    onAttachAutomationToStep,
+    onAttachFlow,
+    onAttachFlowToStep,
+    onAttachProcessAction,
+    onAttachProcessActionToStep,
+    processActions,
+    readOnly,
+    stepAutomationPlacements,
+    stepConnections,
+    stepFlowPlacements,
+    stepProcessActionPlacements,
+  ]);
 
   useEffect(() => {
     function onGlobalMove(e: MouseEvent) {
@@ -2345,21 +3511,26 @@ export function ProcessCanvas({
       if (y >= laneStarts[team]) best = team;
     }
     const laneStart = laneStarts[best];
-    const lh        = laneHeightFn(best, canvasSteps);
-    const maxR      = isEventDrag
-      ? maxRowInLaneFull(best, canvasSteps)   // events: can occupy any row including event rows
-      : maxRowInLane(best, canvasSteps);      // tasks: snap to task rows only
+    const lh        = laneHeights[best] ?? laneHeightFn(best, canvasSteps);
+    const maxR      = maxRowInLane(best, canvasSteps);      // tasks: snap to task rows only
+    const visualMaxR = Math.max(maxR, Math.max(0, Math.floor((lh - ROW_H / 2) / ROW_H)));
+
+    // Events are row anchors themselves. They must stay where the cursor drops,
+    // even when that row does not contain a task yet.
+    const rawRow = (y - laneStart - ROW_H / 2) / ROW_H;
+    const halfRow = Math.max(0, Math.round(rawRow * 2) / 2);
+    if (isEventDrag) {
+      return { team: best, row: halfRow };
+    }
 
     // Bottom 35% of the lane = insert a new row
     if (y >= laneStart + lh - ROW_H * 0.35) {
-      return { team: best, row: maxR + 1 };
+      return { team: best, row: Math.max(maxR + 1, visualMaxR) };
     }
 
     // Snap to the nearest half-row (0, 0.5, 1, 1.5, …)
-    const rawRow = (y - laneStart - ROW_H / 2) / ROW_H;
-    const halfRow = Math.max(0, Math.round(rawRow * 2) / 2);
-    return { team: best, row: Math.min(halfRow, maxR) };
-  }, [canvasSteps, laneStarts, visibleTeams]);
+    return { team: best, row: Math.min(halfRow, visualMaxR) };
+  }, [canvasSteps, laneHeights, laneStarts, visibleTeams]);
 
   const isValidCanvasDropPoint = useCallback((point: Pt): boolean => {
     return visibleTeams.length > 0
@@ -2390,6 +3561,18 @@ export function ProcessCanvas({
         && point.y <= artifact.position.y + height;
     }) ?? null;
   }, [artifacts, stepsById]);
+
+  const findAutomaticSyncDropTarget = useCallback((point: Pt): ProcessArtifact | null => {
+    return artifacts.find((artifact) => {
+      if (artifact.type !== "automaticSyncBlock") return false;
+      const width = artifact.size?.width ?? 280;
+      const height = artifactCanvasHeight(artifact, stepsById, automationById);
+      return point.x >= artifact.position.x
+        && point.x <= artifact.position.x + width
+        && point.y >= artifact.position.y
+        && point.y <= artifact.position.y + height;
+    }) ?? null;
+  }, [artifacts, automationById, stepsById]);
 
   const manualStepIndexAtPoint = useCallback((artifact: ProcessArtifact, point: Pt): number => {
     const containedSteps = (artifact.stepIds ?? [])
@@ -2573,7 +3756,7 @@ export function ProcessCanvas({
   }
 
   function selectStep(step: ProcessStep) {
-    if (!readOnly) setSelectedConnectionId(null);
+    setSelectedConnectionId(null);
     onStepClick?.(step);
   }
 
@@ -2687,7 +3870,8 @@ export function ProcessCanvas({
   const extensionTeam = dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, canvasSteps)
     ? dragTarget.team : null;
   const legendReserve = showLegend ? CANVAS_LEGEND_H : 0;
-  const effectiveSvgHeight = Math.max(canvasHeight, svgHeight + (extensionTeam ? ROW_H : 0)) + legendReserve;
+  const effectiveSvgHeight = artifactTopPadding + Math.max(canvasHeight, svgHeight + (extensionTeam ? ROW_H : 0)) + legendReserve;
+  const viewBoxMinY = -artifactTopPadding;
 
   const gridStyle = viewerMode ? {
     background: "#F8FAFC",
@@ -2760,10 +3944,11 @@ export function ProcessCanvas({
   return (
     <div className="relative w-full bg-card" style={gridStyle}>
       <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-hidden w-full" style={{ height: effectiveSvgHeight }}>
-        <svg ref={svgRef} width={canvasWidth} height={effectiveSvgHeight}
+        <svg ref={svgRef} width={canvasWidth} height={effectiveSvgHeight} viewBox={`0 ${viewBoxMinY} ${canvasWidth} ${effectiveSvgHeight}`}
         onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
         onMouseLeave={() => { setDrawing(null); setDrawingBranch(null); }}
         onClick={() => {
+          setSelectedConnectionId(null);
           setContextMenu(null);
           setEditingAttachmentId(null);
           setEditingManualArtifact(null);
@@ -2779,11 +3964,15 @@ export function ProcessCanvas({
         style={{ cursor: isPanning ? "grabbing" : "grab" }}
         onDragOver={e => {
           if (readOnly) return;
-          if (!e.dataTransfer.types.includes("newstep") && !e.dataTransfer.types.includes("stagedstep")) return;
+          const hasAutomation = e.dataTransfer.types.includes("automationid");
+          const hasFlow = e.dataTransfer.types.includes("flowid");
+          if (!e.dataTransfer.types.includes("newstep") && !e.dataTransfer.types.includes("stagedstep") && !hasAutomation && !hasFlow) return;
           e.preventDefault();
+          if (hasAutomation || hasFlow) return;
           const pt = clientToSvg(e.clientX, e.clientY);
           const col = nearestCol(pt.x);
-          const { team, row } = nearestTeamRow(pt.y);
+          const stepType = e.dataTransfer.getData("newStep") as ProcessStep["type"] | "";
+          const { team, row } = nearestTeamRow(pt.y, isEventType(stepType));
           setNewStepDrag(prev =>
             prev?.col === col && prev.team === team && prev.row === row ? prev : { col, team, row }
           );
@@ -2795,6 +3984,24 @@ export function ProcessCanvas({
           const pt  = clientToSvg(e.clientX, e.clientY);
           const col = nearestCol(pt.x);
           setNewStepDrag(null);
+
+          const autoId = e.dataTransfer.getData("automationId");
+          if (autoId && onAttachAutomationToArtifact) {
+            const targetArtifact = findAutomaticSyncDropTarget(pt);
+            if (targetArtifact) {
+              onAttachAutomationToArtifact(autoId, targetArtifact.id);
+              return;
+            }
+          }
+
+          const flowId = e.dataTransfer.getData("flowId");
+          if (flowId && onAttachFlowToPipelineWide) {
+            const targetArtifact = findAutomaticSyncDropTarget(pt);
+            if (targetArtifact) {
+              onAttachFlowToPipelineWide(flowId);
+              return;
+            }
+          }
 
           const stepType = e.dataTransfer.getData("newStep") as ProcessStep["type"] | "";
 
@@ -2810,7 +4017,7 @@ export function ProcessCanvas({
             return;
           }
 
-          const { team, row } = nearestTeamRow(pt.y);
+          const { team, row } = nearestTeamRow(pt.y, isEventType(stepType));
           if (stepType) {
             onAddStep?.(team, col, row, stepType);
             return;
@@ -2846,11 +4053,39 @@ export function ProcessCanvas({
         </defs>
 
         {/* ── Lane backgrounds (variable height, row dividers) ── */}
+        {pipelineWideAutomations.length > 0 && (
+          <g data-testid="pipeline-wide-automation-hubs">
+            {pipelineWideAutomations.map(({ automation }, index) => {
+              const hubX = Math.max(
+                LANE_HDR_W + 18,
+                Math.min(
+                  canvasWidth - PIPELINE_HUB_W - 18,
+                  LANE_HDR_W + (canvasWidth - LANE_HDR_W - PIPELINE_HUB_W) / 2,
+                ),
+              );
+              return (
+                <PipelineWideAutomationHub
+                  key={automation.id}
+                  auto={automation}
+                  x={hubX}
+                  y={PIPELINE_HUB_TOP_PAD + index * (PIPELINE_HUB_H + PIPELINE_HUB_GAP)}
+                  index={index}
+                  onClick={event => {
+                    event.stopPropagation();
+                    setSelectedConnectionId(null);
+                    onAutomationClick?.(automation);
+                  }}
+                />
+              );
+            })}
+          </g>
+        )}
+
         <g data-testid="process-phase-bar">
         {visibleTeams.map((team, idx) => {
           const cfg    = getLaneConfig(team, customLanes);
           const startY = laneStarts[team];
-          const lh     = laneHeightFn(team, canvasSteps);
+          const lh     = laneHeights[team] ?? laneHeightFn(team, canvasSteps);
           const maxR   = maxRowInLane(team, canvasSteps);
 
           const laneAccent = VIEWER_LANE_COLORS[team] ?? cfg.stroke;
@@ -2942,7 +4177,7 @@ export function ProcessCanvas({
         {extensionTeam && (() => {
           const cfg    = getLaneConfig(extensionTeam, customLanes);
           const startY = laneStarts[extensionTeam];
-          const lh     = laneHeightFn(extensionTeam, canvasSteps);
+          const lh     = laneHeights[extensionTeam] ?? laneHeightFn(extensionTeam, canvasSteps);
           return (
             <g>
               <rect x={0} y={startY + lh} width={canvasWidth} height={ROW_H}
@@ -2959,28 +4194,37 @@ export function ProcessCanvas({
         {renderRowSeparatorInsertIndicator()}
 
         {/* ── Connections (step-to-step only) ── */}
-        {orderedStepConnectionsForRender(stepConnections, selectedConnectionId, readOnly).map(conn => {
+        {orderedStepConnectionsForRender(stepConnections, selectedConnectionId).map(conn => {
           const from = canvasSteps.find(s => s.id === conn.fromStepId);
           const to   = canvasSteps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return null;
           const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
           const isHov = hoveredConn === conn.id;
-          const isSelected = !readOnly && selectedConnectionId === conn.id;
-          const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
+          const isSelected = selectedConnectionId === conn.id;
+          const isEditSelected = !readOnly && isSelected;
+          const isViewerSelected = readOnly && isSelected;
+          const connAutos = automations
+            .filter((automation, index) => {
+              const placement = automationPlacement(automation, index);
+              return placement?.kind === "connection"
+                && placement.fromStepId === conn.fromStepId
+                && placement.toStepId === conn.toStepId;
+            })
+            .sort((a, b) => placementOrder(automationPlacement(a), 0) - placementOrder(automationPlacement(b), 0));
           const hasAuto = connAutos.length > 0;
           const type = resolveRouteType(conn, from, to);
           const isEndRoute = type === "end";
           const isOptionalRoute = type === "optional";
-          const mainStroke = routeStroke(type, isHov || isSelected);
+          const mainStroke = isViewerSelected ? ROUTE_VIEWER_SELECTED : routeStroke(type, isHov || isEditSelected);
           const markerId = routeMarker(type);
           const postStroke = isEndRoute ? ROUTE_END : ROUTE_OPTIONAL;
           const labelForRoute = routeLabel(type, conn.manual);
           const splitForAutomation = hasAuto && !conn.manual && !conn.routeType;
           const effectiveWaypoints = editableWaypointsForConnection(conn, from, to, colX, laneStarts);
-          const handleWaypoints = !readOnly && isSelected && conn.manual && onUpdateConnectionWaypoints
+          const handleWaypoints = isEditSelected && conn.manual && onUpdateConnectionWaypoints
             ? effectiveWaypoints
             : [];
-          const bendInsertionTargets = !readOnly && isSelected && conn.manual && onUpdateConnectionWaypoints
+          const bendInsertionTargets = isEditSelected && conn.manual && onUpdateConnectionWaypoints
             ? buildBendInsertionTargets(effectiveWaypoints, arrow.postDotMid)
             : [];
           const mid = arrow.postDotMid;
@@ -2988,9 +4232,8 @@ export function ProcessCanvas({
           const postLabelText = conn.label || "";
           const postEstW = Math.max(80, (postLabelText.length) * 5.5 + 16);
           const selectConnection = () => {
-            if (readOnly) return;
             setSelectedConnectionId(conn.id);
-            if (!conn.manual) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" });
+            if (!readOnly && !conn.manual) setEditingLabel({ connId: conn.id, x: mid.x, y: mid.y, value: conn.label ?? "" });
           };
           return (
             <g
@@ -3001,7 +4244,7 @@ export function ProcessCanvas({
               {/* Pre-dot segment always in gray; post-dot in amber dashed when automation sits on this connection */}
               {splitForAutomation ? (
                 <>
-                  {isSelected && (
+                  {isEditSelected && (
                     <>
                       <path
                         d={arrow.preDotPath}
@@ -3021,14 +4264,37 @@ export function ProcessCanvas({
                       />
                     </>
                   )}
-                  <path d={arrow.preDotPath} stroke={mainStroke} strokeWidth={routeVisibleStrokeWidth(isSelected)} fill="none"
+                  {isViewerSelected && (
+                    <>
+                      <path
+                        d={arrow.preDotPath}
+                        stroke={ROUTE_VIEWER_HALO}
+                        strokeWidth="8"
+                        fill="none"
+                        opacity="0.42"
+                        data-route-viewer-highlight="true"
+                        style={{ pointerEvents: "none" }}
+                      />
+                      <path
+                        d={arrow.postDotPath}
+                        stroke={ROUTE_VIEWER_HALO}
+                        strokeWidth="8"
+                        fill="none"
+                        opacity="0.42"
+                        data-route-viewer-highlight="true"
+                        style={{ pointerEvents: "none" }}
+                      />
+                    </>
+                  )}
+                  <path d={arrow.preDotPath} stroke={mainStroke} strokeWidth={routeVisibleStrokeWidth(isEditSelected)} fill="none"
                     aria-label={labelForRoute}
                     data-route-visible-path="true"
                     strokeDasharray={isHov ? "6 3" : undefined} style={{ pointerEvents: "none" }} />
-                  <path d={arrow.postDotPath} stroke={postStroke} strokeWidth={routeVisibleStrokeWidth(isSelected)} strokeDasharray={isEndRoute ? undefined : "5 3"} fill="none"
+                  <path d={arrow.postDotPath} stroke={isViewerSelected ? ROUTE_VIEWER_SELECTED : postStroke} strokeWidth={routeVisibleStrokeWidth(isEditSelected)} strokeDasharray={isEndRoute ? undefined : "5 3"} fill="none"
                     aria-label={isEndRoute ? labelForRoute : "correctie/optioneel route"}
                     data-route-visible-path="true"
                     markerEnd={`url(#${isEndRoute ? "ah-end" : "ah-branch"})`} opacity={0.9} style={{ pointerEvents: "none" }} />
+                  {isViewerSelected && <RouteFlowDot path={arrow.path} length={arrow.length} />}
                   {/* Label on post-dot segment — edit input when active, badge when label is set */}
                   {isEditingPost ? (
                     <foreignObject x={mid.x - postEstW / 2} y={mid.y - 13} width={Math.max(postEstW, 120)} height={26}>
@@ -3051,7 +4317,7 @@ export function ProcessCanvas({
                 </>
               ) : (
                 <>
-                  {isSelected && (
+                  {isEditSelected && (
                     <path
                       d={arrow.path}
                       stroke="#ffffff"
@@ -3061,41 +4327,92 @@ export function ProcessCanvas({
                       style={{ pointerEvents: "none" }}
                     />
                   )}
-                  <path d={arrow.path} stroke={mainStroke} strokeWidth={routeVisibleStrokeWidth(isSelected)} fill="none"
+                  {isViewerSelected && (
+                    <path
+                      d={arrow.path}
+                      stroke={ROUTE_VIEWER_HALO}
+                      strokeWidth="8"
+                      fill="none"
+                      opacity="0.42"
+                      data-route-viewer-highlight="true"
+                      style={{ pointerEvents: "none" }}
+                    />
+                  )}
+                  <path d={arrow.path} stroke={mainStroke} strokeWidth={routeVisibleStrokeWidth(isEditSelected)} fill="none"
                     aria-label={labelForRoute}
                     data-route-visible-path="true"
                     markerEnd={`url(#${markerId})`}
                     strokeDasharray={isOptionalRoute ? "5 3" : isHov ? "6 3" : undefined}
-                    onClick={readOnly ? undefined : selectConnection}
+                    onClick={e => { e.stopPropagation(); selectConnection(); }}
                     style={{
                       filter: isSelected ? `drop-shadow(0 2px 5px ${mainStroke}55)` : undefined,
-                      cursor: readOnly ? undefined : "pointer",
+                      cursor: "pointer",
                       pointerEvents: "stroke",
                     }} />
+                  {isViewerSelected && <RouteFlowDot path={arrow.path} length={arrow.length} />}
                 </>
               )}
               <path d={arrow.path} stroke="transparent" strokeWidth="22" fill="none" className="cursor-pointer"
                 onMouseEnter={() => setHoveredConn(conn.id)}
                 onMouseLeave={() => setHoveredConn(null)}
-                onClick={readOnly ? undefined : selectConnection}
+                onClick={e => { e.stopPropagation(); selectConnection(); }}
                 onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "conn", connId: conn.id, x: e.clientX, y: e.clientY }); }}
                 onDragOver={e => {
                   if (readOnly) return;
                   e.preventDefault();
-                  setHoveredConn(conn.id);
+                  const dropPoint = clientToSvg(e.clientX, e.clientY);
+                  const routeDistance = distanceToRoute(arrow.points, dropPoint);
+                  setHoveredConn(Number.isFinite(routeDistance) && routeDistance <= ROUTE_DROP_TOLERANCE ? conn.id : null);
                 }}
                 onDragLeave={() => setHoveredConn(null)}
                 onDrop={e => {
                   if (readOnly) return;
                   e.preventDefault();
+                  const dropPoint = clientToSvg(e.clientX, e.clientY);
+                  const routeDistance = distanceToRoute(arrow.points, dropPoint);
+                  if (!Number.isFinite(routeDistance) || routeDistance > ROUTE_DROP_TOLERANCE) {
+                    setHoveredConn(null);
+                    return;
+                  }
                   const flowId = e.dataTransfer.getData("flowId");
                   if (flowId && conn.fromStepId && conn.toStepId) {
-                    onAttachFlow?.(flowId, conn.fromStepId, conn.toStepId);
+                    const existingFlowCount = Object.entries(flowLinks).filter(([id, link]) =>
+                      id !== flowId && conn.fromStepId && isConnectionPlacement(link, conn.fromStepId, conn.toStepId)
+                    ).length;
+                    const connectionOrder = insertionOrderFromRouteDrop(arrow.points, dropPoint, existingFlowCount);
+                    const connectionPosition = routePositionFromDrop(arrow.points, dropPoint);
+                    onAttachFlow?.(flowId, conn.fromStepId, conn.toStepId, connectionOrder, connectionPosition);
                     setHoveredConn(null);
                     return;
                   }
                   const autoId = e.dataTransfer.getData("automationId");
-                  if (autoId) onAttachAutomation?.(autoId, conn.fromStepId, conn.toStepId);
+                  if (autoId) {
+                    const existingAutomationCount = automations.filter((automation, index) => {
+                      const placement = automationPlacement(automation, index);
+                      return automation.id !== autoId
+                        && placement?.kind === "connection"
+                        && placement.fromStepId === conn.fromStepId
+                        && placement.toStepId === conn.toStepId;
+                    }).length;
+                    const connectionOrder = insertionOrderFromRouteDrop(arrow.points, dropPoint, existingAutomationCount);
+                    const connectionPosition = routePositionFromDrop(arrow.points, dropPoint);
+                    onAttachAutomation?.(autoId, conn.fromStepId, conn.toStepId, connectionOrder, connectionPosition);
+                    setHoveredConn(null);
+                    return;
+                  }
+                  const processActionId = e.dataTransfer.getData("processActionId");
+                  if (processActionId) {
+                    const existingActionCount = processActions.filter((action, index) => {
+                      const placement = processActionPlacement(action, index);
+                      return action.id !== processActionId
+                        && placement?.kind === "connection"
+                        && placement.fromStepId === conn.fromStepId
+                        && placement.toStepId === conn.toStepId;
+                    }).length;
+                    const connectionOrder = insertionOrderFromRouteDrop(arrow.points, dropPoint, existingActionCount);
+                    const connectionPosition = routePositionFromDrop(arrow.points, dropPoint);
+                    onAttachProcessAction?.(processActionId, conn.fromStepId, conn.toStepId, connectionOrder, connectionPosition);
+                  }
                   setHoveredConn(null);
                 }} />
               {handleWaypoints.map((point, index) => (
@@ -3179,21 +4496,36 @@ export function ProcessCanvas({
           const from = canvasSteps.find(s => s.id === conn.fromStepId);
           const to   = canvasSteps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
-          const connAutos = automations.filter(a => a.fromStepId === conn.fromStepId && a.toStepId === conn.toStepId);
+          const connAutos = automations
+            .filter((automation, index) => {
+              const placement = automationPlacement(automation, index);
+              return placement?.kind === "connection"
+                && placement.fromStepId === conn.fromStepId
+                && placement.toStepId === conn.toStepId;
+            })
+            .sort((a, b) => placementOrder(automationPlacement(a), 0) - placementOrder(automationPlacement(b), 0));
           if (!connAutos.length) return [];
           const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
-          return dotPositions(arrow.dotCenter, connAutos.length).map((pos, i) => (
-            <AutomationDot key={connAutos[i].id} auto={connAutos[i]} cx={pos.x} cy={pos.y}
-              onClick={ev => { ev.stopPropagation(); onAutomationClick?.(connAutos[i]); }}
+          const fallbackPositions = dotPositions(arrow.dotCenter, connAutos.length);
+          return connAutos.map((automation, i) => {
+            const placement = automationPlacement(automation, i);
+            const positionedPoint = pointForConnectionPlacement(arrow, placement);
+            const pos = positionedPoint ?? fallbackPositions[i] ?? arrow.dotCenter;
+            return (
+            <AutomationDot key={automation.id} auto={automation} cx={pos.x} cy={pos.y}
+              ariaLabel={`Automation ${automation.name} op lijn ${from.label} naar ${to.label}`}
+              alert={!isAutomationActive(automation)}
+              onClick={ev => { ev.stopPropagation(); setSelectedConnectionId(null); onAutomationClick?.(automation); }}
               onPortMouseDown={readOnly ? undefined : ev => {
                 ev.stopPropagation();
                 setDrawingBranch({
-                  automationId: connAutos[i].id,
+                  automationId: automation.id,
                   startX: pos.x + DOT_R, startY: pos.y,
                   curX: pos.x + DOT_R, curY: pos.y,
                 });
               }} />
-          ));
+            );
+          });
         })}
 
         {/* ── Flow dots on connections ── */}
@@ -3202,31 +4534,66 @@ export function ProcessCanvas({
           const to   = canvasSteps.find(s => s.id === conn.toStepId);
           if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
           const connFlows = Object.entries(flowLinks)
-            .filter(([, link]) => link.fromStepId === conn.fromStepId && link.toStepId === conn.toStepId)
+            .filter(([, link]) => conn.fromStepId && isConnectionPlacement(link, conn.fromStepId, conn.toStepId))
             .map(([flowId]) => flows.find(f => f.id === flowId))
             .filter(Boolean) as import("@/lib/types").Flow[];
+          connFlows.sort((a, b) =>
+            placementOrder(normalizePlacementLink(flowLinks[a.id], 0), 0)
+            - placementOrder(normalizePlacementLink(flowLinks[b.id], 0), 0),
+          );
           if (!connFlows.length) return [];
-          // Geometric centre: midpoint between source exit and target entry.
-          // This point lies on the actual path for horizontal, vertical and orthogonal routes.
-          const fx = colX[from.column], fy = stepCY(from, laneStarts);
-          const tx = colX[to.column],   ty = stepCY(to,   laneStarts);
-          const sx = edgeRight(from, fx), ex = edgeLeft(to, tx);
-          const centerX = (sx + ex) / 2;
-          const centerY = (fy + ty) / 2;
-          const vertical = from.column === to.column; // purely vertical connection
-          return connFlows.map((flow, i) => (
-            <FlowDot
-              key={flow.id}
+          const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
+          const fallbackPositions = dotPositions(arrow.dotCenter, connFlows.length);
+          return connFlows.map((flow, i) => {
+            const placement = normalizePlacementLink(flowLinks[flow.id], i);
+            const pos = pointForConnectionPlacement(arrow, placement) ?? fallbackPositions[i] ?? arrow.dotCenter;
+            return (
+              <FlowDot
+                key={flow.id}
               flowId={flow.id}
               flowName={flow.naam}
-              cx={centerX + (vertical ? 0 : i * 28)}
-              cy={centerY + (vertical ? i * 28 : 0)}
-              onClick={(e) => { e.stopPropagation(); onFlowClick?.(flow.id); }}
-            />
-          ));
+              ariaLabel={`Procesreis ${flow.naam} op lijn ${from.label} naar ${to.label}`}
+              alert={flowHasInactiveAutomation(flow, automations)}
+              cx={pos.x}
+                cy={pos.y}
+                onClick={(e) => { e.stopPropagation(); setSelectedConnectionId(null); onFlowClick?.(flow.id); }}
+              />
+            );
+          });
         })}
 
         {/* ── Steps & Events ── */}
+        {stepConnections.flatMap(conn => {
+          const from = canvasSteps.find(s => s.id === conn.fromStepId);
+          const to   = canvasSteps.find(s => s.id === conn.toStepId);
+          if (!from || !to || colX[from.column] === undefined || colX[to.column] === undefined) return [];
+          const connActions = processActions
+            .filter((action, index) => {
+              const placement = processActionPlacement(action, index);
+              return placement?.kind === "connection"
+                && placement.fromStepId === conn.fromStepId
+                && placement.toStepId === conn.toStepId;
+            })
+            .sort((a, b) => placementOrder(processActionPlacement(a), 0) - placementOrder(processActionPlacement(b), 0));
+          if (!connActions.length) return [];
+          const arrow = buildConnectionArrow(conn, from, to, colX, laneStarts, connOffsets.get(conn.id) ?? 0);
+          const fallbackPositions = dotPositions(arrow.dotCenter, connActions.length);
+          return connActions.map((action, i) => {
+            const placement = processActionPlacement(action, i);
+            const pos = pointForConnectionPlacement(arrow, placement) ?? fallbackPositions[i] ?? arrow.dotCenter;
+            return (
+              <ProcessActionDot
+                key={action.id}
+                action={action}
+                ariaLabel={`Procesactie ${action.label} op lijn ${from.label} naar ${to.label}`}
+                cx={pos.x}
+                cy={pos.y}
+                onClick={e => { e.stopPropagation(); setSelectedConnectionId(null); onProcessActionClick?.(action); }}
+              />
+            );
+          });
+        })}
+
         {canvasSteps.map(step => {
           const cx = colX[step.column];
           const cy = stepCY(step, laneStarts);
@@ -3323,12 +4690,202 @@ export function ProcessCanvas({
           return (
             <StepBox key={step.id} step={step} cx={cx} cy={cy}
               isDragging={isDrag} isTarget={isTarget}
+              sourceMissing={sourceMissingStepIdSet.has(step.id)}
               customLanes={customLanes} viewerMode={viewerMode}
               onClick={() => { if (!dragging?.moved) selectStep(step); }}
               onPortMouseDown={readOnly ? undefined : (e, side) => handlePortMouseDown(e, step, side)}
               onStepMouseDown={readOnly ? undefined : e => { e.stopPropagation(); handleStepMouseDown(e, step); }}
+              onPlacementDragOver={handleStepPlacementDragOver}
+              onPlacementDrop={e => handleStepPlacementDrop(e, step)}
               onContextMenu={readOnly ? undefined : e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ type: "step", stepId: step.id, x: e.clientX, y: e.clientY }); }} />
           );
+        })}
+
+        {canvasSteps.flatMap(step => {
+          const cx = colX[step.column];
+          const cy = stepCY(step, laneStarts);
+          if (cx === undefined) return [];
+          const stepAutos = stepAutomationPlacements.get(step.id) ?? [];
+          const stepFlows = stepFlowPlacements.get(step.id) ?? [];
+          const stepActions = stepProcessActionPlacements.get(step.id) ?? [];
+          const placements = [
+            ...stepAutos.map(item => ({ kind: "automation" as const, id: item.id, label: item.name, item })),
+            ...stepFlows.map(item => ({ kind: "flow" as const, id: item.id, label: item.naam, item })),
+            ...stepActions.map(item => ({ kind: "action" as const, id: item.id, label: item.label, item })),
+          ].sort((a, b) => {
+            const aOrder = a.kind === "automation"
+              ? placementOrder(automationPlacement(a.item as Automation), 0)
+              : a.kind === "flow"
+              ? placementOrder(normalizePlacementLink(flowLinks[a.id], 0), 0)
+              : placementOrder(processActionPlacement(a.item as ProcessAction), 0);
+            const bOrder = b.kind === "automation"
+              ? placementOrder(automationPlacement(b.item as Automation), 0)
+              : b.kind === "flow"
+              ? placementOrder(normalizePlacementLink(flowLinks[b.id], 0), 0)
+              : placementOrder(processActionPlacement(b.item as ProcessAction), 0);
+            return aOrder - bOrder;
+          });
+          if (!placements.length) return [];
+          const visible = placements.slice(0, STEP_DOT_VISIBLE_MAX);
+          const hidden = placements.slice(STEP_DOT_VISIBLE_MAX);
+          const hasOverflow = placements.length > visible.length;
+          const positions = stepDotPositions(cx, cy + STEP_H / 2, visible.length + (hasOverflow ? 1 : 0));
+          const rendered = visible.map((placement, index) => (
+            <StepPlacementDot
+              key={`${step.id}-${placement.kind}-${placement.id}`}
+              id={placement.id}
+              kind={placement.kind}
+              actionType={placement.kind === "action" ? (placement.item as ProcessAction).type : undefined}
+              label={placement.label}
+              ariaLabel={`${placement.kind === "automation" ? "Automation" : placement.kind === "flow" ? "Procesreis" : "Procesactie"} ${placement.label} op stap ${step.label}`}
+              alert={placement.kind === "automation"
+                ? !isAutomationActive(placement.item as Automation)
+                : placement.kind === "flow"
+                ? flowHasInactiveAutomation(placement.item as import("@/lib/types").Flow, automations)
+                : false}
+              cx={positions[index].x}
+              cy={positions[index].y}
+              onClick={e => {
+                e.stopPropagation();
+                if (placement.kind === "automation") onAutomationClick?.(placement.item as Automation);
+                else if (placement.kind === "flow") onFlowClick?.(placement.id);
+                else onProcessActionClick?.(placement.item as ProcessAction);
+              }}
+            />
+          ));
+          if (hasOverflow) {
+            const overflowPosition = positions[positions.length - 1];
+            const overflowOpen = openStepPlacementOverflow === step.id;
+            const overflowMenuHeight = Math.min(150, hidden.length * 32 + 16);
+            const overflowMenuY = Math.max(4, overflowPosition.y - overflowMenuHeight - 18);
+            rendered.push(
+              <g
+                key={`${step.id}-placement-overflow`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${hidden.length} extra plaatsing${hidden.length === 1 ? "" : "en"} op stap ${step.label}`}
+                onClick={e => {
+                  e.stopPropagation();
+                  setOpenStepPlacementOverflow(current => current === step.id ? null : step.id);
+                }}
+                onKeyDown={e => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpenStepPlacementOverflow(current => current === step.id ? null : step.id);
+                }}
+                className="cursor-pointer"
+              >
+                <circle cx={overflowPosition.x} cy={overflowPosition.y} r={STEP_DOT_R + 2} fill="white" />
+                <circle cx={overflowPosition.x} cy={overflowPosition.y} r={STEP_DOT_R} fill="#e2e8f0" stroke="#94a3b8" strokeWidth="1.5" />
+                <text x={overflowPosition.x} y={overflowPosition.y + 0.5} textAnchor="middle" dominantBaseline="middle"
+                  fontSize="8" fontWeight="800" fill="#334155" style={{ pointerEvents: "none", fontFamily: "IBM Plex Sans, system-ui, sans-serif" }}>
+                  +{hidden.length}
+                </text>
+                {overflowOpen && (
+                  <foreignObject
+                    x={overflowPosition.x - 92}
+                    y={overflowMenuY}
+                    width={184}
+                    height={overflowMenuHeight}
+                  >
+                    <div
+                      role="menu"
+                      aria-label={`Extra plaatsingen op stap ${step.label}`}
+                      style={{
+                        background: "white",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 8,
+                        boxShadow: "0 12px 28px rgba(15,23,42,0.16)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                        maxHeight: 150,
+                        overflowY: "auto",
+                        padding: 6,
+                        width: "100%",
+                      }}
+                    >
+                      {hidden.map(placement => (
+                        <button
+                          key={`${step.id}-overflow-${placement.kind}-${placement.id}`}
+                          type="button"
+                          aria-label={`${placement.kind === "automation" ? "Automation" : placement.kind === "flow" ? "Procesreis" : "Procesactie"} ${placement.label} openen`}
+                          onClick={event => {
+                            event.stopPropagation();
+                            setOpenStepPlacementOverflow(null);
+                            if (placement.kind === "automation") onAutomationClick?.(placement.item as Automation);
+                            else if (placement.kind === "flow") onFlowClick?.(placement.id);
+                            else onProcessActionClick?.(placement.item as ProcessAction);
+                          }}
+                          style={{
+                            alignItems: "center",
+                            background: "transparent",
+                            border: 0,
+                            borderRadius: 6,
+                            color: "#334155",
+                            cursor: "pointer",
+                            display: "flex",
+                            fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            gap: 7,
+                            minHeight: 28,
+                            padding: "5px 7px",
+                            textAlign: "left",
+                            width: "100%",
+                          }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              alignItems: "center",
+                              background: (
+                                placement.kind === "automation"
+                                  ? !isAutomationActive(placement.item as Automation)
+                                  : placement.kind === "flow"
+                                  ? flowHasInactiveAutomation(placement.item as import("@/lib/types").Flow, automations)
+                                  : false
+                              )
+                                ? PLACEMENT_ALERT_FILL
+                                : placement.kind === "automation" ? AUTOMATION_DOT_FILL : placement.kind === "flow" ? FLOW_DOT_FILL : PROCESS_ACTION_DOT_FILL,
+                              borderRadius: 999,
+                              color: (
+                                placement.kind === "automation"
+                                  ? !isAutomationActive(placement.item as Automation)
+                                  : placement.kind === "flow"
+                                  ? flowHasInactiveAutomation(placement.item as import("@/lib/types").Flow, automations)
+                                  : false
+                              )
+                                ? PLACEMENT_ALERT_ICON
+                                : placement.kind === "automation" ? AUTOMATION_DOT_ICON : placement.kind === "flow" ? FLOW_DOT_ICON : PROCESS_ACTION_DOT_ICON,
+                              display: "inline-flex",
+                              flex: "0 0 auto",
+                              height: 16,
+                              justifyContent: "center",
+                              width: 16,
+                            }}
+                          >
+                            {placement.kind === "action"
+                              ? <ProcessActionIcon type={(placement.item as ProcessAction).type} size={9} color="currentColor" />
+                              : (
+                                <svg viewBox="0 0 24 24" width={9} height={9} fill="currentColor">
+                                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                                </svg>
+                              )}
+                          </span>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {placement.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </foreignObject>
+                )}
+              </g>,
+            );
+          }
+          return rendered;
         })}
 
         {/* ── Drag ghost ── */}
@@ -3361,7 +4918,7 @@ export function ProcessCanvas({
           const isNewRow = !!(dragTarget && dragTarget.row > maxRowInLane(dragTarget.team, canvasSteps));
           const targetCY = dragTarget
             ? isNewRow
-              ? laneStarts[dragTarget.team] + laneHeightFn(dragTarget.team, canvasSteps)
+              ? laneStarts[dragTarget.team] + (laneHeights[dragTarget.team] ?? laneHeightFn(dragTarget.team, canvasSteps))
               : laneStarts[dragTarget.team] + dragTarget.row * ROW_H + ROW_H / 2
             : gy;
 
@@ -3430,7 +4987,7 @@ export function ProcessCanvas({
           if (cx === undefined) return null;
           const isNewRow = row > maxRowInLane(team, canvasSteps);
           const cy = isNewRow
-            ? laneStarts[team] + laneHeightFn(team, canvasSteps)
+            ? laneStarts[team] + (laneHeights[team] ?? laneHeightFn(team, canvasSteps))
             : laneStarts[team] + row * ROW_H + ROW_H / 2;
           const cfg = getLaneConfig(team, customLanes);
           return (
@@ -3579,6 +5136,7 @@ export function ProcessCanvas({
                 tabIndex={clickable ? 0 : undefined}
                 onClick={clickable ? e => {
                   e.stopPropagation();
+                  setSelectedConnectionId(null);
                   if (!readOnly && onUpdateAttachment) setEditingAttachmentId(attachment.id);
                   onAttachmentClick?.(attachment);
                 } : undefined}
@@ -3704,25 +5262,48 @@ export function ProcessCanvas({
 
         {/* ── Connection preview ── */}
         {artifacts.map((artifact) => {
-          if (artifact.type !== "manualExceptionBlock") return null;
+          const displayArtifact = artifact;
           const containedSteps = (artifact.stepIds ?? [])
             .map(stepId => stepsById.get(stepId))
             .filter(Boolean) as ProcessStep[];
-          const manualLayout = manualExceptionTextLayout(artifact, containedSteps);
-          const height = manualExceptionBlockHeight(artifact, containedSteps);
+          const linkedAutomations = (artifact.automationIds ?? [])
+            .map(automationId => automationById.get(automationId))
+            .filter(Boolean) as Automation[];
+          const linkedFlows = artifact.type === "automaticSyncBlock"
+            ? Object.entries(flowLinks)
+                .filter(([, link]) => normalizePlacementLink(link).kind === "pipeline_wide")
+                .map(([flowId]) => flows.find(flow => flow.id === flowId))
+                .filter(Boolean) as Flow[]
+            : [];
+          const manualLayout = manualExceptionTextLayout(displayArtifact, containedSteps);
+          const height = artifactCanvasHeight(artifact, stepsById, automationById, linkedFlows);
           const draggable = !readOnly && !!onMoveArtifact;
           const editingManualField = editingManualArtifact?.artifactId === artifact.id
             ? editingManualArtifact.field
             : undefined;
           const canEditManualText = !readOnly && !!onUpdateArtifact;
+          const isManualBlock = artifact.type === "manualExceptionBlock";
           const hasManualStepControls = !readOnly
+            && isManualBlock
             && containedSteps.length > 0
             && (!!onMoveManualStepToCanvas || !!onReorderManualArtifactStep);
 
           return (
             <g key={artifact.id}>
               <g
-                aria-label={`Manual exception block ${artifact.title}`}
+                aria-label={isManualBlock ? `Manual exception block ${artifact.title}` : `Automatic sync block ${artifact.title}`}
+                role="button"
+                tabIndex={0}
+                onClick={event => {
+                  event.stopPropagation();
+                  onArtifactClick?.(artifact);
+                }}
+                onKeyDown={event => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onArtifactClick?.(artifact);
+                }}
                 onDoubleClick={canEditManualText ? event => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -3736,24 +5317,33 @@ export function ProcessCanvas({
                 }}
                 style={{
                   cursor: draggable ? "move" : !readOnly && onDeleteArtifact ? "context-menu" : undefined,
-                  pointerEvents: draggable || canEditManualText || hasManualStepControls || (!readOnly && !!onDeleteArtifact) ? "auto" : "none",
+                  pointerEvents: draggable || canEditManualText || hasManualStepControls || (!readOnly && !!onDeleteArtifact) || !!onArtifactClick ? "auto" : "none",
                 }}
               >
-                {renderManualExceptionBlock(
-                  artifact,
-                  containedSteps,
-                  readOnly,
-                  editingManualField,
-                  canEditManualText ? field => setEditingManualArtifact({ artifactId: artifact.id, field }) : undefined,
-                  () => setEditingManualArtifact(null),
-                  onUpdateArtifact,
-                  onStepClick,
-                )}
-                {manualBlockDropTarget?.id === artifact.id && (
+                {isManualBlock ? renderManualExceptionBlock(
+                    displayArtifact,
+                    containedSteps,
+                    readOnly,
+                    editingManualField,
+                    canEditManualText ? field => setEditingManualArtifact({ artifactId: artifact.id, field }) : undefined,
+                    () => setEditingManualArtifact(null),
+                    onUpdateArtifact,
+                    onStepClick,
+                  ) : renderAutomaticSyncBlock(
+                    displayArtifact,
+                    linkedAutomations,
+                    linkedFlows,
+                    readOnly,
+                    editingManualField,
+                    canEditManualText ? field => setEditingManualArtifact({ artifactId: artifact.id, field }) : undefined,
+                    () => setEditingManualArtifact(null),
+                    onUpdateArtifact,
+                  )}
+                {isManualBlock && manualBlockDropTarget?.id === artifact.id && (
                   <rect
                     data-manual-block-drop-highlight={artifact.id}
                     x={artifact.position.x - 5}
-                    y={artifact.position.y - 5}
+                    y={displayArtifact.position.y - 5}
                     width={(artifact.size?.width ?? MANUAL_EXCEPTION_DEFAULT_W) + 10}
                     height={height + 10}
                     rx={12}
@@ -3771,7 +5361,7 @@ export function ProcessCanvas({
                     .slice(0, index)
                     .reduce((sum, itemHeight) => sum + itemHeight + MANUAL_EXCEPTION_STEP_GAP, 0);
                   const stepHeight = manualLayout.stepHeights[index] ?? STEP_H;
-                  const stepTop = artifact.position.y + manualLayout.stepsTop + previousHeight;
+                  const stepTop = displayArtifact.position.y + manualLayout.stepsTop + previousHeight;
                   const stepY = stepTop + stepHeight / 2;
                   return (
                     <g key={`${artifact.id}-${step.id}-controls`}>

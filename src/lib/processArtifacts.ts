@@ -1,9 +1,10 @@
 import type { ProcessArtifact } from "@/data/processData";
 
 const DEFAULT_MANUAL_EXCEPTION_SIZE = { width: 250, height: 112 };
+const DEFAULT_AUTOMATIC_SYNC_SIZE = { width: 280, height: 132 };
 
 type ProcessArtifactPatch = Partial<
-  Pick<ProcessArtifact, "title" | "description" | "position" | "size" | "association" | "stepIds">
+  Pick<ProcessArtifact, "title" | "description" | "position" | "size" | "association" | "stepIds" | "automationIds">
 >;
 
 export function createManualExceptionBlock(position: { x: number; y: number }): ProcessArtifact {
@@ -20,6 +21,24 @@ export function createManualExceptionBlock(position: { x: number; y: number }): 
       anchor: "process",
       label: "Mogelijk vanuit elke pipeline stage",
     },
+  };
+}
+
+export function createAutomaticSyncBlock(position: { x: number; y: number }): ProcessArtifact {
+  const id = globalThis.crypto?.randomUUID?.() ?? Date.now();
+
+  return {
+    id: `artifact-${id}`,
+    type: "automaticSyncBlock",
+    title: "Pipeline-brede automatische sync",
+    description: "Beschrijf wat deze sync controleert en welke acties automatisch worden uitgevoerd.",
+    position,
+    size: DEFAULT_AUTOMATIC_SYNC_SIZE,
+    association: {
+      anchor: "process",
+      label: "Pipeline-brede automatische actie",
+    },
+    automationIds: [],
   };
 }
 

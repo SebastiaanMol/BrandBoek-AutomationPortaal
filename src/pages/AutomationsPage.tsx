@@ -1,7 +1,13 @@
 import { useState } from "react";
 
+import { Archive } from "lucide-react";
+import {
+  PageHeaderMetric,
+  PageHeaderMetrics,
+  PageHeaderShell,
+} from "@/components/layout/PageHeader";
 import { Tabs } from "@/components/ui/tabs";
-import { useAutomatiseringen } from "@/lib/hooks";
+import { useAutomationSentryIssueOverview, useAutomatiseringen } from "@/lib/hooks";
 import AlleAutomatiseringen from "./AlleAutomatiseringen";
 import { readNavigationMemoryData } from "@/lib/navigationMemory";
 
@@ -25,6 +31,12 @@ export default function AutomationsPage() {
       !finding.resolvedAt && (finding.type === "source_missing" || finding.type === "source_data_incomplete")
     ),
   ).length;
+  const sentryOverviewQuery = useAutomationSentryIssueOverview(automations);
+  const sentrySummaries = sentryOverviewQuery.data?.matches.summariesByAutomationId ?? {};
+  const sentryIssueCount = Object.values(sentrySummaries).reduce(
+    (total, summary) => total + summary.linkedIssueCount,
+    0,
+  );
   const hubspotCount = automations.filter((automation) => automation.source === "hubspot").length;
   const gitlabCount = automations.filter((automation) => (
     automation.source === "gitlab" || Boolean(automation.gitlabFilePath)
@@ -47,28 +59,27 @@ export default function AutomationsPage() {
           onValueChange={(value) => setSourceFilter(value as SourceFilter)}
           className="space-y-5"
         >
-          <header className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                Automation beheer
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {new Intl.NumberFormat("nl-NL").format(automations.length)} automations
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2 lg:justify-end">
-              <StatPill value={activeCount} label="actief" />
-              <StatPill value={disabledCount} label="uitgeschakeld" />
-              <StatPill value={sourceCount} label="bronnen" />
-              <StatPill value={warningCount} label={warningCount === 1 ? "waarschuwing" : "waarschuwingen"} />
-            </div>
-          </header>
+          <PageHeaderShell
+            icon={Archive}
+            eyebrow="Automations"
+            title="Automation beheer"
+            description={`${new Intl.NumberFormat("nl-NL").format(automations.length)} automations`}
+            metrics={(
+              <PageHeaderMetrics>
+                <PageHeaderMetric value={activeCount} label="actief" />
+                <PageHeaderMetric value={disabledCount} label="uitgeschakeld" />
+                <PageHeaderMetric value={sourceCount} label="bronnen" />
+                <PageHeaderMetric value={warningCount} label={warningCount === 1 ? "waarschuwing" : "waarschuwingen"} />
+                <PageHeaderMetric value={sentryIssueCount} label="Sentry issues" />
+              </PageHeaderMetrics>
+            )}
+          />
 
           <AlleAutomatiseringen
             sourceFilter={sourceFilter}
             sourceTabs={sourceTabs}
             onSourceFilterChange={setSourceFilter}
+            sentrySummaries={sentrySummaries}
           />
         </Tabs>
       </div>
@@ -78,18 +89,4 @@ export default function AutomationsPage() {
 
 function isSourceFilter(value: unknown): value is SourceFilter {
   return value === "alle" || value === "hubspot" || value === "gitlab" || value === "zapier" || value === "typeform";
-}
-
-function StatPill({ label, value }: { label: string; value: number }) {
-  return (
-    <span
-      aria-label={`${new Intl.NumberFormat("nl-NL").format(value)} ${label}`}
-      className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-sm text-muted-foreground shadow-sm"
-    >
-      <strong className="font-semibold text-foreground">
-        {new Intl.NumberFormat("nl-NL").format(value)}
-      </strong>
-      {label}
-    </span>
-  );
 }

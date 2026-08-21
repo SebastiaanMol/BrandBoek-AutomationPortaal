@@ -1,0 +1,25 @@
+import { chromium } from '@playwright/test';
+const baseURL = 'http://127.0.0.1:5173';
+const projectRef = 'icvrrpxtycwgaxcajwdf';
+const authKey = `sb-${projectRef}-auth-token`;
+const future = Math.floor(Date.now() / 1000) + 3600;
+const fakeSession = { access_token:'test-access-token', token_type:'bearer', expires_in:3600, expires_at:future, refresh_token:'test-refresh-token', user:{ id:'browser-smoke-user', aud:'authenticated', role:'authenticated', email:'browser-smoke@example.test', app_metadata:{provider:'email',providers:['email']}, user_metadata:{} } };
+const browser = await chromium.launch({ headless: true });
+const context = await browser.newContext({ viewport:{width:1440,height:1000} });
+await context.addInitScript(({ authKey, fakeSession }) => localStorage.setItem(authKey, JSON.stringify(fakeSession)), { authKey, fakeSession });
+const page = await context.newPage();
+const logs=[]; const requests=[];
+page.on('console', msg => logs.push(`${msg.type()}: ${msg.text()}`));
+page.on('request', req => { const u=req.url(); if (u.includes('supabase') || u.includes('/rest/') || u.includes('/auth/')) requests.push(u); });
+await page.route('**/auth/v1/**', route => route.fulfill({status:200, contentType:'application/json', body:JSON.stringify({user:fakeSession.user})}));
+await page.route('**/rest/v1/**', route => {
+  const u=route.request().url();
+  const body = u.includes('source_sync_change_items') ? [{ id:'x', sync_run_id:'r', source:'hubspot', external_id:'1697577818', automation_id:'a', change_type:'metadata_changed', status:'pending', title:'Set Software/Portaal/Pakket/CSV based on dealstage', summary:'Broninformatie wijzigt.', impact:'Werkt bestaande automation bij.', selected_by_default:true, old_value_sanitized:{ metadata:[{field:'stage_id', value:null}]}, new_value_sanitized:{ metadata:[{field:'stage_id', value:'1176430505, 1044124012'}]}, payload_sanitized:{} }] : [];
+  return route.fulfill({status:200, contentType:'application/json', headers:{'content-range': body.length ? '0-0/1':'0-0/0'}, body:JSON.stringify(body)});
+});
+await page.goto(`${baseURL}/imports`, {waitUntil:'domcontentloaded', timeout:45000});
+await page.waitForTimeout(5000);
+await page.screenshot({path:'tmp/imports-stage-id-browser-stub-debug.png', fullPage:true});
+const body = await page.locator('body').innerText().catch(e => String(e));
+console.log(JSON.stringify({url:page.url(), body:body.slice(0,2000), requests:requests.slice(0,20), logs:logs.slice(0,30)}, null, 2));
+await browser.close();
