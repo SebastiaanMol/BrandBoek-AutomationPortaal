@@ -58,6 +58,25 @@ const automations: Automatisering[] = [
       actions: [],
     },
   }),
+  makeAutomation({
+    id: "AUTO-HS-ENRICHED",
+    naam: "Nachtelijke sync",
+    source: "hubspot",
+    categorie: "HubSpot Workflow",
+    aiEnrichment: {
+      when_text: "Elke nacht om 02:00.",
+      data_flow: "Een achtergrondproces leest gewijzigde deals en werkt de statusvelden bij.",
+      visible_in_hubspot: true,
+      visible_in_hubspot_detail: "de dealstage verandert zichtbaar op het deal-record.",
+      why_text: "Zo blijft de dealstage in HubSpot gelijk aan de status in het backend-systeem.",
+    },
+    hubspotWorkflow: {
+      name: "Nachtelijke sync",
+      objectType: "0-3",
+      triggers: [],
+      actions: [],
+    },
+  }),
 ];
 
 const useAutomationsMock = vi.fn();
@@ -105,7 +124,14 @@ describe("HubSpot automation detail template", () => {
       "https://app.hubspot.com/workflows/6108551/platform/flow/1699666192/edit",
     );
     const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
-    expect(within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation?" })).toBeInTheDocument();
+    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    expect(within(watGebeurtEr).getByRole("heading", { name: "Wat gebeurt er?" })).toBeInTheDocument();
+    expect(
+      within(hubspotTemplate).getByLabelText("Wat gebeurt er").compareDocumentPosition(
+        within(hubspotTemplate).getByText("Technische details"),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation? (technisch)" })).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Workflow state")).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Startvoorwaarden")).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Webhook Action")).toBeInTheDocument();
@@ -118,6 +144,17 @@ describe("HubSpot automation detail template", () => {
     expect(within(hubspotTemplate).getByText("Gebruikte properties")).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Field mappings niet beschikbaar in HubSpot workflowdata")).toBeInTheDocument();
     expect(screen.queryByLabelText("Standaard automation uitleg")).not.toBeInTheDocument();
+  });
+
+  it("only shows 'Wat gebeurt er' rows backed by real ai_enrichment content", () => {
+    renderDetail("AUTO-HS-NO-ID");
+
+    const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
+    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    expect(within(watGebeurtEr).queryByText("Wanneer")).not.toBeInTheDocument();
+    expect(within(watGebeurtEr).queryByText("Wat gebeurt er dan")).not.toBeInTheDocument();
+    expect(within(watGebeurtEr).queryByText("Waarom deze regel bestaat")).not.toBeInTheDocument();
+    expect(within(watGebeurtEr).queryByText("Zichtbaar in HubSpot")).not.toBeInTheDocument();
   });
 
   it("opens raw HubSpot data from the detail header", () => {
@@ -137,6 +174,19 @@ describe("HubSpot automation detail template", () => {
     expect(screen.queryByRole("link", { name: "Open in HubSpot" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("HubSpot automation detail")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Typeform automation detail")).toBeInTheDocument();
+  });
+
+  it("shows the boekhouders-lens rows once ai_enrichment carries them", () => {
+    renderDetail("AUTO-HS-ENRICHED");
+
+    const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
+    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    expect(within(watGebeurtEr).getByText("Wanneer")).toBeInTheDocument();
+    expect(within(watGebeurtEr).getByText("Elke nacht om 02:00.")).toBeInTheDocument();
+    expect(within(watGebeurtEr).getByText("Op de achtergrond")).toBeInTheDocument();
+    expect(within(watGebeurtEr).getByText("Zichtbaar in HubSpot")).toBeInTheDocument();
+    expect(within(watGebeurtEr).getByText(/^Ja —/)).toBeInTheDocument();
+    expect(within(watGebeurtEr).getByText("Waarom deze regel bestaat")).toBeInTheDocument();
   });
 
   it("shows a disabled source link state for HubSpot automations without a workflow ID", () => {

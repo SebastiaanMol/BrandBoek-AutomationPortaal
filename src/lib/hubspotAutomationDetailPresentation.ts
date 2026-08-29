@@ -55,9 +55,21 @@ export interface HubSpotIssue {
   subtitle: string;
 }
 
+// De "boekhouders-lens" kaart: wat een niet-technische lezer nodig heeft om een
+// automation te begrijpen, vóór alle technische onderbouwing eronder. Elk veld is
+// optioneel — een lege waarde betekent dat we het (nog) niet betrouwbaar weten,
+// en dan tonen we die regel gewoon niet, in plaats van iets te verzinnen.
+export interface HubSpotWhatHappensPresentation {
+  when?: string;
+  background?: string;
+  visibleInHubspot?: { status: "yes" | "no"; detail?: string };
+  why?: string;
+}
+
 export interface HubSpotAutomationDetailPresentation {
   summary: string;
   triggerMoment?: string;
+  whatHappens: HubSpotWhatHappensPresentation;
   systemTags: string[];
   evidenceBadges: string[];
   metrics: HubSpotDetailMetric[];
@@ -114,6 +126,7 @@ export function getHubSpotAutomationDetailPresentation(automation: Automatiserin
   return {
     summary: buildSummary(automation, workflowName, objectLabel, hasWebhook),
     triggerMoment: automation.aiEnrichment?.trigger_moment?.trim() || undefined,
+    whatHappens: buildWhatHappens(automation),
     systemTags: (automation.aiEnrichment?.systems ?? []).filter((system) => Boolean(system?.trim())),
     evidenceBadges: buildEvidenceBadges(triggers, actions, workflow?.shouldReEnroll, automation),
     metrics: [
@@ -194,6 +207,31 @@ function buildSummary(
     : "Als de voorwaarden kloppen, voert HubSpot de ingestelde workflowactie uit.";
   const objectDescription = objectLabel === "Record" ? "HubSpot-records" : `${objectLabel.toLowerCase()}-records`;
   return `Deze HubSpot-workflow bewaakt ${objectDescription} en start "${workflowName}" wanneer de ingestelde voorwaarden gelden. ${handoff} De pagina hierboven beschrijft deze individuele automation en toont alleen broninformatie die uit HubSpot beschikbaar is.`;
+}
+
+// Bouwt de inhoud voor de "Wat gebeurt er?"-kaart: de plek waar iemand zonder
+// technische achtergrond in één keer moet kunnen zien wanneer deze regel afgaat,
+// wat er dan gebeurt (met een expliciet onderscheid tussen het onzichtbare
+// achtergrondeffect en of dat effect ook echt in HubSpot te zien is), en waarom
+// die regel bestaat. Elk stukje komt uit een los `ai_enrichment`-veld dat per
+// automation wordt ingevuld tijdens de contentronde; zolang dat nog niet is
+// gebeurd, laten we de betreffende regel gewoon weg in plaats van te gokken.
+function buildWhatHappens(automation: Automatisering): HubSpotWhatHappensPresentation {
+  const enrichment = automation.aiEnrichment;
+
+  const when = enrichment?.when_text?.trim() || enrichment?.trigger_moment?.trim() || undefined;
+  const background = enrichment?.data_flow?.trim() || undefined;
+  const why = enrichment?.why_text?.trim() || undefined;
+
+  let visibleInHubspot: HubSpotWhatHappensPresentation["visibleInHubspot"];
+  if (typeof enrichment?.visible_in_hubspot === "boolean") {
+    visibleInHubspot = {
+      status: enrichment.visible_in_hubspot ? "yes" : "no",
+      detail: enrichment.visible_in_hubspot_detail?.trim() || undefined,
+    };
+  }
+
+  return { when, background, visibleInHubspot, why };
 }
 
 function buildEvidenceBadges(

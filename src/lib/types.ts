@@ -44,6 +44,19 @@ export interface AutomationAiEnrichment {
   phases?: string[];
   trigger_moment?: string;
   generated_at?: string;
+  // Onderstaande velden zijn toegevoegd voor de "boekhouders-lens" herschrijving
+  // van de automation-detailpagina (zie portal_change_log.md, eind augustus 2026).
+  // Ze zijn allemaal optioneel en worden per automation los ingevuld tijdens de
+  // stuk-voor-stuk contentronde — de UI valt terug op bestaande velden (zoals
+  // `trigger_moment`/`data_flow`) zolang deze nog leeg zijn.
+  when_text?: string;
+  why_text?: string;
+  // true = het effect is rechtstreeks in HubSpot te zien (bv. een property die
+  // verandert); false = het effect speelt zich buiten HubSpot af (bv. een
+  // backend-systeem); undefined/ontbrekend = (nog) niet vastgesteld — laat dan
+  // geen bewering zien in plaats van te gokken.
+  visible_in_hubspot?: boolean;
+  visible_in_hubspot_detail?: string;
 }
 
 export interface GitLabEndpointInfo {

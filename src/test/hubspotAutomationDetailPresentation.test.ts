@@ -206,6 +206,64 @@ describe("HubSpot automation detail presentation", () => {
     ]);
   });
 
+  it("leaves whatHappens rows empty when no ai_enrichment content backs them", () => {
+    const presentation = getHubSpotAutomationDetailPresentation(makeAutomation({
+      hubspotWorkflow: {
+        workflowId: "1699666192",
+        name: "Create new deal",
+        objectType: "Deal",
+        triggers: [],
+        actions: [],
+      },
+    }));
+
+    expect(presentation.whatHappens.when).toBeUndefined();
+    expect(presentation.whatHappens.background).toBeUndefined();
+    expect(presentation.whatHappens.why).toBeUndefined();
+    expect(presentation.whatHappens.visibleInHubspot).toBeUndefined();
+  });
+
+  it("builds whatHappens rows from the per-automation ai_enrichment fields", () => {
+    const presentation = getHubSpotAutomationDetailPresentation(makeAutomation({
+      aiEnrichment: {
+        when_text: "Elke nacht om 02:00.",
+        data_flow: "Een achtergrondproces werkt de statusvelden bij.",
+        visible_in_hubspot: false,
+        visible_in_hubspot_detail: "de update gebeurt alleen in het backend-systeem.",
+        why_text: "Zo blijft de status overal gelijk.",
+      },
+      hubspotWorkflow: {
+        workflowId: "1699666192",
+        name: "Create new deal",
+        objectType: "Deal",
+        triggers: [],
+        actions: [],
+      },
+    }));
+
+    expect(presentation.whatHappens).toEqual({
+      when: "Elke nacht om 02:00.",
+      background: "Een achtergrondproces werkt de statusvelden bij.",
+      visibleInHubspot: { status: "no", detail: "de update gebeurt alleen in het backend-systeem." },
+      why: "Zo blijft de status overal gelijk.",
+    });
+  });
+
+  it("falls back to trigger_moment for whatHappens.when when when_text is missing", () => {
+    const presentation = getHubSpotAutomationDetailPresentation(makeAutomation({
+      aiEnrichment: { trigger_moment: "Als de dealstage wijzigt." },
+      hubspotWorkflow: {
+        workflowId: "1699666192",
+        name: "Create new deal",
+        objectType: "Deal",
+        triggers: [],
+        actions: [],
+      },
+    }));
+
+    expect(presentation.whatHappens.when).toBe("Als de dealstage wijzigt.");
+  });
+
   it("keeps HubSpot audit rows visible with clear API availability fallbacks", () => {
     const presentation = getHubSpotAutomationDetailPresentation(makeAutomation({
       owner: "",

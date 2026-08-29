@@ -152,12 +152,21 @@ describe("Automation detail presentation", () => {
     renderDetail(hubspotAutomation);
 
     const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
-    expect(within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation?" })).toBeInTheDocument();
+    expect(within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation? (technisch)" })).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Startvoorwaarden")).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Webhook Action")).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Field mappings niet beschikbaar in HubSpot workflowdata")).toBeInTheDocument();
 
-    const summaryText = within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation?" }).closest("section")?.textContent ?? "";
+    // De "Wat gebeurt er?"-kaart toont dezelfde `presentation.summary` als het
+    // (nu ingeklapte) technische blok hieronder, dus deze check op schone,
+    // niet-technische samenvattingstekst geldt voor allebei.
+    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    expect(watGebeurtEr.textContent).not.toContain("POST");
+    expect(watGebeurtEr.textContent).not.toContain("https://example.test/private-webhook");
+    expect(watGebeurtEr.textContent).not.toContain("Webhook ->");
+    expect(watGebeurtEr.textContent).not.toContain("1284704094");
+
+    const summaryText = within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation? (technisch)" }).closest("section")?.textContent ?? "";
     expect(summaryText).not.toContain("POST");
     expect(summaryText).not.toContain("https://example.test/private-webhook");
     expect(summaryText).not.toContain("Webhook ->");

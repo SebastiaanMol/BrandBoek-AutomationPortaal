@@ -1,6 +1,6 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, CircleDot, ExternalLink, Info, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, CircleDot, Clock, ExternalLink, HelpCircle, Info, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
-import { getHubSpotAutomationDetailPresentation, type HubSpotConditionItem, type HubSpotIssue } from "@/lib/hubspotAutomationDetailPresentation";
+import { getHubSpotAutomationDetailPresentation, type HubSpotConditionItem, type HubSpotIssue, type HubSpotWhatHappensPresentation } from "@/lib/hubspotAutomationDetailPresentation";
 import type { Automatisering } from "@/lib/types";
 
 export function HubSpotAutomationDetailTemplate({ automation }: { automation: Automatisering }): React.ReactNode {
@@ -8,199 +8,210 @@ export function HubSpotAutomationDetailTemplate({ automation }: { automation: Au
 
   return (
     <div aria-label="HubSpot automation detail" className="space-y-4">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {presentation.metrics.map((metric) => (
-          <article key={metric.label} className={`min-h-[112px] rounded-2xl border bg-card p-5 shadow-sm ${metricCardClass(metric)}`}>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">{metric.label}</p>
-            <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">{metric.value}</p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">{metric.detail}</p>
-          </article>
-        ))}
-      </section>
+      <WatGebeurtErCard presentation={presentation} />
 
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-4xl">
-            <h2 className="text-lg font-semibold text-foreground">Wat doet deze automation?</h2>
-            {presentation.triggerMoment && (
-              <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Trigger-moment: <span className="font-medium normal-case tracking-normal text-foreground">{presentation.triggerMoment}</span>
-              </p>
-            )}
-            <p className="mt-4 text-base leading-7 text-muted-foreground">{presentation.summary}</p>
-            {presentation.systemTags.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {presentation.systemTags.map((system) => (
-                  <span key={system} className="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
-                    {system}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="flex max-w-sm flex-wrap justify-start gap-2 lg:justify-end">
-            {presentation.evidenceBadges.map((badge) => (
-              <span key={badge} className="rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-semibold text-muted-foreground">
-                {badge}
-              </span>
+      <details className="group rounded-2xl border border-border bg-card shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-5 text-sm font-semibold text-foreground marker:content-none [&::-webkit-details-marker]:hidden">
+          <span>Technische details</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+
+        <div className="space-y-4 border-t border-border p-5 pt-4">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {presentation.metrics.map((metric) => (
+              <article key={metric.label} className={`min-h-[112px] rounded-2xl border bg-card p-5 shadow-sm ${metricCardClass(metric)}`}>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">{metric.label}</p>
+                <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">{metric.value}</p>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">{metric.detail}</p>
+              </article>
             ))}
-          </div>
-        </div>
-      </section>
+          </section>
 
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-foreground">Dataflow</h2>
-        <div className="mt-5 overflow-x-auto pb-2">
-          <div className="flex min-w-[760px] items-center gap-4">
-            {presentation.dataflow.map((node, index) => (
-              <div key={`${node.name}-${index}`} className="flex items-center gap-4">
-                <div className={`min-h-[96px] w-48 rounded-xl border p-4 ${nodeClassName(node.role)}`}>
-                  <p className="text-sm font-semibold text-foreground">{node.name}</p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{node.subtitle}</p>
-                </div>
-                {node.arrowLabel && (
-                  <div className="w-28 text-center text-xs font-bold text-muted-foreground">
-                    <span>{node.arrowLabel}</span>
-                    <ArrowRight className="mx-auto mt-1 h-6 w-6 text-foreground" />
+          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-4xl">
+                <h2 className="text-lg font-semibold text-foreground">Wat doet deze automation? (technisch)</h2>
+                {presentation.triggerMoment && (
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    Trigger-moment: <span className="font-medium normal-case tracking-normal text-foreground">{presentation.triggerMoment}</span>
+                  </p>
+                )}
+                <p className="mt-4 text-base leading-7 text-muted-foreground">{presentation.summary}</p>
+                {presentation.systemTags.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {presentation.systemTags.map((system) => (
+                      <span key={system} className="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
+                        {system}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid items-stretch gap-4 xl:grid-cols-[1.35fr_1fr]">
-        <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground">Startvoorwaarden</h2>
-          <div className="mt-4 space-y-3">
-            {presentation.conditions.map((condition, index) => (
-              <ConditionRow key={`${condition.title}-${index}`} condition={condition} />
-            ))}
-          </div>
-
-          <div className="mt-6 border-t border-border pt-5">
-            <h3 className="text-sm font-semibold text-foreground">Re-enrollment</h3>
-            <div className="mt-3 space-y-3">
-              {presentation.reEnrollmentRules.map((condition, index) => (
-                <ConditionRow key={`${condition.title}-${index}`} condition={condition} />
-              ))}
-            </div>
-          </div>
-        </article>
-
-        <div className="flex flex-col gap-4">
-          <article className="flex-1 rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-foreground">Automation Ownership</h2>
-            <dl className="mt-4 grid gap-3">
-              {presentation.meta.map((item) => (
-                <div key={item.label} className="flex items-start justify-between gap-4 border-t border-border pt-3 first:border-t-0 first:pt-0">
-                  <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{item.label}</dt>
-                  <dd className="text-right text-sm font-medium text-foreground">{item.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </article>
-
-          <article className="flex-1 rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-foreground">Webhook Action</h2>
-            <div className="mt-4 space-y-3">
-              {presentation.webhookActions.length > 0 ? (
-                presentation.webhookActions.map((action) => (
-                  <div key={`${action.method}-${action.path}`} className="rounded-xl border border-border bg-secondary/20 p-4">
-                    <div className="flex items-start gap-3">
-                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">{action.method}</span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground">{action.title}</p>
-                        <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{action.path}</p>
-                        {action.url && <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">{action.url}</p>}
-                        {action.authLabel && <p className="mt-2 text-xs text-muted-foreground">{action.authLabel}</p>}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                presentation.actionDetails.map((action) => (
-                  <div key={`${action.badge}-${action.title}`} className="rounded-xl border border-border bg-secondary/30 p-3">
-                    <div className="flex items-start gap-3">
-                      <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">{action.badge}</span>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{action.title}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">{action.subtitle}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-2">
-        <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground">Gebruikte properties</h2>
-          {presentation.properties.length > 0 ? (
-            <div className="mt-4 overflow-hidden rounded-xl border border-border">
-              <div className="grid grid-cols-[1fr_auto_1fr] bg-secondary/60 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                <div className="p-3">Property</div>
-                <div className="p-3 text-center">Rule</div>
-                <div className="p-3">Value</div>
+              <div className="flex max-w-sm flex-wrap justify-start gap-2 lg:justify-end">
+                {presentation.evidenceBadges.map((badge) => (
+                  <span key={badge} className="rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-semibold text-muted-foreground">
+                    {badge}
+                  </span>
+                ))}
               </div>
-              {presentation.properties.map((property) => (
-                <div key={`${property.property}-${property.rule}-${property.value}`} className="grid grid-cols-[1fr_auto_1fr] border-t border-border text-sm">
-                  <div className="p-3 font-medium text-foreground">{property.property}</div>
-                  <div className="p-3 text-center text-muted-foreground">{property.rule}</div>
-                  <div className="p-3 text-muted-foreground">{property.value}</div>
-                </div>
-              ))}
             </div>
-          ) : (
-            <EmptyBlock title="Geen properties beschikbaar" text="De genormaliseerde HubSpot workflowdata bevat geen propertyvoorwaarden." />
-          )}
-        </article>
+          </section>
 
-        <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground">Gekoppelde objecten / bronnen</h2>
-          <div className="mt-4 space-y-3">
-            {presentation.objectSources.length > 0 ? (
-              presentation.objectSources.map((source) => (
-                <div key={`${source.objectTypeId}-${source.title}`} className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3">
-                  <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">{source.objectTypeId}</span>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{source.title}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{source.subtitle}</p>
+          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-foreground">Dataflow</h2>
+            <div className="mt-5 overflow-x-auto pb-2">
+              <div className="flex min-w-[760px] items-center gap-4">
+                {presentation.dataflow.map((node, index) => (
+                  <div key={`${node.name}-${index}`} className="flex items-center gap-4">
+                    <div className={`min-h-[96px] w-48 rounded-xl border p-4 ${nodeClassName(node.role)}`}>
+                      <p className="text-sm font-semibold text-foreground">{node.name}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{node.subtitle}</p>
+                    </div>
+                    {node.arrowLabel && (
+                      <div className="w-28 text-center text-xs font-bold text-muted-foreground">
+                        <span>{node.arrowLabel}</span>
+                        <ArrowRight className="mx-auto mt-1 h-6 w-6 text-foreground" />
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
-            ) : (
-              <EmptyBlock title="Geen association data beschikbaar" text="HubSpot object-associations zijn niet aanwezig in deze workflowdata." />
-            )}
-          </div>
-        </article>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-2">
-        <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground">Field mappings</h2>
-          <div className="mt-4 flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 text-orange-950">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-orange-700" />
-            <div>
-              <p className="text-sm font-semibold">{presentation.fieldMappingAvailability.title}</p>
-              <p className="mt-1 text-sm leading-6 text-orange-900">{presentation.fieldMappingAvailability.subtitle}</p>
+                ))}
+              </div>
             </div>
-          </div>
-        </article>
+          </section>
 
-        <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground">Issues & Risks</h2>
-          <div className="mt-4 space-y-3">
-            {presentation.issues.map((issue) => (
-              <IssueRow key={`${issue.severity}-${issue.title}`} issue={issue} />
-            ))}
-          </div>
-        </article>
-      </section>
+          <section className="grid items-stretch gap-4 xl:grid-cols-[1.35fr_1fr]">
+            <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-foreground">Startvoorwaarden</h2>
+              <div className="mt-4 space-y-3">
+                {presentation.conditions.map((condition, index) => (
+                  <ConditionRow key={`${condition.title}-${index}`} condition={condition} />
+                ))}
+              </div>
+
+              <div className="mt-6 border-t border-border pt-5">
+                <h3 className="text-sm font-semibold text-foreground">Re-enrollment</h3>
+                <div className="mt-3 space-y-3">
+                  {presentation.reEnrollmentRules.map((condition, index) => (
+                    <ConditionRow key={`${condition.title}-${index}`} condition={condition} />
+                  ))}
+                </div>
+              </div>
+            </article>
+
+            <div className="flex flex-col gap-4">
+              <article className="flex-1 rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-foreground">Automation Ownership</h2>
+                <dl className="mt-4 grid gap-3">
+                  {presentation.meta.map((item) => (
+                    <div key={item.label} className="flex items-start justify-between gap-4 border-t border-border pt-3 first:border-t-0 first:pt-0">
+                      <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{item.label}</dt>
+                      <dd className="text-right text-sm font-medium text-foreground">{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </article>
+
+              <article className="flex-1 rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-foreground">Webhook Action</h2>
+                <div className="mt-4 space-y-3">
+                  {presentation.webhookActions.length > 0 ? (
+                    presentation.webhookActions.map((action) => (
+                      <div key={`${action.method}-${action.path}`} className="rounded-xl border border-border bg-secondary/20 p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">{action.method}</span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground">{action.title}</p>
+                            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{action.path}</p>
+                            {action.url && <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">{action.url}</p>}
+                            {action.authLabel && <p className="mt-2 text-xs text-muted-foreground">{action.authLabel}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    presentation.actionDetails.map((action) => (
+                      <div key={`${action.badge}-${action.title}`} className="rounded-xl border border-border bg-secondary/30 p-3">
+                        <div className="flex items-start gap-3">
+                          <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">{action.badge}</span>
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{action.title}</p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">{action.subtitle}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section className="grid gap-4 xl:grid-cols-2">
+            <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-foreground">Gebruikte properties</h2>
+              {presentation.properties.length > 0 ? (
+                <div className="mt-4 overflow-hidden rounded-xl border border-border">
+                  <div className="grid grid-cols-[1fr_auto_1fr] bg-secondary/60 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    <div className="p-3">Property</div>
+                    <div className="p-3 text-center">Rule</div>
+                    <div className="p-3">Value</div>
+                  </div>
+                  {presentation.properties.map((property) => (
+                    <div key={`${property.property}-${property.rule}-${property.value}`} className="grid grid-cols-[1fr_auto_1fr] border-t border-border text-sm">
+                      <div className="p-3 font-medium text-foreground">{property.property}</div>
+                      <div className="p-3 text-center text-muted-foreground">{property.rule}</div>
+                      <div className="p-3 text-muted-foreground">{property.value}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyBlock title="Geen properties beschikbaar" text="De genormaliseerde HubSpot workflowdata bevat geen propertyvoorwaarden." />
+              )}
+            </article>
+
+            <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-foreground">Gekoppelde objecten / bronnen</h2>
+              <div className="mt-4 space-y-3">
+                {presentation.objectSources.length > 0 ? (
+                  presentation.objectSources.map((source) => (
+                    <div key={`${source.objectTypeId}-${source.title}`} className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3">
+                      <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">{source.objectTypeId}</span>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{source.title}</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">{source.subtitle}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <EmptyBlock title="Geen association data beschikbaar" text="HubSpot object-associations zijn niet aanwezig in deze workflowdata." />
+                )}
+              </div>
+            </article>
+          </section>
+
+          <section className="grid gap-4 xl:grid-cols-2">
+            <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-foreground">Field mappings</h2>
+              <div className="mt-4 flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 text-orange-950">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-orange-700" />
+                <div>
+                  <p className="text-sm font-semibold">{presentation.fieldMappingAvailability.title}</p>
+                  <p className="mt-1 text-sm leading-6 text-orange-900">{presentation.fieldMappingAvailability.subtitle}</p>
+                </div>
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-foreground">Issues & Risks</h2>
+              <div className="mt-4 space-y-3">
+                {presentation.issues.map((issue) => (
+                  <IssueRow key={`${issue.severity}-${issue.title}`} issue={issue} />
+                ))}
+              </div>
+            </article>
+          </section>
+        </div>
+      </details>
 
       {automation.koppelingen.length > 0 && (
         <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -222,6 +233,91 @@ export function HubSpotAutomationDetailTemplate({ automation }: { automation: Au
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+// De boekhouders-lens kaart: het enige wat standaard zichtbaar is naast de header.
+// Alles wat hieronder staat ("Technische details") is audit-materiaal voor wie het
+// wil narekenen, maar is niet nodig om de regel te begrijpen.
+function WatGebeurtErCard({ presentation }: { presentation: { summary: string; whatHappens: HubSpotWhatHappensPresentation } }): React.ReactNode {
+  const { whatHappens } = presentation;
+  const hasEffectDetail = Boolean(whatHappens.background || whatHappens.visibleInHubspot);
+
+  return (
+    <section aria-label="Wat gebeurt er" className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-7">
+      <h2 className="text-lg font-semibold text-foreground">Wat gebeurt er?</h2>
+      <div className="mt-5 space-y-5">
+        <WhatHappensRow icon={<Info className="h-4 w-4" />}>
+          <p className="text-base leading-7 text-foreground">{presentation.summary}</p>
+        </WhatHappensRow>
+
+        {whatHappens.when && (
+          <WhatHappensRow icon={<Clock className="h-4 w-4" />} label="Wanneer">
+            <p className="text-sm leading-6 text-muted-foreground">{whatHappens.when}</p>
+          </WhatHappensRow>
+        )}
+
+        {hasEffectDetail && (
+          <WhatHappensRow icon={<ArrowRight className="h-4 w-4" />} label="Wat gebeurt er dan">
+            <div className="space-y-2">
+              {whatHappens.background && (
+                <div className="rounded-xl bg-secondary/40 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Op de achtergrond</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{whatHappens.background}</p>
+                </div>
+              )}
+              {whatHappens.visibleInHubspot && (
+                <div
+                  className={
+                    whatHappens.visibleInHubspot.status === "yes"
+                      ? "rounded-xl border border-emerald-200 bg-emerald-50 p-3"
+                      : "rounded-xl border border-dashed border-border p-3"
+                  }
+                >
+                  <p className={`text-[11px] font-bold uppercase tracking-widest ${whatHappens.visibleInHubspot.status === "yes" ? "text-emerald-700" : "text-muted-foreground"}`}>
+                    Zichtbaar in HubSpot
+                  </p>
+                  <p className={`mt-1 text-sm leading-6 ${whatHappens.visibleInHubspot.status === "yes" ? "text-emerald-900" : "text-muted-foreground"}`}>
+                    {whatHappens.visibleInHubspot.status === "yes" ? "Ja" : "Niets"}
+                    {whatHappens.visibleInHubspot.detail ? ` — ${whatHappens.visibleInHubspot.detail}` : ""}
+                  </p>
+                </div>
+              )}
+            </div>
+          </WhatHappensRow>
+        )}
+
+        {whatHappens.why && (
+          <WhatHappensRow icon={<HelpCircle className="h-4 w-4" />} label="Waarom deze regel bestaat">
+            <div className="rounded-xl border-l-4 border-accent bg-accent/10 p-3">
+              <p className="text-sm leading-6 text-foreground">{whatHappens.why}</p>
+            </div>
+          </WhatHappensRow>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function WhatHappensRow({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label?: string;
+  children: React.ReactNode;
+}): React.ReactNode {
+  return (
+    <div className="flex items-start gap-4">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        {label && <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{label}</p>}
+        <div className={label ? "mt-1.5" : undefined}>{children}</div>
+      </div>
     </div>
   );
 }
