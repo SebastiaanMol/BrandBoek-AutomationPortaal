@@ -22,7 +22,21 @@ export function HubSpotAutomationDetailTemplate({ automation }: { automation: Au
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-4xl">
             <h2 className="text-lg font-semibold text-foreground">Wat doet deze automation?</h2>
+            {presentation.triggerMoment && (
+              <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Trigger-moment: <span className="font-medium normal-case tracking-normal text-foreground">{presentation.triggerMoment}</span>
+              </p>
+            )}
             <p className="mt-4 text-base leading-7 text-muted-foreground">{presentation.summary}</p>
+            {presentation.systemTags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {presentation.systemTags.map((system) => (
+                  <span key={system} className="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
+                    {system}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex max-w-sm flex-wrap justify-start gap-2 lg:justify-end">
             {presentation.evidenceBadges.map((badge) => (

@@ -57,6 +57,8 @@ export interface HubSpotIssue {
 
 export interface HubSpotAutomationDetailPresentation {
   summary: string;
+  triggerMoment?: string;
+  systemTags: string[];
   evidenceBadges: string[];
   metrics: HubSpotDetailMetric[];
   dataflow: HubSpotDataflowNode[];
@@ -111,6 +113,8 @@ export function getHubSpotAutomationDetailPresentation(automation: Automatiserin
 
   return {
     summary: buildSummary(automation, workflowName, objectLabel, hasWebhook),
+    triggerMoment: automation.aiEnrichment?.trigger_moment?.trim() || undefined,
+    systemTags: (automation.aiEnrichment?.systems ?? []).filter((system) => Boolean(system?.trim())),
     evidenceBadges: buildEvidenceBadges(triggers, actions, workflow?.shouldReEnroll, automation),
     metrics: [
       {
@@ -131,7 +135,7 @@ export function getHubSpotAutomationDetailPresentation(automation: Automatiserin
       },
       buildRuntimeMetric(automation),
     ],
-    dataflow: buildDataflow(objectLabel, workflowName, hasWebhook),
+    dataflow: buildDataflow(objectLabel, workflowName, hasWebhook, automation.aiEnrichment?.data_flow),
     conditions,
     reEnrollmentRules,
     webhookActions,
@@ -154,7 +158,33 @@ function buildSummary(
   objectLabel: string,
   hasWebhook: boolean,
 ): string {
-  const simpleDescription = automation.aiDescription
+  // Eerste keus: de rijke, per-automation gegenereerde uitleg ("aiEnrichment"). Dit is
+  // specifieke, mensleesbare tekst (bv. welke stap wat doet en wat het eindresultaat is),
+  // in tegenstelling tot de generieke status-zin die HubSpot-import altijd meegeeft.
+  const enrichment = automation.aiEnrichment;
+  const enrichedDescription = enrichment?.description?.trim();
+  if (
+    enrichedDescription
+    && !containsTechnicalText(enrichedDescription)
+    && !isGenericStatusDescription(enrichedDescription, automation.naam)
+  ) {
+    const endResult = enrichment?.end_result?.trim();
+    if (endResult && !enrichedDescription.includes(endResult)) {
+      // `end_result` is bedoeld als het concrete eindresultaat, maar bij veel automations
+      // herhaalt het gegenereerde eindresultaat grotendeels dezelfde feiten als `description`
+      // (bv. "dealstage ingesteld" + "extern systeem bijgewerkt" komen in allebei voor). Zonder
+      // filter leest de samenvatting dan als twee keer dezelfde zin — precies het "generiek en
+      // niet logisch" gevoel. Alleen toevoegen als het echt nieuwe informatie bevat, en dan
+      // duidelijk gelabeld als resultaat i.p.v. als een derde, ononderscheiden zin.
+      if (!hasSubstantialWordOverlap(enrichedDescription, endResult)) {
+        return `${enrichedDescription} Resultaat: ${lowercaseFirstLetter(endResult)}`;
+      }
+    }
+    return enrichedDescription;
+  }
+
+  const simpleDescription = enrichment?.summary?.trim()
+    || automation.aiDescription
     || automation.beschrijvingInSimpeleTaal?.find((line) => line.trim())
     || automation.doel;
   if (simpleDescription && !containsTechnicalText(simpleDescription) && !isGenericStatusDescription(simpleDescription, automation.naam)) return simpleDescription.trim();
@@ -207,7 +237,7 @@ function buildRuntimeMetric(automation: Automatisering): HubSpotDetailMetric {
   };
 }
 
-function buildDataflow(objectLabel: string, workflowName: string, hasWebhook: boolean): HubSpotDataflowNode[] {
+function buildDataflow(objectLabel: string, workflowName: string, hasWebhook: boolean, dataFlowDescription?: string): HubSpotDataflowNode[] {
   return [
     {
       name: `HubSpot ${objectLabel}`,
@@ -217,7 +247,7 @@ function buildDataflow(objectLabel: string, workflowName: string, hasWebhook: bo
     },
     {
       name: workflowName,
-      subtitle: "Orchestrator: HubSpot workflow",
+      subtitle: dataFlowDescription?.trim() || "Orchestrator: HubSpot workflow",
       role: "orchestrator",
       arrowLabel: hasWebhook ? "POST webhook" : "workflow action",
     },
@@ -503,13 +533,63 @@ function extractPath(url: string | null | undefined): string {
   }
 }
 
+const SUMMARY_STOPWORDS = new Set([
+  "de", "het", "een", "en", "van", "voor", "naar", "op", "in", "is", "wordt", "worden",
+  "bij", "aan", "die", "dat", "deze", "dit", "als", "via", "met", "uit", "na", "daarna",
+  "afhankelijk", "criteria", "relevante", "relevant", "gedefinieerde", "verdere",
+]);
+
+function significantWords(value: string): Set<string> {
+  const words = value
+    .toLowerCase()
+    .replace(/['"()]/g, "")
+    .split(/[^a-z0-9à-ÿ-]+/i)
+    .filter((word) => word.length >= 4 && !SUMMARY_STOPWORDS.has(word));
+  return new Set(words);
+}
+
+// Twee woorden tellen als "hetzelfde" als ze exact overeenkomen, of als het duidelijke
+// vervoegingen/varianten van elkaar zijn (extern/externe, routing/procesrouting). Puur exacte
+// matching mist te veel van dit soort AI-gegenereerde variatie en onderschat daardoor hoezeer
+// end_result gewoon description herhaalt.
+function wordsRelate(a: string, b: string): boolean {
+  if (a === b) return true;
+  return a.length >= 5 && b.length >= 5 && (a.includes(b) || b.includes(a));
+}
+
+// Schat in of `end_result` grotendeels dezelfde inhoud herhaalt als `description`, zodat we
+// weten of het toevoegen ervan de samenvatting echt iets nieuws vertelt of alleen langer maakt.
+function hasSubstantialWordOverlap(description: string, endResult: string): boolean {
+  const descWords = Array.from(significantWords(description));
+  const resultWords = Array.from(significantWords(endResult));
+  if (resultWords.length === 0) return true;
+
+  const shared = resultWords.filter((word) => descWords.some((descWord) => wordsRelate(descWord, word))).length;
+  return shared / resultWords.length >= 0.5;
+}
+
+function lowercaseFirstLetter(value: string): string {
+  return value.length > 0 ? value.charAt(0).toLowerCase() + value.slice(1) : value;
+}
+
 function containsTechnicalText(value: string): boolean {
   return /\b(GET|POST|PUT|PATCH|DELETE)\b|https?:\/\/|webhook\s*->|(?:^|\s)\/[a-z0-9][^\s.,)]|een van deze waarden is ['"]?\d+['"]?/i.test(value);
 }
 
 function isGenericStatusDescription(value: string, automationName: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  const name = automationName.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^deze automatisering heet ['"]?${name}['"]? en is actief\\.?$`, "i").test(normalized)
-    || /^deze automatisering is actief\.?$/i.test(normalized);
+  // Dit vangt de generieke boilerplate-zin die bij elke import automatisch wordt meegegeven
+  // (bv. "Deze automatisering heet 'X' en is momenteel uitgeschakeld."), zodat we die nooit
+  // als "goede" beschrijving tonen. De naam in die zin komt soms niet meer exact overeen met
+  // de huidige `naam` van de automation (bv. omdat de portal-naam later een disambiguerend
+  // ID-suffix kreeg), en de status kan ook "uitgeschakeld"/"in review"/"verouderd" zijn i.p.v.
+  // alleen "actief", en met of zonder het woord "momenteel" — dus we matchen daar flexibel op.
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  const statusPattern = "(?:momenteel\\s+)?(?:actief|uitgeschakeld|in review|verouderd)";
+  if (new RegExp(`^deze automatisering is ${statusPattern}\\.?$`, "i").test(normalized)) return true;
+
+  const match = normalized.match(new RegExp(`^deze automatisering heet ['"]?(.+?)['"]?\\s+en is ${statusPattern}\\.?$`, "i"));
+  if (!match) return false;
+  const quotedName = match[1].trim();
+  const name = automationName.trim().toLowerCase();
+  return name === quotedName || name.startsWith(quotedName) || quotedName.startsWith(name);
 }

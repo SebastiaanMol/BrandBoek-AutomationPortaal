@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
   Automatisering,
+  AutomationAiEnrichment,
   AutomationImportProposal,
   AutomationSourceFinding,
   Categorie,
@@ -147,6 +148,7 @@ async function fetchAutomatiseringenBase(includeLegacyGitlabFiles: boolean): Pro
     gitlabLastCommit: r.gitlab_last_commit ?? undefined,
     aiDescription: r.ai_description ?? undefined,
     aiDescriptionUpdatedAt: r.ai_description_updated_at ?? undefined,
+    aiEnrichment: (r.ai_enrichment as AutomationAiEnrichment | null) ?? undefined,
     cleanupDeleteCandidate: reviewerOverrides.cleanup_delete_candidate ?? r.cleanup_delete_candidate ?? false,
     cleanupDeleteCandidateAt: reviewerOverrides.cleanup_delete_candidate_at ?? r.cleanup_delete_candidate_at ?? undefined,
     sourceFindings: findingsMap[r.id] ?? [],

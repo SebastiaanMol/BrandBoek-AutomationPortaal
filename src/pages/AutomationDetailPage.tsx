@@ -691,6 +691,11 @@ function HubSpotDetailHeader({
           <h1 className="mt-4 text-3xl font-bold leading-tight tracking-normal text-slate-950 md:text-4xl">
             {displayName}
           </h1>
+          {automation.aiEnrichment?.summary && (
+            <p className="mt-2 max-w-2xl text-base leading-relaxed text-slate-600">
+              {automation.aiEnrichment.summary}
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-base text-slate-600">
             {metaItems.map((item) => (
               <span key={item}>{item}</span>

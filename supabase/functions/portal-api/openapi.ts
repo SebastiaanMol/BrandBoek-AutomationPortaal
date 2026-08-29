@@ -775,7 +775,7 @@ export const openApiDocument = {
     "/v1/sync-review": {
       get: {
         summary: "List sync review items.",
-        description: "Backed by source_sync_change_items. Returns pending or failed items by default; an explicit status filter overrides that default. Supports source, status, type, q, limit, and offset query parameters.",
+        description: "Backed by source_sync_change_items. Returns pending or failed items by default; an explicit status filter overrides that default. Supports source, status, type, syncRunId, q, limit, and offset query parameters.",
         parameters: [
           { $ref: "#/components/parameters/Q" },
           { $ref: "#/components/parameters/Limit" },

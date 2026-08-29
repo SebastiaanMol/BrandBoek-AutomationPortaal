@@ -31,6 +31,21 @@ export interface AutomationBranch {
   description?: string; // optionele toelichting (plain text)
 }
 
+// ── AI enrichment ─────────────────────────────────────────────────────────────
+// Automatisch gegenereerde, mensleesbare documentatie per automation (los van de
+// technische bronvelden zoals `doel`/`trigger`/`stappen`). Wordt server-side in
+// de `ai_enrichment` kolom bijgehouden en hier 1-op-1 doorgegeven aan de UI.
+export interface AutomationAiEnrichment {
+  summary?: string;
+  description?: string;
+  data_flow?: string;
+  end_result?: string;
+  systems?: string[];
+  phases?: string[];
+  trigger_moment?: string;
+  generated_at?: string;
+}
+
 export interface GitLabEndpointInfo {
   method?: string;
   endpoint?: string;
@@ -322,6 +337,7 @@ export interface Automatisering {
   gitlabLastCommit?: string;
   aiDescription?: string;
   aiDescriptionUpdatedAt?: string | null;
+  aiEnrichment?: AutomationAiEnrichment;
   cleanupDeleteCandidate?: boolean;
   cleanupDeleteCandidateAt?: string | null;
   sourceFindings?: AutomationSourceFinding[];

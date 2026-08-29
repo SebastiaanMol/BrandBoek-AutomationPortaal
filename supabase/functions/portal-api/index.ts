@@ -66,6 +66,7 @@ const AUTOMATION_WRITE_FIELDS = [
   "link",
   "phaseData",
   "importMetadata",
+  "aiEnrichment",
 ] as const;
 
 const PLACEMENT_SELECT = "id,automation_id,pipeline_id,target,created_at,updated_at,placed_by,api_version";
@@ -445,6 +446,7 @@ function mapAutomationPatchToDb(patch: JsonRecord, current?: JsonRecord | null):
   if ("category" in patch) dbPatch.categorie = patch.category;
   if ("phaseData" in patch) dbPatch.fasen = patch.phaseData;
   if ("importMetadata" in patch) dbPatch.import_proposal = patch.importMetadata;
+  if ("aiEnrichment" in patch) dbPatch.ai_enrichment = patch.aiEnrichment;
   if ("link" in patch) {
     dbPatch.import_proposal = {
       ...(isJsonRecord(current?.import_proposal) ? current.import_proposal : {}),
@@ -559,7 +561,10 @@ async function handleListAutomations(db: PortalDb, url: URL): Promise<Response> 
     }
   }
 
-  const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
   if (error) throw new Error(error.message);
 
   const rows = (data ?? []) as JsonRecord[];
@@ -840,7 +845,10 @@ async function handleListPlacements(db: PortalDb, url: URL): Promise<Response> {
     query = query.eq("target->>type", type);
   }
 
-  const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as JsonRecord[];
   return buildJsonResponse({
@@ -1119,7 +1127,10 @@ async function handleListPipelines(db: PortalDb, url: URL): Promise<Response> {
   if (source) query = query.eq("source", source);
   if (isActive === "true" || isActive === "false") query = query.eq("is_active", isActive === "true");
 
-  const { data, error, count } = await query.order("naam", { ascending: true }).range(offset, offset + limit - 1);
+  const { data, error, count } = await query
+    .order("naam", { ascending: true })
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as JsonRecord[];
   return buildJsonResponse({
@@ -1192,7 +1203,10 @@ async function handleListProcesreizen(db: PortalDb, url: URL): Promise<Response>
     query = query.or(`naam.ilike.${term},beschrijving.ilike.${term}`);
   }
 
-  const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as JsonRecord[];
   return buildJsonResponse({
@@ -1282,9 +1296,11 @@ async function handleListSyncReview(db: PortalDb, url: URL): Promise<Response> {
   const source = url.searchParams.get("source");
   const status = url.searchParams.get("status");
   const type = url.searchParams.get("type");
+  const syncRunId = url.searchParams.get("syncRunId");
   const q = url.searchParams.get("q")?.trim();
 
   if (source) query = query.eq("source", source);
+  if (syncRunId) query = query.eq("sync_run_id", syncRunId);
   if (status) {
     if (!SYNC_REVIEW_STATUSES.includes(status as (typeof SYNC_REVIEW_STATUSES)[number])) {
       throw new Error("Invalid status filter.");
@@ -1304,7 +1320,10 @@ async function handleListSyncReview(db: PortalDb, url: URL): Promise<Response> {
     query = query.or(`title.ilike.${term},summary.ilike.${term}`);
   }
 
-  const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as JsonRecord[];
   return buildJsonResponse({
@@ -1507,7 +1526,10 @@ async function handleListAuditLog(db: PortalDb, url: URL): Promise<Response> {
   if (since) query = query.gte("created_at", since);
   if (until) query = query.lte("created_at", until);
 
-  const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as JsonRecord[];
   return buildJsonResponse({
