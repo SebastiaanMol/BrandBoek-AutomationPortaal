@@ -605,3 +605,91 @@ Hiermee filtert `/v1/sync-review` voortaan server-side op `syncRunId`, in plaats
 - Deploy bevestigd via Supabase's eigen "Successfully updated edge function"-melding en de bijgewerkte "Deployed"-tijdstempel (van "2 days ago" naar "a few seconds ago").
 
 **Nog open:** functioneel nog niet end-to-end getest (een PATCH-call met `aiEnrichment` in de payload versturen en verifiëren dat die daadwerkelijk wegschrijft) — tot nu toe is voor de twee al-uitgevoerde schrijfacties (Correct Stage IB, AUTO-085) nog steeds de rechtstreekse Supabase-client-route gebruikt.
+
+---
+
+### Data-wijziging: `ai_enrichment` van AUTO-HS-1656791712 (Update Loonadministratie property for contacts with No Loonadministratie nodig) bijgewerkt (29 augustus 2026)
+
+**Derde van de proefronde — eerste keer volgens de nieuwe, bredere werkwijze die Sebas heeft gevraagd: eerst organisatiebrede HubSpot/bedrijfscontext opbouwen, dan pas een automation invullen.**
+
+**Aanleiding:** Sebas vroeg expliciet om niet langer per automation vanuit alleen `raw_payload` te redeneren, maar eerst te begrijpen hoe HubSpot bij Brand Boekhouders daadwerkelijk wordt gebruikt (pipelines, processen, doel van onderdelen), en die aanpak herbruikbaar te maken voor alle HubSpot-automations. Voor deze automation is dat gedaan door: (1) `context/brand_boekhouders_gemini_context.md` en `docs/hubspot-automation-handleiding.md` volledig te lezen, (2) `raw_payload` te herlezen (trigger: deal-property `loonadministratie_nodig_` = false; actie: property-set via association, géén webhook), en (3) — nieuw deze ronde — de live HubSpot-schema's te bevragen via de HubSpot-MCP-tools (`get_properties`, `search_properties`) op het echte portaal-account (6108551). Dat laatste bracht een concrete correctie aan het licht: er bestaat toevallig ook een déal-property met dezelfde interne naam `loonadministratie` ("Mail verstuurd Loonbureau"), die niets met deze automation te maken heeft — de automation schrijft naar het gelijknamige, maar afzonderlijke bedríjfs-property "Loonadministratie" (opties: `nvt` / `Opgezet`). Sebas bevestigde daarnaast expliciet dat loonadministratie een dienst is die Brand Boekhouders niet zelf levert, wat de `why_text` onderbouwt.
+
+**Wat er veranderde:** in de `ai_enrichment`-JSON van AUTO-HS-1656791712:
+- `summary`, `description`, `data_flow`, `end_result`, `trigger_moment`: herschreven — de eerdere tekst beweerde een webhook naar "Interne Python API (Railway)" en een wijziging op een *contact*; beide feitelijk onjuist. Nieuwe tekst: een property-set op het gekoppelde *bedrijf* (`Loonadministratie` → `nvt`), zonder backend-aanroep.
+- `systems`: `["HubSpot", "Interne Python API (Railway)"]` → `["HubSpot"]`.
+- Nieuw toegevoegd (boekhouders-lens-velden, nog niet eerder gevuld): `when_text`, `why_text`, `visible_in_hubspot: true`, `visible_in_hubspot_detail`.
+- `phases` (`["Boekhouding"]`) en `generated_at` (laatste is bijgewerkt naar het moment van deze wijziging): overige velden ongewijzigd qua vorm.
+
+**Visueel/design (side note, niet in de database):** voorafgaand aan deze data-wijziging zijn twee visuele varianten van de "Wat gebeurt er?"-kaart uitgeprobeerd in de browser (leesbare regellengte via `max-w-prose`, gecentreerde tekstkolom, en een mini bron→doel-schema) — stuk voor stuk als losse code-wijziging aan `HubSpotAutomationDetailTemplate.tsx` doorgevoerd, live bekeken, en op Sebas' expliciete verzoek weer volledig teruggedraaid. De component staat weer exact zoals vóór deze sessie; er zit geen restant van deze experimenten in de code.
+
+**Uitgevoerd:** rechtstreeks via `supabase.from('automatiseringen').update(...)` in de al-ingelogde portal-tab (zelfde mechanisme als Correct Stage IB en AUTO-085 — de portal-api PATCH-route voor `aiEnrichment` is dus nog steeds niet end-to-end getest). Geverifieerd door de live pagina te herladen: titel-subtekst en de "Wat gebeurt er?"-kaart tonen de nieuwe tekst correct.
+
+**Nog open:** ~205 automations resteren in de bredere trial-scope. De combinatie "raw_payload + contextdocumenten + live HubSpot-schema-check via de HubSpot-MCP" is nu voor het eerst toegepast en door Sebas nog niet expliciet als definitieve standaardwerkwijze bevestigd voor de rest van de trial — dat gesprek loopt door.
+
+---
+
+### Data-wijziging: `ai_enrichment` van AUTO-GL-28f02936-c676-4f96-b887-6dc6afb51793 (Btw dealstage based on bank connection) — eerste GitLab-proefautomation (29 augustus 2026)
+
+**Vervolg op de architectuurdiscussie: Sebas vroeg zich af of automations per bron (HubSpot/Zapier/Typeform/GitLab) wel terecht los van elkaar behandeld worden. Antwoord: eerst per bron één proefautomation volledig doorwerken vóór er iets aan het datamodel verandert. Dit is de eerste proef, voor GitLab.**
+
+**Aanleiding/methode:** `docs/gitlab-backend-automation-handleiding.md` gelezen voor de GitLab-specifieke ground-truth-methode (endpoint = de automation-eenheid, niet het bestand). Vervolgens de daadwerkelijke broncode gelezen op Sebas' machine: `gitlabtest/app/API/operations.py` (de route, een dunne wrapper) en `gitlabtest/app/service/operations/btw_bankconnection.py` (de echte logica van `route_btw_by_deal_id_and_update`). Deze logica bleek woordelijk te matchen met "Voorbeeld 2" uit `context/brand_boekhouders_gemini_context.md` (BTW-pipeline, bankkoppeling als beslissende factor) — sterke onafhankelijke bevestiging.
+
+**Correctie na Sebas' feedback:** de eerste conceptversie beschreef de trigger als "HubSpot-workflow roept dit endpoint aan" zonder verder detail. Sebas wees erop dat dit zich in de praktijk mogelijk gedraagt als een algemene (bijvoorbeeld nachtelijke) sync die niet aan één specifieke pipelinestap vastzit, en dat er alleen naar HubSpot wordt teruggeschreven als er iets verandert. Dit is geverifieerd door de aanroepende HubSpot-workflow zelf op te zoeken: `AUTO-HS-1692210986` ("Update dealstage in BTW stage op basis van bankkoppeling"), gevonden door alle HubSpot-automations te doorzoeken op `webhook_paths` die dit GitLab-endpoint bevatten. De `raw_payload.enrollmentCriteria` van die workflow bevestigt: `shouldReEnroll: true`, met een re-enrollment-trigger die vuurt zodra het bedrijfsveld `bankkoppeling_status_new` verandert (voor elke deal in een kwalificerende BTW-stage, niet bij CSV/portaal-klanten). Dus geen tijdklok in de workflow zelf, maar in de praktijk wél een "sync-achtig" patroon, omdat de bankkoppelingsstatus vermoedelijk in bulk wordt ververst — dat laatste (de daadwerkelijke cadans/planning van die bankkoppelings-sync) staat nergens in de code die ik kan inzien, dus dat deel steunt op Sebas' eigen kennis van het systeem, niet op onafhankelijk geverifieerde code.
+
+**Wat er veranderde:** `ai_enrichment` van AUTO-GL-28f02936-c676-4f96-b887-6dc6afb51793 was `null` (nog nooit verrijkt). Nieuw ingevuld: `summary`, `description`, `trigger_moment`, `data_flow`, `end_result`, `systems: ["HubSpot", "GitLab"]`, en de boekhouders-lens-velden `when_text`, `why_text`, `visible_in_hubspot: true`, `visible_in_hubspot_detail`.
+
+**Let op — bekende beperking:** `GitLabAutomationDetailTemplate.tsx` toont op dit moment geen enkel `ai_enrichment`-veld (alleen `presentation.summary`, technische autotekst) — zie ook `architectuur-audit.md` punt 1. De hier opgeslagen `when_text`/`why_text`/`visible_in_hubspot` zijn dus voor nu niet zichtbaar in de UI; ze zijn vast goed ingevuld zodat er niets hoeft te worden ingehaald zodra de boekhouders-lens-kaart naar GitLab wordt uitgebreid (aanbeveling 3 uit de audit).
+
+**Uitgevoerd:** rechtstreeks via `supabase.from('automatiseringen').update(...)`, zelfde mechanisme als de vorige twee data-wijzigingen.
+
+**Nog open:** Zapier- en Typeform-proefautomation nog te doen voordat de architectuurvraag (datamodel wel/niet herstructureren) definitief wordt beantwoord.
+
+---
+
+### Data-wijziging: `ai_enrichment` van AUTO-163 (Deal from 'Offerte opgesteld en verzonden' to 'Chase 1') — tweede proefautomation, Zapier (30 augustus 2026)
+
+**Vervolg op de GitLab-proef: tweede van de drie afgesproken bron-proeven, nu voor Zapier.**
+
+**Aanleiding/methode:** eerst de opgeslagen `import_proposal.zap.steps` (de gedistilleerde weergave) en `stappen` gelezen — 5 stappen: trigger, delay, "Get Deal in HubSpot", filter, actie. De laatste actiestap had daarin geen velddetails. Cross-check met `docs/process-documentatie-sales-pipeline.md` (§7-8, S19 "Chase 1") bevestigde de zakelijke context: dit is de automatisering achter de overgang "geen reactie op offerte → eerste chase-opvolging". Pipeline-id 802700718 kwam letterlijk overeen met de pipeline waarop die hele procesdoc is gebaseerd.
+
+**Correctie na Sebas' feedback (herhaald, twee keer):** (1) Sebas wees erop dat de eindstage niet "vermoedelijk" is maar aantoonbaar, en dat ik dat zelf verder had kunnen uitzoeken. Dieper gezocht in `import_proposal` en een tot dan toe over het hoofd geziene sleutel gevonden: `zapier_export.sanitized_nodes` — de rauwe Zapier-nodeconfiguratie met echte actienamen/parameters (niet eerder geraadpleegd, want `raw_payload` op deze rij is `null`; deze diepere laag zit apart in `import_proposal`). Daaruit bleek hard bevestigd: node `275079054` (`update_crm_deal`) zet `dealstage` op `1180636306`, en node `275089876` (`delay_for`) heeft `delay_for_value: "4.0"` dagen — exact hetzelfde patroon als de losstaande, vergelijkbare Zaps AUTO-152/153 in een andere pipeline. Dealstage-namen (`1180636305` = "Offerte opgesteld en verzonden", `1180636306` = "Chase 1", pipeline `802700718` = "Sales Pipeline") onafhankelijk bevestigd via `mcp__HubSpot__get_properties` op het live HubSpot-account. (2) Sebas merkte op dat kale technische ID's niets betekenen voor een boekhouder, en dat er ook geen apart "technische details"-veld bestaat om ze in te stoppen. Nagekeken in `hubspotAutomationDetailPresentation.ts`: `description` wordt daar rechtstreeks getoond aan de boekhouder als het door een simpel technisch-taal-filter (`containsTechnicalText`) komt — en dat filter vangt geen kale `(id 123)`-notatie. `data_flow` wordt sowieso altijd rechtstreeks getoond, zonder filter. Conclusie: geen enkel `ai_enrichment`-veld is een veilige plek voor kale ID's; die blijven volledig traceerbaar in de ruwe `import_proposal`-data. Alle velden zijn daarom herschreven zonder kale nummers, uitsluitend met stage-/pipelinenamen.
+
+**Wat er veranderde:** `ai_enrichment` van AUTO-163 was `null`. Nieuw ingevuld: `summary`, `description`, `data_flow`, `end_result`, `trigger_moment`, `phases` (5 stappen, herschreven zonder ID's), `systems: ["Zapier", "HubSpot"]`, en de boekhouders-lens-velden `when_text`, `why_text`, `visible_in_hubspot: false`, `visible_in_hubspot_detail` (legt uit dat de Zap zelf de dealstage-wijziging uitvoert — dus wel zichtbaar effect in HubSpot — maar dat de automatiseringslogica alleen in Zapier bestaat, niet als HubSpot-workflow).
+
+**Let op — bekende beperkingen:** (1) `ZapierAutomationDetailTemplate.tsx` en de bijbehorende presentatielaag lezen op dit moment geen enkel `ai_enrichment`-veld — dezelfde beperking als bij de GitLab-proef, nu bevestigd voor de derde template (zie `architectuur-audit.md` punt 1). (2) De exacte duur van de wachtstap was in eerste instantie niet uit de gedistilleerde `import_proposal.zap.steps`-data af te leiden; dit bleek uiteindelijk wel hard vastgelegd te staan, maar dan in `zapier_export.sanitized_nodes` — dus de rijkdom van de Zapier-brondata verschilt sterk per rij/veld, en het is de moeite waard om bij toekomstige Zapier-proeven altijd eerst te checken of `zapier_export` aanwezig is voordat iets als "niet af te leiden" wordt gemarkeerd.
+
+**Uitgevoerd:** rechtstreeks via `supabase.from('automatiseringen').update(...)`, zelfde mechanisme als de vorige twee data-wijzigingen.
+
+**Nog open:** Typeform-proefautomation nog te doen voordat de architectuurvraag (datamodel wel/niet herstructureren) definitief wordt beantwoord.
+
+---
+
+### Correctie: `visible_in_hubspot` van AUTO-163 was fout ingevuld (false → true, 30 augustus 2026)
+
+**Wat er misging:** bij het opslaan van AUTO-163 (zie vorige entry) is `visible_in_hubspot` op `false` gezet, met als redenering "dit is geen native HubSpot-workflow maar een Zapier-Zap". Bij het uitwerken van de Typeform-proef (AUTO-233) is de daadwerkelijke render-logica in `HubSpotAutomationDetailTemplate.tsx` nagelezen (`WatGebeurtErCard`, label "Zichtbaar in HubSpot", Ja/Niets). Daaruit bleek dat dit veld letterlijk betekent "is het effect van deze automation zichtbaar in HubSpot" — niet "is dit zelf een HubSpot-workflow". Voor AUTO-163 verandert de dealstage wél daadwerkelijk in HubSpot (bevestigd via `update_crm_deal`), dus het juiste antwoord is `true`.
+
+**Wat er veranderde:** alleen `ai_enrichment.visible_in_hubspot` van AUTO-163: `false` → `true`. De uitlegtekst (`visible_in_hubspot_detail`) is ongewijzigd gelaten — die tekst beschreef de nuance al correct, alleen de boolean stond er niet mee in lijn.
+
+**Uitgevoerd:** rechtstreeks via `supabase.from('automatiseringen').update(...)`, na expliciete bevestiging van Sebas.
+
+---
+
+### Data-wijziging: `ai_enrichment` van AUTO-233 (Klantinformatie EZ of VOF) — derde en laatste proefautomation, Typeform (30 augustus 2026)
+
+**Vervolg op de HubSpot-, GitLab- en Zapier-proef: derde en laatste van de drie afgesproken bron-proeven, nu voor Typeform.**
+
+**Aanleiding/methode:** eerst de opgeslagen `import_proposal.typeform` gelezen (form-structuur: 10 vragen in groepen — Algemene informatie, EZ, VOF/Maatschap, Bedrijfsinformatie IB-onderneming, Bedrijfsmiddelen IB-onderneming, Rekeningen en huurovereenkomsten, Loonadministratie). De opgeslagen `stappen`/`doel` waren zeer summier ("Typeform geeft de inzending door aan de volgende verwerking", zonder verdere details). Daarna `webhook_paths` (`/typeform/onboarding`) gebruikt om de daadwerkelijke backend-verwerking te vinden op Sebas' machine: `gitlabtest/app/API/typeform.py` (de route) en vervolgens de echte logica in `gitlabtest/app/service/operations/../service/typeform/onboarding.py` (`process_onboarding_webhook`, ~48KB, uitgebreid gelezen).
+
+**Belangrijke vondst — gedeeld endpoint:** dit ene portal-record is één van zes rijen (`AUTO-233`, `AUTO-232`, `AUTO-217`, `AUTO-207`, `AUTO-230`, `AUTO-231`) die allemaal hetzelfde endpoint (`/typeform/onboarding`) gebruiken. In de code zelf zijn er 4 bekende form-ID-constanten (`FORM_ID_NEW_EZ`, `FORM_ID_NEW_BV`, `FORM_ID_EXISTING_EZ`, `FORM_ID_EXISTING_BV`) die via dezelfde functie lopen, alleen onderscheiden op form-ID (`is_new_client_form` / `is_bv_form`). Het form-ID van AUTO-233 (`DMcVFxg2`) is bevestigd gelijk aan `FORM_ID_NEW_EZ` — dus specifiek de "nieuwe EZ/VOF-klant"-variant. De overige vijf rijen zijn niet individueel nagelopen; dat blijft voor een eventuele latere ronde.
+
+**Wat de code daadwerkelijk doet (rijker dan de opgeslagen `stappen` suggereerden):** bedrijfs-ID uit het eerste veld → contactpersoon zoeken in HubSpot (e-mail/voornaam/achternaam) → contactgegevens bijwerken in HubSpot (alleen nieuwe klanten) → bedrijfsgegevens altijd bijwerken in HubSpot → optioneel een deal aanmaken in de loonadministratie-pipeline (`_maybe_create_loonadministratie_deal`, met hergebruik van een bestaande deal indien aanwezig) → zonder gevonden contactpersoon stopt de verwerking ("partial") → anders: SharePoint-dossierstructuur zoeken/aanmaken (bedrijfsmap, contactmap, jaarmappen, via Microsoft Graph) → bijlagen uploaden → een gegenereerde pdf-samenvatting toevoegen.
+
+**Zelfcorrectie tijdens deze proef:** bij het bepalen van `visible_in_hubspot` is eerst de echte render-logica in `HubSpotAutomationDetailTemplate.tsx` nagelezen (zie vorige entry) — met als uitkomst dat een eerdere invulling bij AUTO-163 fout bleek en is gecorrigeerd (zie vorige entry). Voor AUTO-233 is op basis van diezelfde, nu correct begrepen betekenis `visible_in_hubspot: true` gezet, omdat contact- en bedrijfseigenschappen en eventueel een deal wél echt in HubSpot verschijnen.
+
+**Wat er veranderde:** `ai_enrichment` van AUTO-233 was `null`. Nieuw ingevuld: `summary`, `description`, `data_flow`, `end_result`, `trigger_moment`, `phases` (8 stappen, rijker dan de bestaande `stappen`-kolom, die ongewijzigd is gelaten), `systems: ["Typeform", "HubSpot", "SharePoint"]`, en de boekhouders-lens-velden `when_text`, `why_text`, `visible_in_hubspot: true`, `visible_in_hubspot_detail`.
+
+**Let op — bekende beperking:** `typeformAutomationDetailPresentation.ts` leest geen enkel `ai_enrichment`-veld — dezelfde beperking als bij GitLab en Zapier, nu bevestigd voor alle vier de brontemplates (zie `architectuur-audit.md` punt 1).
+
+**Uitgevoerd:** rechtstreeks via `supabase.from('automatiseringen').update(...)`, zelfde mechanisme als de vorige data-wijzigingen.
+
+**Nog open:** alle drie afgesproken bron-proeven (GitLab, Zapier, Typeform) zijn nu afgerond, naast de eerdere HubSpot-proef. Volgende stap: met Sebas de architectuurvraag (datamodel wel/niet herstructureren, zie `architectuur-audit.md`) definitief bespreken, en/of het brede contentreview-project voor de resterende ~200+ HubSpot-automations hervatten.
