@@ -1,11 +1,12 @@
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Clipboard, ExternalLink, Loader2, Pencil, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, Clipboard, ExternalLink, Loader2, Pencil, Sparkles } from "lucide-react";
 import { StatusBadge, CategorieBadge, SystemBadge, SourceBadge } from "@/components/Badges";
 import { HubSpotAutomationDetailTemplate } from "@/components/HubSpotAutomationDetailTemplate";
 import { ZapierAutomationDetailTemplate } from "@/components/ZapierAutomationDetailTemplate";
 import { GitLabAutomationDetailTemplate } from "@/components/GitLabAutomationDetailTemplate";
 import { TypeformAutomationDetailTemplate } from "@/components/TypeformAutomationDetailTemplate";
+import { AutomationWhatHappensCard } from "@/components/AutomationWhatHappensCard";
 import { AutomationChainReactionCard } from "@/components/AutomationChainReactionCard";
 import { SentryIssuesCard } from "@/components/SentryIssuesCard";
 import {
@@ -143,39 +144,70 @@ export default function AutomationDetailPage(): React.ReactNode {
         </section>
       )}
 
-      <SourceQualityCard presentation={sourceQuality} />
+      {isHubSpotAutomation || isZapierAutomation || isGitLabAutomation || isTypeformAutomation ? (
+        <>
+          {/* De boekhouders-lens: bron-onafhankelijk, leest `ai_enrichment` ongeacht
+              of de automation uit HubSpot, Zapier, GitLab of Typeform komt. Zie
+              `AutomationWhatHappensCard.tsx` en architectuur-audit.md, aanbeveling 3. */}
+          <AutomationWhatHappensCard automation={automation} />
 
-      <SentryIssuesCard
-        isLoading={sentryIssuesQuery.isLoading}
-        error={sentryIssuesQuery.error instanceof Error ? sentryIssuesQuery.error : null}
-        matches={sentryIssueMatches}
-        limited={Boolean(sentryIssuesQuery.data?.limited)}
-      />
+          <details className="group rounded-2xl border border-border bg-card shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-5 text-sm font-semibold text-foreground marker:content-none [&::-webkit-details-marker]:hidden">
+              <span>Technische details</span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
 
-      {isHubSpotAutomation ? (
-        <HubSpotAutomationDetailTemplate automation={automation} />
-      ) : isZapierAutomation ? (
-        <ZapierAutomationDetailTemplate automation={automation} allAutomations={automations} pipelines={pipelines} />
-      ) : isGitLabAutomation ? (
-        <GitLabAutomationDetailTemplate
-          automation={automation}
-          allAutomations={automations}
-          confirmedLinks={confirmedLinks}
-          flowSuggesties={flowSuggesties}
-        />
-      ) : isTypeformAutomation ? (
-        <TypeformAutomationDetailTemplate automation={automation} allAutomations={automations} />
+            <div className="space-y-4 border-t border-border p-5 pt-4">
+              <SourceQualityCard presentation={sourceQuality} />
+
+              <SentryIssuesCard
+                isLoading={sentryIssuesQuery.isLoading}
+                error={sentryIssuesQuery.error instanceof Error ? sentryIssuesQuery.error : null}
+                matches={sentryIssueMatches}
+                limited={Boolean(sentryIssuesQuery.data?.limited)}
+              />
+
+              {isHubSpotAutomation ? (
+                <HubSpotAutomationDetailTemplate automation={automation} />
+              ) : isZapierAutomation ? (
+                <ZapierAutomationDetailTemplate automation={automation} allAutomations={automations} pipelines={pipelines} />
+              ) : isGitLabAutomation ? (
+                <GitLabAutomationDetailTemplate
+                  automation={automation}
+                  allAutomations={automations}
+                  confirmedLinks={confirmedLinks}
+                  flowSuggesties={flowSuggesties}
+                />
+              ) : (
+                <TypeformAutomationDetailTemplate automation={automation} allAutomations={automations} />
+              )}
+
+              <AutomationChainReactionCard startAutomation={automation} automations={automations} />
+            </div>
+          </details>
+        </>
       ) : (
-        <section className="rounded-2xl border border-border bg-card shadow-sm">
-          <AutomatiseringDetailPanel
-            a={automation}
-            cleanupMarker={cleanupMarker}
-            variant="page"
-          />
-        </section>
-      )}
+        <>
+          <SourceQualityCard presentation={sourceQuality} />
 
-      <AutomationChainReactionCard startAutomation={automation} automations={automations} />
+          <SentryIssuesCard
+            isLoading={sentryIssuesQuery.isLoading}
+            error={sentryIssuesQuery.error instanceof Error ? sentryIssuesQuery.error : null}
+            matches={sentryIssueMatches}
+            limited={Boolean(sentryIssuesQuery.data?.limited)}
+          />
+
+          <section className="rounded-2xl border border-border bg-card shadow-sm">
+            <AutomatiseringDetailPanel
+              a={automation}
+              cleanupMarker={cleanupMarker}
+              variant="page"
+            />
+          </section>
+
+          <AutomationChainReactionCard startAutomation={automation} automations={automations} />
+        </>
+      )}
     </div>
   );
 }

@@ -123,14 +123,13 @@ describe("HubSpot automation detail template", () => {
       "href",
       "https://app.hubspot.com/workflows/6108551/platform/flow/1699666192/edit",
     );
-    const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
-    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    const watGebeurtEr = screen.getByLabelText("Wat gebeurt er");
     expect(within(watGebeurtEr).getByRole("heading", { name: "Wat gebeurt er?" })).toBeInTheDocument();
     expect(
-      within(hubspotTemplate).getByLabelText("Wat gebeurt er").compareDocumentPosition(
-        within(hubspotTemplate).getByText("Technische details"),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      watGebeurtEr.compareDocumentPosition(screen.getByText("Technische details")) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+
+    const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
     expect(within(hubspotTemplate).getByRole("heading", { name: "Wat doet deze automation? (technisch)" })).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Workflow state")).toBeInTheDocument();
     expect(within(hubspotTemplate).getByText("Startvoorwaarden")).toBeInTheDocument();
@@ -146,11 +145,28 @@ describe("HubSpot automation detail template", () => {
     expect(screen.queryByLabelText("Standaard automation uitleg")).not.toBeInTheDocument();
   });
 
+  it("keeps only the header and the 'Wat gebeurt er' card outside 'Technische details'", () => {
+    renderDetail("AUTO-HS-DETAIL");
+
+    const details = screen.getByText("Technische details").closest("details");
+    expect(details).not.toBeNull();
+    if (!details) throw new Error("details element not found");
+
+    // Alles wat vroeger los op de pagina stond, zit nu samen achter deze ene toggle.
+    expect(within(details).getByText("Bronkwaliteit")).toBeInTheDocument();
+    expect(within(details).getByText("Foutsignalen")).toBeInTheDocument();
+    expect(within(details).getByLabelText("HubSpot automation detail")).toBeInTheDocument();
+    expect(within(details).getByLabelText("Kettingreactie vanaf deze automation")).toBeInTheDocument();
+
+    // De "Wat gebeurt er"-kaart blijft er expliciet buiten, altijd zichtbaar.
+    expect(within(details).queryByLabelText("Wat gebeurt er")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Wat gebeurt er")).toBeInTheDocument();
+  });
+
   it("only shows 'Wat gebeurt er' rows backed by real ai_enrichment content", () => {
     renderDetail("AUTO-HS-NO-ID");
 
-    const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
-    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    const watGebeurtEr = screen.getByLabelText("Wat gebeurt er");
     expect(within(watGebeurtEr).queryByText("Wanneer")).not.toBeInTheDocument();
     expect(within(watGebeurtEr).queryByText("Wat gebeurt er dan")).not.toBeInTheDocument();
     expect(within(watGebeurtEr).queryByText("Waarom deze regel bestaat")).not.toBeInTheDocument();
@@ -179,8 +195,7 @@ describe("HubSpot automation detail template", () => {
   it("shows the boekhouders-lens rows once ai_enrichment carries them", () => {
     renderDetail("AUTO-HS-ENRICHED");
 
-    const hubspotTemplate = screen.getByLabelText("HubSpot automation detail");
-    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    const watGebeurtEr = screen.getByLabelText("Wat gebeurt er");
     expect(within(watGebeurtEr).getByText("Wanneer")).toBeInTheDocument();
     expect(within(watGebeurtEr).getByText("Elke nacht om 02:00.")).toBeInTheDocument();
     expect(within(watGebeurtEr).getByText("Op de achtergrond")).toBeInTheDocument();

@@ -160,7 +160,7 @@ describe("Automation detail presentation", () => {
     // De "Wat gebeurt er?"-kaart toont dezelfde `presentation.summary` als het
     // (nu ingeklapte) technische blok hieronder, dus deze check op schone,
     // niet-technische samenvattingstekst geldt voor allebei.
-    const watGebeurtEr = within(hubspotTemplate).getByLabelText("Wat gebeurt er");
+    const watGebeurtEr = screen.getByLabelText("Wat gebeurt er");
     expect(watGebeurtEr.textContent).not.toContain("POST");
     expect(watGebeurtEr.textContent).not.toContain("https://example.test/private-webhook");
     expect(watGebeurtEr.textContent).not.toContain("Webhook ->");
